@@ -29,6 +29,7 @@ const App = () => (
             <Route path="/sync" element={<Sync />} />
             <Route path="/settings" element={<Settings />} />
             <Route path="/stats" element={<Stats />} />
+            <Route path="/export" element={<Export />} />
           </Route>
           <Route path="*" element={<NotFound />} />
         </Routes>
