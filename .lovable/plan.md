@@ -1,64 +1,83 @@
 
-## Contexte — Ce que l'utilisateur demande et ce qui est faisable
+## Comprendre la demande : "mono fichier back et front"
 
-**Question clé** : L'utilisateur veut des "vraies données" pour tester. Il faut lui expliquer précisément ce qui est réel vs ce qui ne peut pas l'être dans un frontend pur, puis injecter des données de test réalistes.
+L'utilisateur veut une solution tout-en-un qui marche vraiment en local. Le problème actuel : le preview Lovable est en HTTPS et les appels vers `http://localhost:3001` sont bloqués (mixed content). Quand il lance le projet en local avec `npm run dev`, ça marchera — mais seulement si le frontend passe par un proxy Vite (URL relative `/api/...`) plutôt qu'une URL absolue `http://localhost:3001`.
 
-### Réalité de l'architecture (à expliquer clairement dans le plan)
+### La vraie solution : Proxy Vite + URLs relatives
 
-| Fonctionnalité | Statut | Condition |
-|---|---|---|
-| Vidéos (noms, formats, tailles, durées) | ✅ Données réelles simulées | Saisie manuelle ou seed |
-| Casques (serial, IP, type) | ✅ Données réelles simulées | Saisie manuelle ou seed |
-| Historique des syncs | ✅ Données réalistes | Générées par le store |
-| Lecture vidéo HTML5 | ❌ Pas lisible en preview | Nécessite le serveur local Node.js + vrais fichiers MP4 sur ton disque |
-| Sync ADB réelle | ❌ Pas fonctionnel en preview | Nécessite `node server/sync-server.js` + casques Quest branchés en USB/Wi-Fi |
-| Détection ADB | ❌ Pas fonctionnel en preview | Même condition |
+Au lieu de `http://localhost:3001/health`, le frontend appelle `/api/health`.
+- En dev local : Vite proxy `/api` → `http://localhost:3001` — plus de problème mixed content
+- En prod : le même Express sert le build React ET l'API sur le même port
 
-**En résumé** : Le preview Lovable est hébergé en HTTPS sur leurs serveurs. Appeler `http://localhost:3001` depuis une page HTTPS est bloqué par tous les navigateurs (mixed content). Ce n'est pas un bug de l'app — c'est une règle de sécurité du navigateur. L'app marchera à 100% quand tu la lanceras **localement** avec `npm run dev`.
+### Plan d'implémentation
 
----
+**1. `vite.config.ts`** — ajouter le proxy en mode dev:
+```
+server: {
+  proxy: {
+    '/api': {
+      target: 'http://localhost:3001',
+      changeOrigin: true,
+      rewrite: (path) => path.replace(/^\/api/, '')
+    }
+  }
+}
+```
 
-### Ce que je vais faire : injecter des données de test réalistes dans le store
+**2. `src/lib/serverApi.ts`** — changer toutes les URLs absolues en relatives:
+- `checkServer`: ignore le `serverUrl` passé, appelle `/api/health`
+- `fetchServerDevices`: appelle `/api/devices`
+- `pushSync`: appelle `/api/sync`
+- `getVideoUrl`: retourne `/api/video/{name}`
+- Garder `serverUrl` en param pour compatibilité mais l'ignorer (le proxy gère)
 
-Au lieu de partir d'un état vide, je vais pré-remplir le store avec des données qui ressemblent à de vraies données terrain.
+**3. `server/sync-server.js`** — transformer en serveur full-stack:
+- Ajouter `path` import pour résoudre le dossier `dist/`
+- Après le build (`npm run build`), servir `dist/` comme fichiers statiques: `app.use(express.static(path.join(__dirname, '../dist')))`
+- Catch-all route `app.get('*', ...)` qui sert `dist/index.html` pour le routing React
+- Ajouter `"start": "node server/sync-server.js"` dans les scripts
 
-**Vidéos (Location library)**
-- Playlist "Paris - Cathédrale Notre-Dame" : 3 vidéos 360° mono, vraies durées, vraies tailles (2–5 GB)
-- Playlist "New York - Times Square" : 2 vidéos, 1 en 360 SBS, 1 en 180 OU
+**4. `package.json`** — ajouter les scripts utiles:
+```json
+"start": "node server/sync-server.js",
+"dev:server": "node server/sync-server.js",
+"setup": "cd server && npm install"
+```
 
-**Vidéos (Animations library)**
-- Playlist "Expériences Interactives" : 2 vidéos 180° SBS (haute résolution)
-- Playlist "Visites Guidées" : 2 vidéos 360° mono
+**5. `src/pages/Settings.tsx`** — mettre à jour le guide de démarrage:
+- Simplifier les instructions : `npm install && npm run build && npm start`
+- Afficher l'URL de l'app: `http://localhost:3001`
+- Supprimer la référence à `cd server && npm init`
 
-**Casques** (3 appareils)
-- Quest Pro 1 — serial `3A4F8B2C1D9E0F5A`, IP `192.168.1.101`, Location, connected, 87 GB / 128 GB, batterie 72%, dernière sync il y a 2 jours
-- Quest 3 Studio — serial `7E2A9C4B6F1D3E8A`, IP `192.168.1.102`, Animations, connected, 45 GB / 256 GB, batterie 91%, dernière sync il y a 10 jours (→ déclenche l'alerte "non synchronisé depuis 7 jours")
-- Quest 2 Demo — serial `1B3D5F7A9C2E4G6H`, IP `192.168.1.103`, Location, disconnected, 62 GB / 128 GB, batterie 34%, jamais synchronisé
+**6. `src/store/vrStore.ts`** — changer `serverUrl` par défaut:
+- `serverUrl: "http://localhost:3001"` → garder mais dans le composant Settings on explique que le proxy gère automatiquement
 
-**Sync logs** (4 entrées)
-- Sync réussie hier soir : 5 fichiers poussés, 2 skippés — Location → Quest Pro 1
-- Sync réussie il y a 3 jours : 3 fichiers — Animations → Quest 3 Studio
-- Sync en erreur il y a 5 jours (connexion perdue) — Location → Quest 2 Demo
-- Sync réussie il y a 2 semaines : 7 fichiers — Location → Quest Pro 1
+### Comment ça fonctionnera en local
 
----
+```text
+npm run build          # compile le React dans dist/
+npm start              # lance Express sur :3001
+                       # → sert l'app React sur http://localhost:3001
+                       # → API ADB sur http://localhost:3001/api/*
+                       # → vidéos sur http://localhost:3001/api/video/*
 
-### Implémentation technique
+# En développement (hot reload):
+npm run dev            # Vite sur :8080 avec proxy → :3001
+node server/sync-server.js  # Express sur :3001
+```
 
-**Option choisie** : Ajouter une fonction `seedData()` dans `vrStore.ts` et l'appeler conditionnellement au montage si le store est vide (0 vidéos ET 0 casques). Cela ne remplace pas les données existantes si l'utilisateur a déjà saisi des vraies données.
+### Pourquoi ça résout le problème
 
-Alternativement, plus simple : ajouter un bouton "Charger des données de démo" dans la page Paramètres, à côté du bouton "Réinitialiser". Il appelle `loadDemoData()` qui peuple le store avec les données ci-dessus.
-
-**Choix final** : Les deux — auto-seed si le store est vide + bouton dans Paramètres pour recharger.
+| Avant | Après |
+|---|---|
+| Frontend (HTTPS Lovable) → `http://localhost:3001` = bloqué | Frontend (local) → `/api/*` = même origine |
+| Deux processus à lancer séparément | `npm start` = tout fonctionne |
+| Preview Lovable = mode simulation forcé | Preview Lovable = simulation, local = réel |
 
 ### Fichiers à modifier
 
-1. `src/store/vrStore.ts` — Ajouter `DEMO_DATA` (bibliothèques + casques + logs) + action `loadDemoData()`
-2. `src/pages/Settings.tsx` — Ajouter bouton "Charger données de démo" à côté du reset
-3. Vérifier que le store s'initialise avec les démo data si vide au démarrage (via `zustand` persist initialisation)
-
-### Stratégie d'auto-seed
-
-Dans `vrStore.ts`, au lieu de `EMPTY_LIBRARIES`, utiliser `DEMO_LIBRARIES` comme valeur initiale par défaut. Puisque Zustand `persist` hydrate depuis localStorage, les données de test n'écraseront les données existantes que si le storage est vide (nouveau utilisateur ou après reset).
-
-Cela signifie que je remplace simplement `EMPTY_LIBRARIES` et `[]` par les vraies données de demo dans les valeurs initiales du store. Un utilisateur existant (localStorage déjà rempli) ne sera pas affecté.
+1. `vite.config.ts` — proxy `/api` → `http://localhost:3001`
+2. `src/lib/serverApi.ts` — URLs relatives `/api/...`
+3. `server/sync-server.js` — servir `dist/` + catch-all React router
+4. `package.json` — scripts `start`, `dev:server`
+5. `src/pages/Settings.tsx` — mettre à jour le guide de démarrage
