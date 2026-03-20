@@ -37,7 +37,6 @@ const PAGE_TITLES: Record<string, string> = {
   "/settings": "Paramètres",
 };
 
-import { checkServer } from "@/lib/serverApi";
 
 function ServerModeBadge() {
   const { settings } = useVRStore();
