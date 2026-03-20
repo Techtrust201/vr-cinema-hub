@@ -1,4 +1,4 @@
-import { Battery, Wifi, Usb, MapPin, Clapperboard, Pencil, Trash2, Check, X } from "lucide-react";
+import { Battery, Wifi, Usb, MapPin, Clapperboard, Pencil, Trash2, Check, X, Signal, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Device, LibraryType } from "@/store/vrStore";
 import { useState } from "react";
@@ -7,6 +7,7 @@ interface DeviceCardProps {
   device: Device;
   onUpdate?: (updates: Partial<Device>) => void;
   onRemove?: () => void;
+  onPrepareWifi?: () => Promise<void>;
 }
 
 const statusMap = {

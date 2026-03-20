@@ -107,6 +107,18 @@ app.post("/api/connect", (req, res) => {
   }
 });
 
+// ─── Prepare Wi-Fi ADB: set device to listen on TCP port 5555 ────────────────
+app.post("/api/tcpip/:serial", (req, res) => {
+  const { serial } = req.params;
+  if (!checkAdb()) return res.status(503).json({ error: "ADB not found in PATH" });
+  try {
+    const output = execSync(`adb -s ${serial} tcpip 5555`, { encoding: "utf8", timeout: 8000 });
+    res.json({ success: true, output: output.trim() });
+  } catch (err) {
+    res.status(500).json({ error: "adb tcpip failed", detail: err.message });
+  }
+});
+
 // ─── Real device status (battery + storage) from ADB ─────────────────────────
 app.get("/api/device-status/:serial", (req, res) => {
   const { serial } = req.params;
