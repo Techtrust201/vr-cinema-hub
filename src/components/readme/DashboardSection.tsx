@@ -76,7 +76,7 @@ export const DashboardSection = () => {
           </SectionCard>
           <SectionCard>
             <p className="text-sm font-medium text-foreground mb-2">Vérification ADB</p>
-            <CodeBlock code="adb devices" codeTitle="terminal" />
+            <CodeBlock code="adb devices" title="terminal" />
             <p className="text-xs text-muted-foreground mt-2">Le casque doit apparaître avec l'état <code className="font-mono text-[hsl(140_70%_55%)]">device</code>. Ensuite, rafraîchir la page /devices du dashboard.</p>
           </SectionCard>
         </div>
