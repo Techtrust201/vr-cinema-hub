@@ -14,6 +14,7 @@ import {
   ArrowUpDown,
   ArrowUp,
   ArrowDown,
+  X,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -29,15 +30,28 @@ interface FlatVideo {
   sizeGB: number;
   duration: string;
   addedAt: string;
+  addedAtRaw: number;
+  durationSec: number;
 }
 
+type SortKey = "sizeGB" | "durationSec" | "addedAtRaw";
+type SortDir = "asc" | "desc";
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
+
+function parseDurationSec(d: string): number {
+  const parts = d.split(":").map(Number);
+  if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
+  if (parts.length === 2) return parts[0] * 60 + parts[1];
+  return 0;
+}
 
 function flattenLibraries(libraries: Library[]): FlatVideo[] {
   const rows: FlatVideo[] = [];
   for (const lib of libraries) {
     for (const pl of lib.playlists) {
       for (const v of pl.videos) {
+        const raw = new Date(v.addedAt).getTime();
         rows.push({
           library: lib.name,
           libraryId: lib.id,
@@ -48,6 +62,8 @@ function flattenLibraries(libraries: Library[]): FlatVideo[] {
           sizeGB: v.sizeGB,
           duration: v.duration,
           addedAt: new Date(v.addedAt).toLocaleDateString("fr-FR"),
+          addedAtRaw: isNaN(raw) ? 0 : raw,
+          durationSec: parseDurationSec(v.duration),
         });
       }
     }
@@ -100,23 +116,86 @@ function Pill({ label, type }: { label: string; type: "format" | "stereo" | "lib
   );
 }
 
+// ─── Sortable column header ───────────────────────────────────────────────────
+
+function SortHeader({
+  label,
+  sortKey,
+  current,
+  dir,
+  onSort,
+  className,
+}: {
+  label: string;
+  sortKey: SortKey;
+  current: SortKey | null;
+  dir: SortDir;
+  onSort: (k: SortKey) => void;
+  className?: string;
+}) {
+  const active = current === sortKey;
+  const Icon = active ? (dir === "asc" ? ArrowUp : ArrowDown) : ArrowUpDown;
+  return (
+    <th
+      className={cn(
+        "px-3 py-2.5 font-semibold uppercase tracking-wider text-[10px] cursor-pointer select-none group",
+        "text-muted-foreground/80 hover:text-foreground transition-colors",
+        className
+      )}
+      onClick={() => onSort(sortKey)}
+    >
+      <span className="inline-flex items-center gap-1">
+        {label}
+        <Icon
+          size={10}
+          className={cn(
+            "transition-opacity",
+            active ? "opacity-100 text-[hsl(var(--vr-violet))]" : "opacity-30 group-hover:opacity-60"
+          )}
+        />
+      </span>
+    </th>
+  );
+}
+
 // ─── Main page ───────────────────────────────────────────────────────────────
 
 export default function Export() {
   const { libraries } = useVRStore();
   const [filterLibrary, setFilterLibrary] = useState<string>("all");
+  const [search, setSearch] = useState("");
+  const [sortKey, setSortKey] = useState<SortKey | null>(null);
+  const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [copied, setCopied] = useState(false);
 
   const allVideos = useMemo(() => flattenLibraries(libraries), [libraries]);
 
-  const filtered = useMemo(
-    () => (filterLibrary === "all" ? allVideos : allVideos.filter((v) => v.libraryId === filterLibrary)),
-    [allVideos, filterLibrary]
-  );
+  const handleSort = (key: SortKey) => {
+    if (sortKey === key) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortKey(key);
+      setSortDir("desc");
+    }
+  };
+
+  const filtered = useMemo(() => {
+    let rows = filterLibrary === "all" ? allVideos : allVideos.filter((v) => v.libraryId === filterLibrary);
+    if (search.trim()) {
+      const q = search.trim().toLowerCase();
+      rows = rows.filter((v) => v.name.toLowerCase().includes(q));
+    }
+    if (sortKey) {
+      rows = [...rows].sort((a, b) => {
+        const diff = a[sortKey] - b[sortKey];
+        return sortDir === "asc" ? diff : -diff;
+      });
+    }
+    return rows;
+  }, [allVideos, filterLibrary, search, sortKey, sortDir]);
 
   const totalSizeGB = filtered.reduce((s, v) => s + v.sizeGB, 0);
 
-  // Stats per library
   const libStats = useMemo(() => {
     const map: Record<string, { name: string; count: number; sizeGB: number }> = {};
     for (const lib of libraries) {
@@ -217,7 +296,6 @@ export default function Export() {
 
       {/* Library stat cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        {/* All */}
         <button
           onClick={() => setFilterLibrary("all")}
           className={cn(
@@ -259,7 +337,6 @@ export default function Export() {
           );
         })}
 
-        {/* Total size summary */}
         <div className="flex flex-col gap-1 p-4 rounded-xl border bg-[hsl(var(--vr-surface))] border-border/50">
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
             <Download size={11} />
@@ -272,12 +349,44 @@ export default function Export() {
 
       {/* Table */}
       <div className="rounded-xl border border-border/60 overflow-hidden bg-[hsl(var(--vr-surface))]">
-        <div className="px-4 py-3 border-b border-border/50 flex items-center justify-between">
-          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
-            <Film size={12} />
-            {filtered.length} fichier{filtered.length !== 1 ? "s" : ""}
-          </p>
-          <p className="text-xs text-muted-foreground/70 font-mono">{totalSizeGB.toFixed(2)} GB total</p>
+        {/* Table toolbar */}
+        <div className="px-4 py-3 border-b border-border/50 flex flex-col sm:flex-row sm:items-center gap-3">
+          {/* Search */}
+          <div className="relative flex-1 max-w-xs">
+            <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground/50 pointer-events-none" />
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Rechercher un fichier…"
+              className="w-full pl-8 pr-7 py-1.5 text-xs rounded-lg bg-background/60 border border-border/50 focus:border-[hsl(var(--vr-violet)_/_0.5)] focus:outline-none focus:ring-1 focus:ring-[hsl(var(--vr-violet)_/_0.3)] text-foreground placeholder:text-muted-foreground/40 transition-all"
+            />
+            {search && (
+              <button
+                onClick={() => setSearch("")}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground/40 hover:text-muted-foreground transition-colors"
+              >
+                <X size={12} />
+              </button>
+            )}
+          </div>
+
+          <div className="flex items-center gap-3 ml-auto">
+            {sortKey && (
+              <button
+                onClick={() => { setSortKey(null); setSortDir("desc"); }}
+                className="flex items-center gap-1 text-[10px] text-muted-foreground/60 hover:text-muted-foreground transition-colors"
+              >
+                <X size={10} />
+                Réinitialiser tri
+              </button>
+            )}
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+              <Film size={12} />
+              {filtered.length} fichier{filtered.length !== 1 ? "s" : ""}
+            </p>
+            <p className="text-xs text-muted-foreground/70 font-mono">{totalSizeGB.toFixed(2)} GB</p>
+          </div>
         </div>
 
         <div className="overflow-x-auto">
@@ -289,9 +398,30 @@ export default function Export() {
                 <th className="text-left px-3 py-2.5 font-semibold text-muted-foreground/80 uppercase tracking-wider text-[10px] hidden md:table-cell">Playlist</th>
                 <th className="text-center px-3 py-2.5 font-semibold text-muted-foreground/80 uppercase tracking-wider text-[10px]">Format</th>
                 <th className="text-center px-3 py-2.5 font-semibold text-muted-foreground/80 uppercase tracking-wider text-[10px]">Stéréo</th>
-                <th className="text-right px-3 py-2.5 font-semibold text-muted-foreground/80 uppercase tracking-wider text-[10px]">Taille</th>
-                <th className="text-right px-3 py-2.5 font-semibold text-muted-foreground/80 uppercase tracking-wider text-[10px] hidden lg:table-cell">Durée</th>
-                <th className="text-right px-4 py-2.5 font-semibold text-muted-foreground/80 uppercase tracking-wider text-[10px] hidden xl:table-cell">Ajouté le</th>
+                <SortHeader
+                  label="Taille"
+                  sortKey="sizeGB"
+                  current={sortKey}
+                  dir={sortDir}
+                  onSort={handleSort}
+                  className="text-right"
+                />
+                <SortHeader
+                  label="Durée"
+                  sortKey="durationSec"
+                  current={sortKey}
+                  dir={sortDir}
+                  onSort={handleSort}
+                  className="text-right hidden lg:table-cell"
+                />
+                <SortHeader
+                  label="Ajouté le"
+                  sortKey="addedAtRaw"
+                  current={sortKey}
+                  dir={sortDir}
+                  onSort={handleSort}
+                  className="text-right hidden xl:table-cell"
+                />
               </tr>
             </thead>
             <tbody>
@@ -301,7 +431,11 @@ export default function Export() {
                   className="border-b border-border/30 last:border-0 hover:bg-muted/20 transition-colors"
                 >
                   <td className="px-4 py-3">
-                    <span className="font-mono text-foreground/90 text-[11px] break-all">{v.name}</span>
+                    <span className="font-mono text-foreground/90 text-[11px] break-all">
+                      {search.trim()
+                        ? highlightMatch(v.name, search.trim())
+                        : v.name}
+                    </span>
                   </td>
                   <td className="px-3 py-3 hidden sm:table-cell">
                     <Pill label={v.library} type="library" />
@@ -329,7 +463,7 @@ export default function Export() {
               {filtered.length === 0 && (
                 <tr>
                   <td colSpan={8} className="px-4 py-10 text-center text-muted-foreground/60">
-                    Aucune vidéo dans cette bibliothèque.
+                    {search.trim() ? `Aucun fichier ne correspond à "${search}"` : "Aucune vidéo dans cette bibliothèque."}
                   </td>
                 </tr>
               )}
@@ -349,5 +483,21 @@ done <<< "$(cat filenames.txt)"`}
         </pre>
       </div>
     </div>
+  );
+}
+
+// ─── Highlight search match ───────────────────────────────────────────────────
+
+function highlightMatch(text: string, query: string): React.ReactNode {
+  const idx = text.toLowerCase().indexOf(query.toLowerCase());
+  if (idx === -1) return text;
+  return (
+    <>
+      {text.slice(0, idx)}
+      <mark className="bg-[hsl(var(--vr-violet)_/_0.25)] text-[hsl(var(--vr-violet))] rounded-[2px] not-italic">
+        {text.slice(idx, idx + query.length)}
+      </mark>
+      {text.slice(idx + query.length)}
+    </>
   );
 }
