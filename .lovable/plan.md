@@ -1,33 +1,60 @@
 
-# Plan — Page README "VR Ultimate" (style Dark & Tech VR)
+## Ce que je comprends
 
-## Vue d'ensemble
-Une page web immersive et esthétique qui présente le README du projet VR Ultimate. Style sombre avec accents néon violet/cyan, navigation par onglets, animations subtiles.
+La page actuelle est juste une **documentation README** statique. Ce n'est pas du tout l'application. L'utilisateur veut que je construise le **dashboard web complet** — l'application réelle qui gère ses bibliothèques VR, ses casques et ses synchronisations.
 
-## Design System
-- **Palette** : fond `#0a0a0f`, surfaces `#111118`, accents violet `#7c3aed` → cyan `#06b6d4`
-- **Typographie** : Inter pour le corps, mono pour les codes
-- **Effets** : glows néon sur les accents, gradients, bordures subtiles
+## Ce que je vais construire : Le Dashboard VR Ultimate
 
-## Structure — Onglets de navigation
-Barre de navigation fixe en haut avec 6 onglets :
+Une application web complète à 4 pages, dark & tech, opérationnelle :
 
-1. **🏠 Aperçu** — Hero avec titre animé, description du projet, tableau de statut avec badges ✅/❌ colorés, deux colonnes (Dashboard vs App VR)
-2. **⚡ Démarrage** — Prérequis (4 cards avec icônes : Node.js, ffmpeg, ADB, vérification) + blocs de code bash stylisés (fond noir, prompt `$`, syntaxe colorée)
-3. **📦 Installation** — 5 étapes en accordéon/stepper vertical numéroté, chaque étape avec son bloc de code
-4. **🎮 Dashboard** — 3 sections (Bibliothèques / Casques / Sync) avec cards, icônes Lucide, descriptions détaillées
-5. **🚀 Phases Unity** — Timeline verticale pour les phases 0→6 avec badges d'état (✅ Fait / ⏳ À faire), description de chaque phase
-6. **🔧 Référence** — Tableau des APIs (méthode GET/POST avec badges de couleur), structure de fichiers en arbre, dépannage en accordéon
+```text
+/ (Accueil)           → Vue d'ensemble, status live des casques
+/libraries            → Gestion bibliothèques Location + Animations
+/devices              → Casques connectés (ADB simulé)
+/sync                 → Lancer la synchronisation push
+```
 
-## Composants clés à créer
-- `ReadmeNav` : barre onglets sticky avec indicateur actif lumineux
-- `CodeBlock` : terminal stylisé avec fond `#0d0d14`, prompt `$` en cyan, commande en blanc, copie au clipboard
-- `StatusBadge` : badge ✅/❌ avec couleurs et glow
-- `PhaseTimeline` : timeline verticale avec ligne centrale violette, points lumineux, phases complètes vs à faire
-- `ApiTable` : tableau avec méthode badge (GET=cyan, POST=violet), hover highlight
-- `PrerequisiteCard` : card avec icône, titre, commande de vérification
+### Détail des 4 pages
 
-## Fichiers à créer/modifier
-- `src/pages/Index.tsx` → page principale avec état d'onglet actif
-- `src/components/readme/` → tous les composants spécifiques
-- `src/index.css` → variables de couleur VR dark theme
+**1. Accueil (`/`)** — Dashboard live
+- Header avec logo VR Ultimate + indicateur de statut
+- 4 KPI cards : nb vidéos Location, nb vidéos Animations, casques connectés, dernière sync
+- Activité récente (logs de sync)
+- Accès rapide aux 3 sections
+
+**2. Bibliothèques (`/libraries`)**
+- Deux onglets : Location | Animations
+- Chaque bibliothèque liste ses playlists avec accordéon
+- Dans chaque playlist : liste des vidéos avec badge 360°/180°, format stéréo, taille
+- Bouton "+ Ajouter playlist" (modal)
+- Zone drag & drop pour uploader des vidéos (simulé dans le front)
+- Badge de statut par vidéo (360/180, Mono/SBS, taille)
+
+**3. Casques (`/devices`)**
+- Liste des casques détectés (simulés avec données réalistes)
+- Card par casque : identifiant série, statut (connecté/déconnecté), type (Location/Animations), espace disque
+- Bouton "Rafraîchir" (appel ADB)
+- Instructions de connexion USB + Wi-Fi
+
+**4. Sync (`/sync`)**
+- Sélecteur : bibliothèque (Location / Animations)
+- Sélecteur : casque cible (un précis ou "Tous")
+- Bouton "Lancer la sync"
+- Progress bar animée + logs de progression en temps réel (simulé)
+- Historique des syncs récentes avec statut ✅/❌
+
+### Design
+- Même design system Dark VR déjà en place (violet/cyan, glows, animations)
+- Navigation sidebar ou topbar avec les 4 sections
+- Responsive mobile
+
+### Fichiers à créer/modifier
+- `src/pages/Index.tsx` → Dashboard home
+- `src/pages/Libraries.tsx` → Bibliothèques
+- `src/pages/Devices.tsx` → Casques
+- `src/pages/Sync.tsx` → Synchronisation
+- `src/components/dashboard/` → Composants réutilisables (StatsCard, VideoRow, DeviceCard, SyncLog, etc.)
+- `src/App.tsx` → Routes vers les 4 pages
+- Supprimer tous les composants `readme/` devenus inutiles
+
+> Note : Sans backend réel (Next.js/Node), les données seront gérées en state React (localStorage pour la persistance). Les appels ADB réels nécessitent le serveur Node.js du projet VR — le dashboard web ici simule l'interface ; les vraies commandes ADB se font côté serveur.
