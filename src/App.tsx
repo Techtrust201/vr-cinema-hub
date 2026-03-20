@@ -27,6 +27,7 @@ const App = () => (
             <Route path="/devices" element={<Devices />} />
             <Route path="/sync" element={<Sync />} />
             <Route path="/settings" element={<Settings />} />
+            <Route path="/stats" element={<Stats />} />
           </Route>
           <Route path="*" element={<NotFound />} />
         </Routes>
