@@ -2,8 +2,9 @@ import { useState, useRef, useEffect } from "react";
 import { useVRStore, LibraryType, SyncLog } from "@/store/vrStore";
 import SyncLogItem from "@/components/dashboard/SyncLogItem";
 import { cn } from "@/lib/utils";
-import { Play, RefreshCw, Headset, Library, Trash2 } from "lucide-react";
+import { Play, RefreshCw, Headset, Library, Trash2, Zap, Radio } from "lucide-react";
 import { toast } from "sonner";
+import { checkServer, pushSync, ServerStatus } from "@/lib/serverApi";
 
 function generateSyncLines(
   library: LibraryType,
@@ -35,42 +36,117 @@ function generateSyncLines(
 }
 
 export default function Sync() {
-  const { libraries, devices, syncLogs, addSyncLog, updateSyncLog, updateDevice, clearSyncLogs } = useVRStore();
+  const { libraries, devices, syncLogs, settings, addSyncLog, updateSyncLog, updateDevice, clearSyncLogs } = useVRStore();
   const [selectedLib, setSelectedLib] = useState<LibraryType>("location");
   const [selectedDevice, setSelectedDevice] = useState<"all" | string>("all");
   const [running, setRunning] = useState(false);
   const [progress, setProgress] = useState(0);
   const [activeLogId, setActiveLogId] = useState<string | null>(null);
   const logsEndRef = useRef<HTMLDivElement>(null);
-  // Use a ref to accumulate lines without stale closure issues
   const linesRef = useRef<string[]>([]);
+
+  // Server connection state
+  const [serverStatus, setServerStatus] = useState<ServerStatus>("checking");
+
+  useEffect(() => {
+    checkServer(settings.serverUrl).then(setServerStatus);
+  }, [settings.serverUrl]);
 
   const connectedDevices = devices.filter((d) => d.status === "connected");
   const library = libraries.find((l) => l.id === selectedLib);
   const allVideos = library?.playlists.flatMap((p) => p.videos) ?? [];
   const targetDevices = selectedDevice === "all" ? connectedDevices : connectedDevices.filter((d) => d.id === selectedDevice);
 
-  // Auto-scroll logs
   useEffect(() => {
     if (activeLogId) logsEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [activeLogId, syncLogs]);
 
-  const handleSync = () => {
-    if (targetDevices.length === 0) {
-      toast.error("Aucun casque connecté disponible");
-      return;
-    }
-    if (allVideos.length === 0) {
-      toast.error("La bibliothèque est vide");
-      return;
-    }
+  // ── REAL ADB SYNC ──
+  const handleRealSync = async (logId: string) => {
+    const startLine = `[${new Date().toLocaleTimeString()}] Démarrage de la synchronisation ADB réelle…`;
+    linesRef.current = [startLine];
 
-    const logId = `log-${Date.now()}`;
+    const newLog: SyncLog = {
+      id: logId,
+      at: new Date().toISOString(),
+      library: selectedLib,
+      deviceIds: targetDevices.map((d) => d.id),
+      videosTotal: allVideos.length,
+      videosPushed: 0,
+      videosSkipped: 0,
+      status: "running",
+      lines: [startLine],
+    };
+    addSyncLog(newLog);
+    setActiveLogId(logId);
+    setRunning(true);
+    setProgress(10);
+
+    // Simulated progress while waiting for the server response
+    const progressInterval = setInterval(() => {
+      setProgress((p) => Math.min(p + 4, 88));
+    }, 500);
+
+    let totalPushed = 0;
+    let totalSkipped = 0;
+    let totalErrors = 0;
+    const allLines: string[] = [startLine];
+
+    try {
+      for (const device of targetDevices) {
+        const deviceLine = `[${new Date().toLocaleTimeString()}] → Casque : ${device.name} (${device.serial})`;
+        allLines.push(deviceLine);
+        updateSyncLog(logId, { lines: [...allLines] });
+
+        const result = await pushSync(settings.serverUrl, {
+          deviceSerial: device.serial,
+          videoStoragePath: settings.videoStoragePath,
+          videos: allVideos.map((v) => ({ name: v.name, sizeGB: v.sizeGB })),
+        });
+
+        totalPushed += result.pushed;
+        totalSkipped += result.skipped;
+        totalErrors += result.errors;
+        allLines.push(...result.lines);
+        updateSyncLog(logId, { lines: [...allLines] });
+
+        const now = new Date().toISOString();
+        updateDevice(device.id, { lastSyncAt: now });
+      }
+
+      clearInterval(progressInterval);
+      setProgress(100);
+
+      updateSyncLog(logId, {
+        status: totalErrors > 0 ? "error" : "success",
+        videosPushed: totalPushed,
+        videosSkipped: totalSkipped,
+        lines: allLines,
+      });
+
+      if (totalErrors > 0) {
+        toast.warning(`Sync terminée avec ${totalErrors} erreur(s)`);
+      } else {
+        toast.success(`Sync ADB terminée — ${totalPushed} fichier(s) envoyé(s)`);
+      }
+    } catch (err) {
+      clearInterval(progressInterval);
+      const errLine = `[${new Date().toLocaleTimeString()}] ✗ Erreur : ${err instanceof Error ? err.message : "Erreur inconnue"}`;
+      allLines.push(errLine);
+      updateSyncLog(logId, { status: "error", lines: allLines });
+      toast.error("La synchronisation ADB a échoué");
+    } finally {
+      setRunning(false);
+      setActiveLogId(null);
+    }
+  };
+
+  // ── SIMULATED SYNC ──
+  const handleSimulatedSync = (logId: string) => {
     const pushed = Math.ceil(allVideos.length * 0.4);
     const skipped = allVideos.length - pushed;
-    const startLine = `[${new Date().toLocaleTimeString()}] Démarrage de la synchronisation…`;
+    const startLine = `[${new Date().toLocaleTimeString()}] Démarrage de la synchronisation (simulation)…`;
 
-    // Init lines ref
     linesRef.current = [startLine];
 
     const newLog: SyncLog = {
@@ -118,15 +194,13 @@ export default function Sync() {
           lines: finalLines,
         });
 
-        // Update lastSyncAt on all target devices
         const now = new Date().toISOString();
         targetDevices.forEach((d) => updateDevice(d.id, { lastSyncAt: now }));
 
         setRunning(false);
         setActiveLogId(null);
-        toast.success(`Sync terminée — ${pushed} fichier(s) envoyé(s)`);
+        toast.success(`Sync simulée — ${pushed} fichier(s) envoyé(s)`);
       } else {
-        // Accumulate lines without stale closure — use updater callback pattern via ref
         const progressLine = `[${new Date().toLocaleTimeString()}] Traitement en cours… ${pct}%`;
         linesRef.current = [...linesRef.current, progressLine];
         updateSyncLog(logId, { lines: [...linesRef.current] });
@@ -134,7 +208,27 @@ export default function Sync() {
     }, 300);
   };
 
+  const handleSync = (forceSimulation = false) => {
+    if (targetDevices.length === 0) {
+      toast.error("Aucun casque connecté disponible");
+      return;
+    }
+    if (allVideos.length === 0) {
+      toast.error("La bibliothèque est vide");
+      return;
+    }
+
+    const logId = `log-${Date.now()}`;
+
+    if (!forceSimulation && serverStatus === "connected") {
+      handleRealSync(logId);
+    } else {
+      handleSimulatedSync(logId);
+    }
+  };
+
   const canSync = !running && targetDevices.length > 0 && allVideos.length > 0;
+  const isRealMode = serverStatus === "connected";
 
   return (
     <div className="p-6 md:p-8 space-y-8 animate-fade-in-up">
@@ -149,8 +243,25 @@ export default function Sync() {
       <div className="grid lg:grid-cols-2 gap-6">
         {/* Config panel */}
         <div className="rounded-xl border border-border/50 bg-[hsl(var(--vr-surface))] overflow-hidden">
-          <div className="px-5 py-4 border-b border-border/50">
+          <div className="px-5 py-4 border-b border-border/50 flex items-center justify-between">
             <h2 className="text-sm font-semibold">Configuration</h2>
+            {/* Mode badge */}
+            <span className={cn(
+              "flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium border",
+              serverStatus === "checking"
+                ? "bg-muted/40 text-muted-foreground border-border/40"
+                : isRealMode
+                  ? "bg-[hsl(140_70%_40%_/_0.12)] text-[hsl(140_70%_55%)] border-[hsl(140_70%_40%_/_0.3)]"
+                  : "bg-[hsl(40_80%_50%_/_0.12)] text-[hsl(40_80%_60%)] border-[hsl(40_80%_50%_/_0.3)]"
+            )}>
+              {serverStatus === "checking" ? (
+                <><RefreshCw size={9} className="animate-spin" /> Vérification…</>
+              ) : isRealMode ? (
+                <><Zap size={9} /> Mode réel</>
+              ) : (
+                <><Radio size={9} /> Simulation</>
+              )}
+            </span>
           </div>
           <div className="p-5 space-y-5">
             {/* Library selector */}
@@ -242,7 +353,7 @@ export default function Sync() {
             {running && (
               <div className="space-y-2">
                 <div className="flex justify-between text-xs text-muted-foreground">
-                  <span>Progression</span>
+                  <span>{isRealMode ? "Sync ADB en cours…" : "Simulation en cours…"}</span>
                   <span className="font-mono">{progress}%</span>
                 </div>
                 <div className="h-2 rounded-full bg-muted overflow-hidden">
@@ -254,23 +365,43 @@ export default function Sync() {
               </div>
             )}
 
-            {/* Launch button */}
-            <button
-              onClick={handleSync}
-              disabled={!canSync}
-              className={cn(
-                "w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold transition-all duration-200 active:scale-[0.98]",
-                canSync
-                  ? "bg-[hsl(var(--vr-violet))] text-white hover:bg-[hsl(var(--vr-violet)_/_0.85)] glow-violet"
-                  : "bg-muted text-muted-foreground cursor-not-allowed opacity-50"
+            {/* Launch buttons */}
+            <div className="space-y-2">
+              <button
+                onClick={() => handleSync(false)}
+                disabled={!canSync}
+                className={cn(
+                  "w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold transition-all duration-200 active:scale-[0.98]",
+                  canSync
+                    ? isRealMode
+                      ? "bg-[hsl(140_70%_38%)] text-white hover:bg-[hsl(140_70%_32%)] shadow-[0_0_20px_hsl(140_70%_38%_/_0.3)]"
+                      : "bg-[hsl(var(--vr-violet))] text-white hover:bg-[hsl(var(--vr-violet)_/_0.85)] glow-violet"
+                    : "bg-muted text-muted-foreground cursor-not-allowed opacity-50"
+                )}
+              >
+                {running ? (
+                  <><RefreshCw size={15} className="animate-spin" /> {isRealMode ? "Sync ADB en cours…" : "Synchronisation en cours…"}</>
+                ) : (
+                  <>{isRealMode ? <Zap size={15} /> : <Play size={15} />} {isRealMode ? "Lancer (ADB réel)" : "Lancer la synchronisation"}</>
+                )}
+              </button>
+
+              {/* Force simulation button when server is connected */}
+              {isRealMode && !running && (
+                <button
+                  onClick={() => handleSync(true)}
+                  disabled={!canSync}
+                  className={cn(
+                    "w-full flex items-center justify-center gap-2 py-2 rounded-xl text-xs font-medium border transition-all duration-200 active:scale-[0.98]",
+                    canSync
+                      ? "border-border/50 text-muted-foreground hover:text-foreground hover:border-border"
+                      : "border-border/30 text-muted-foreground/30 cursor-not-allowed"
+                  )}
+                >
+                  <Radio size={12} /> Lancer en simulation
+                </button>
               )}
-            >
-              {running ? (
-                <><RefreshCw size={15} className="animate-spin" /> Synchronisation en cours…</>
-              ) : (
-                <><Play size={15} /> Lancer la synchronisation</>
-              )}
-            </button>
+            </div>
           </div>
         </div>
 
