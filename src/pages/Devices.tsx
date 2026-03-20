@@ -4,7 +4,7 @@ import DeviceCard from "@/components/dashboard/DeviceCard";
 import { RefreshCw, Usb, Wifi, Info, Plus, X, Scan, ChevronRight, Loader2, Signal } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
-import { checkServer, fetchServerDevices, fetchDeviceStatus, connectDevice, ServerDevice, ServerStatus } from "@/lib/serverApi";
+import { checkServer, fetchServerDevices, fetchDeviceStatus, connectDevice, prepareTcpip, ServerDevice, ServerStatus } from "@/lib/serverApi";
 
 interface AddDeviceModalProps {
   onClose: () => void;
@@ -357,6 +357,16 @@ export default function Devices() {
     toast.info(`Casque "${name}" supprimé`);
   };
 
+  const handlePrepareWifi = async (device: Device) => {
+    const baseUrl = settings.publicServerUrl?.trim() || settings.serverUrl?.trim() || undefined;
+    try {
+      await prepareTcpip(device.serial, baseUrl);
+      toast.success(`${device.name} prêt — débranchez le câble puis cliquez Wi-Fi ADB`);
+    } catch {
+      toast.error(`Impossible de préparer ${device.name} en Wi-Fi`);
+    }
+  };
+
   const handleAdbDetect = async () => {
     setAdbDetecting(true);
     try {
@@ -476,6 +486,7 @@ export default function Devices() {
                 device={d}
                 onUpdate={(updates) => updateDevice(d.id, updates)}
                 onRemove={() => handleRemove(d.id, d.name)}
+                onPrepareWifi={serverStatus === "connected" ? () => handlePrepareWifi(d) : undefined}
               />
             ))}
           </div>

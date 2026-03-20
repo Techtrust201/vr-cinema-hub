@@ -1,4 +1,4 @@
-import { Battery, Wifi, Usb, MapPin, Clapperboard, Pencil, Trash2, Check, X } from "lucide-react";
+import { Battery, Wifi, Usb, MapPin, Clapperboard, Pencil, Trash2, Check, X, Signal, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Device, LibraryType } from "@/store/vrStore";
 import { useState } from "react";
@@ -7,6 +7,7 @@ interface DeviceCardProps {
   device: Device;
   onUpdate?: (updates: Partial<Device>) => void;
   onRemove?: () => void;
+  onPrepareWifi?: () => Promise<void>;
 }
 
 const statusMap = {
@@ -33,11 +34,22 @@ const statusMap = {
   },
 };
 
-export default function DeviceCard({ device, onUpdate, onRemove }: DeviceCardProps) {
+export default function DeviceCard({ device, onUpdate, onRemove, onPrepareWifi }: DeviceCardProps) {
   const s = statusMap[device.status];
   const storagePercent = Math.round((device.storageUsedGB / device.storageTotalGB) * 100);
   const [editingName, setEditingName] = useState(false);
   const [nameValue, setNameValue] = useState(device.name);
+  const [preparingWifi, setPreparingWifi] = useState(false);
+
+  const handlePrepareWifi = async () => {
+    if (!onPrepareWifi) return;
+    setPreparingWifi(true);
+    try {
+      await onPrepareWifi();
+    } finally {
+      setPreparingWifi(false);
+    }
+  };
 
   const commitName = () => {
     const trimmed = nameValue.trim();
@@ -149,11 +161,28 @@ export default function DeviceCard({ device, onUpdate, onRemove }: DeviceCardPro
       </div>
 
       {/* Footer */}
-      <div className="flex items-center justify-between pt-1 border-t border-border/40">
+      <div className="flex items-center justify-between gap-2 pt-1 border-t border-border/40">
         {device.status === "connected" && (
           <span className="flex items-center gap-1 text-xs text-muted-foreground">
             <Battery size={12} /> {device.battery}%
           </span>
+        )}
+        {/* Préparer Wi-Fi button — USB only (no ipAddress) */}
+        {onPrepareWifi && !device.ipAddress && (
+          <button
+            onClick={handlePrepareWifi}
+            disabled={preparingWifi || device.status !== "connected"}
+            title={device.status !== "connected" ? "Casque doit être connecté en USB" : "Active le mode TCP pour la connexion Wi-Fi ADB"}
+            className={cn(
+              "opacity-0 group-hover:opacity-100 flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium border transition-all active:scale-95",
+              device.status === "connected"
+                ? "border-[hsl(var(--vr-cyan)_/_0.35)] bg-[hsl(var(--vr-cyan)_/_0.08)] text-[hsl(var(--vr-cyan))] hover:bg-[hsl(var(--vr-cyan)_/_0.18)]"
+                : "border-border/30 text-muted-foreground/40 cursor-not-allowed"
+            )}
+          >
+            {preparingWifi ? <Loader2 size={11} className="animate-spin" /> : <Signal size={11} />}
+            Préparer Wi-Fi
+          </button>
         )}
         <span className="text-xs text-muted-foreground ml-auto">
           {device.lastSyncAt

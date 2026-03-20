@@ -90,6 +90,13 @@ export async function connectDevice(ip: string, port = 5555, baseUrl?: string): 
   return res.json();
 }
 
+/** Prepare a device for Wi-Fi ADB: runs adb tcpip 5555 on the given serial */
+export async function prepareTcpip(serial: string, baseUrl?: string): Promise<{ success: boolean; output: string }> {
+  const res = await fetch(`${apiBase(baseUrl)}/tcpip/${encodeURIComponent(serial)}`, { method: "POST" });
+  if (!res.ok) throw new Error("adb tcpip failed");
+  return res.json();
+}
+
 export interface DeviceAdbStatus {
   serial: string;
   battery: number;
