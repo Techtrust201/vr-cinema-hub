@@ -22,7 +22,7 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
 export default function Settings() {
-  const { settings, updateSettings, resetStore } = useVRStore();
+  const { settings, updateSettings, resetStore, loadDemoData } = useVRStore();
   const [form, setForm] = useState({ ...settings });
   const [showToken, setShowToken] = useState(false);
   const [confirmReset, setConfirmReset] = useState(false);
