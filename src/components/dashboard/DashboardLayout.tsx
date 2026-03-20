@@ -285,7 +285,8 @@ export default function DashboardLayout() {
             <span className="font-bold text-sm tracking-widest gradient-text lg:hidden">VR ULTIMATE</span>
           </div>
 
-          {/* Right: notification bell */}
+          {/* Right: server mode badge + notification bell */}
+          <ServerModeBadge />
           <NotificationBell />
         </header>
 
