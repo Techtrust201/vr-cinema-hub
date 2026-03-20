@@ -1,17 +1,25 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useVRStore, Device, LibraryType } from "@/store/vrStore";
 import DeviceCard from "@/components/dashboard/DeviceCard";
-import { RefreshCw, Usb, Wifi, Info, Plus, X } from "lucide-react";
+import { RefreshCw, Usb, Wifi, Info, Plus, X, Scan, ChevronRight, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
+import { checkServer, fetchServerDevices, ServerDevice, ServerStatus } from "@/lib/serverApi";
 
-function AddDeviceModal({ onClose }: { onClose: () => void }) {
+interface AddDeviceModalProps {
+  onClose: () => void;
+  initialSerial?: string;
+  initialName?: string;
+  initialIp?: string;
+}
+
+function AddDeviceModal({ onClose, initialSerial = "", initialName = "", initialIp = "" }: AddDeviceModalProps) {
   const addDevice = useVRStore((s) => s.addDevice);
   const [form, setForm] = useState({
-    name: "",
-    serial: "",
+    name: initialName,
+    serial: initialSerial,
     type: "location" as LibraryType,
-    ipAddress: "",
+    ipAddress: initialIp,
     storageTotalGB: 128,
   });
 
@@ -131,10 +139,84 @@ function AddDeviceModal({ onClose }: { onClose: () => void }) {
   );
 }
 
+interface AdbDetectPanelProps {
+  adbDevices: ServerDevice[];
+  onAdd: (d: ServerDevice) => void;
+  onClose: () => void;
+}
+
+function AdbDetectPanel({ adbDevices, onAdd, onClose }: AdbDetectPanelProps) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/70 backdrop-blur-sm" onClick={onClose}>
+      <div
+        className="w-full max-w-md mx-4 rounded-xl border border-[hsl(var(--vr-cyan)_/_0.35)] bg-[hsl(var(--vr-surface))] p-6 shadow-[0_0_40px_hsl(var(--vr-cyan)_/_0.18)]"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <Scan size={15} className="text-[hsl(var(--vr-cyan))]" />
+            <h3 className="text-base font-semibold">Appareils ADB détectés</h3>
+          </div>
+          <button onClick={onClose} className="p-1 rounded text-muted-foreground hover:bg-muted/50"><X size={15} /></button>
+        </div>
+
+        {adbDevices.length === 0 ? (
+          <div className="py-10 text-center text-sm text-muted-foreground/60">
+            Aucun appareil ADB trouvé.<br />
+            <span className="text-xs">Vérifiez que votre casque est branché et que le débogage USB est activé.</span>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {adbDevices.map((d) => (
+              <div
+                key={d.serial}
+                className="flex items-center gap-3 px-4 py-3 rounded-lg border border-border/50 bg-background/40 hover:border-[hsl(var(--vr-cyan)_/_0.3)] transition-colors"
+              >
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium truncate">{d.model || "Meta Quest"}</p>
+                  <p className="text-[11px] font-mono text-muted-foreground/70 truncate">{d.serial}</p>
+                  {d.ipAddress && (
+                    <p className="text-[10px] font-mono text-[hsl(var(--vr-cyan)_/_0.7)]">{d.ipAddress}</p>
+                  )}
+                </div>
+                <span className={cn(
+                  "text-[10px] font-medium px-2 py-0.5 rounded-full border shrink-0",
+                  d.status === "device"
+                    ? "bg-[hsl(140_70%_40%_/_0.12)] text-[hsl(140_70%_55%)] border-[hsl(140_70%_40%_/_0.3)]"
+                    : "bg-muted/40 text-muted-foreground border-border/40"
+                )}>
+                  {d.status === "device" ? "Connecté" : d.status}
+                </span>
+                <button
+                  onClick={() => onAdd(d)}
+                  className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-[hsl(var(--vr-cyan)_/_0.1)] border border-[hsl(var(--vr-cyan)_/_0.3)] text-[hsl(var(--vr-cyan))] text-xs font-medium hover:bg-[hsl(var(--vr-cyan)_/_0.18)] transition-colors active:scale-95 shrink-0"
+                >
+                  Ajouter <ChevronRight size={11} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function Devices() {
-  const { devices, refreshDevices, updateDevice, removeDevice } = useVRStore();
+  const { devices, settings, refreshDevices, updateDevice, removeDevice } = useVRStore();
   const [refreshing, setRefreshing] = useState(false);
   const [addModalOpen, setAddModalOpen] = useState(false);
+  const [addInitial, setAddInitial] = useState<{ serial?: string; name?: string; ip?: string }>({});
+
+  // ADB detect state
+  const [serverStatus, setServerStatus] = useState<ServerStatus>("checking");
+  const [adbDetecting, setAdbDetecting] = useState(false);
+  const [adbDevices, setAdbDevices] = useState<ServerDevice[]>([]);
+  const [adbPanelOpen, setAdbPanelOpen] = useState(false);
+
+  useEffect(() => {
+    checkServer(settings.serverUrl).then(setServerStatus);
+  }, [settings.serverUrl]);
 
   const connected = devices.filter((d) => d.status === "connected");
   const disconnected = devices.filter((d) => d.status === "disconnected");
@@ -153,6 +235,29 @@ export default function Devices() {
     toast.info(`Casque "${name}" supprimé`);
   };
 
+  const handleAdbDetect = async () => {
+    setAdbDetecting(true);
+    try {
+      const found = await fetchServerDevices(settings.serverUrl);
+      setAdbDevices(found);
+      setAdbPanelOpen(true);
+    } catch {
+      toast.error("Impossible de contacter le serveur ADB");
+    } finally {
+      setAdbDetecting(false);
+    }
+  };
+
+  const handleAddFromAdb = (d: ServerDevice) => {
+    setAdbPanelOpen(false);
+    setAddInitial({
+      serial: d.serial,
+      name: d.model ? `Meta ${d.model}` : "Meta Quest",
+      ip: d.ipAddress ?? "",
+    });
+    setAddModalOpen(true);
+  };
+
   return (
     <div className="p-6 md:p-8 space-y-8 animate-fade-in-up">
       {/* Header */}
@@ -163,9 +268,29 @@ export default function Devices() {
             Appareils Meta Quest détectés via ADB
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap justify-end">
+          {/* ADB Detect button */}
           <button
-            onClick={() => setAddModalOpen(true)}
+            onClick={handleAdbDetect}
+            disabled={serverStatus !== "connected" || adbDetecting}
+            title={serverStatus !== "connected" ? "Démarrez le serveur local pour utiliser cette fonction" : "Détecter les casques connectés via ADB"}
+            className={cn(
+              "flex items-center gap-2 px-4 py-2 rounded-lg border text-sm font-medium transition-all active:scale-95",
+              serverStatus === "connected"
+                ? "border-[hsl(140_70%_40%_/_0.35)] bg-[hsl(140_70%_40%_/_0.08)] text-[hsl(140_70%_55%)] hover:bg-[hsl(140_70%_40%_/_0.15)]"
+                : "border-border/40 bg-muted/30 text-muted-foreground/40 cursor-not-allowed"
+            )}
+          >
+            {adbDetecting
+              ? <Loader2 size={14} className="animate-spin" />
+              : <Scan size={14} />
+            }
+            Détecter via ADB
+            {serverStatus === "checking" && <Loader2 size={11} className="animate-spin opacity-50" />}
+            {serverStatus === "disconnected" && <span className="text-[10px] opacity-60">(serveur hors ligne)</span>}
+          </button>
+          <button
+            onClick={() => { setAddInitial({}); setAddModalOpen(true); }}
             className="flex items-center gap-2 px-4 py-2 rounded-lg border border-[hsl(var(--vr-cyan)_/_0.3)] bg-[hsl(var(--vr-cyan)_/_0.08)] text-[hsl(var(--vr-cyan))] text-sm font-medium hover:bg-[hsl(var(--vr-cyan)_/_0.15)] transition-all active:scale-95"
           >
             <Plus size={14} /> Ajouter
@@ -303,7 +428,21 @@ export default function Devices() {
         </div>
       </section>
 
-      {addModalOpen && <AddDeviceModal onClose={() => setAddModalOpen(false)} />}
+      {addModalOpen && (
+        <AddDeviceModal
+          onClose={() => setAddModalOpen(false)}
+          initialSerial={addInitial.serial}
+          initialName={addInitial.name}
+          initialIp={addInitial.ip}
+        />
+      )}
+      {adbPanelOpen && (
+        <AdbDetectPanel
+          adbDevices={adbDevices}
+          onAdd={handleAddFromAdb}
+          onClose={() => setAdbPanelOpen(false)}
+        />
+      )}
     </div>
   );
 }

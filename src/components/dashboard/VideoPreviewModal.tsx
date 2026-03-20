@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { X, Film, Calendar, Clock, HardDrive, Eye, Play, Pause, Monitor, Copy, Check } from "lucide-react";
+import { X, Film, Calendar, Clock, HardDrive, Eye, Play, Pause, Monitor, Copy, Check, Loader2, WifiOff } from "lucide-react";
 import { Video } from "@/store/vrStore";
 import { useVRStore } from "@/store/vrStore";
 import { cn } from "@/lib/utils";
+import { checkServer, getVideoUrl, ServerStatus } from "@/lib/serverApi";
 
 interface VideoPreviewModalProps {
   video: Video;
@@ -60,14 +61,31 @@ export default function VideoPreviewModal({ video, onClose }: VideoPreviewModalP
   const { settings } = useVRStore();
   const totalSecs = parseDuration(video.duration);
 
-  // Playback state
+  // Server connection state
+  const [serverStatus, setServerStatus] = useState<ServerStatus>("checking");
+
+  // HTML5 video state (real mode)
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const [videoState, setVideoState] = useState<"loading" | "ready" | "error">("loading");
+  const [realPlaying, setRealPlaying] = useState(false);
+  const [realProgress, setRealProgress] = useState(0);
+  const [realCurrentSecs, setRealCurrentSecs] = useState(0);
+  const [realDuration, setRealDuration] = useState(0);
+
+  // Simulated playback state (demo mode)
   const [playing, setPlaying] = useState(false);
-  const [progress, setProgress] = useState(0); // 0–100
+  const [progress, setProgress] = useState(0);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Copy state
   const [copied, setCopied] = useState(false);
 
+  // Check server on mount
+  useEffect(() => {
+    checkServer(settings.serverUrl).then(setServerStatus);
+  }, [settings.serverUrl]);
+
+  // Simulated playback logic (demo mode only)
   const clearTick = useCallback(() => {
     if (intervalRef.current) {
       clearInterval(intervalRef.current);
@@ -76,30 +94,63 @@ export default function VideoPreviewModal({ video, onClose }: VideoPreviewModalP
   }, []);
 
   useEffect(() => {
+    if (serverStatus === "connected") return; // Use real video in connected mode
     if (playing) {
-      // Each tick = 300ms, step = (300 / totalMs) * 100
       const totalMs = Math.max(totalSecs * 1000, 1000);
       const step = (300 / totalMs) * 100;
       intervalRef.current = setInterval(() => {
         setProgress((prev) => {
           const next = prev + step;
-          if (next >= 100) {
-            // Loop
-            return 0;
-          }
-          return next;
+          return next >= 100 ? 0 : next;
         });
       }, 300);
     } else {
       clearTick();
     }
     return clearTick;
-  }, [playing, totalSecs, clearTick]);
+  }, [playing, totalSecs, clearTick, serverStatus]);
 
-  // Cleanup on unmount
   useEffect(() => () => clearTick(), [clearTick]);
 
-  const currentSecs = (progress / 100) * totalSecs;
+  // Real video: sync progress bar from timeupdate
+  const handleTimeUpdate = () => {
+    const v = videoRef.current;
+    if (!v) return;
+    setRealCurrentSecs(v.currentTime);
+    setRealDuration(v.duration || 0);
+    setRealProgress(v.duration ? (v.currentTime / v.duration) * 100 : 0);
+  };
+
+  const handleVideoEnded = () => {
+    setRealPlaying(false);
+    setRealProgress(0);
+    setRealCurrentSecs(0);
+  };
+
+  const toggleRealPlay = () => {
+    const v = videoRef.current;
+    if (!v) return;
+    if (realPlaying) {
+      v.pause();
+      setRealPlaying(false);
+    } else {
+      v.play();
+      setRealPlaying(true);
+    }
+  };
+
+  const handleProgressClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const pct = ((e.clientX - rect.left) / rect.width) * 100;
+    const clamped = Math.min(100, Math.max(0, pct));
+    if (serverStatus === "connected" && videoRef.current && realDuration) {
+      videoRef.current.currentTime = (clamped / 100) * realDuration;
+    } else {
+      setProgress(clamped);
+    }
+  };
+
+  const simCurrentSecs = (progress / 100) * totalSecs;
   const filePath = `${settings.videoStoragePath.replace(/\/$/, "")}/${video.name}`;
   const res = resolutionInfo[video.format];
 
@@ -109,6 +160,17 @@ export default function VideoPreviewModal({ video, onClose }: VideoPreviewModalP
       setTimeout(() => setCopied(false), 1500);
     });
   };
+
+  const isConnected = serverStatus === "connected";
+  const isChecking = serverStatus === "checking";
+
+  // Determine what to show in the preview area
+  const displayProgress = isConnected ? realProgress : progress;
+  const displayCurrentSecs = isConnected ? realCurrentSecs : simCurrentSecs;
+  const displayPlaying = isConnected ? realPlaying : playing;
+  const displayDuration = isConnected && realDuration > 0
+    ? formatSeconds(realDuration)
+    : video.duration === "—" ? "—" : video.duration;
 
   return (
     <div
@@ -126,6 +188,21 @@ export default function VideoPreviewModal({ video, onClose }: VideoPreviewModalP
             <span className="text-sm font-medium truncate">{video.name}</span>
           </div>
           <div className="flex items-center gap-1.5 shrink-0 ml-2">
+            {/* Server status chip */}
+            {!isChecking && (
+              <span className={cn(
+                "flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-medium border",
+                isConnected
+                  ? "bg-[hsl(140_70%_40%_/_0.12)] text-[hsl(140_70%_55%)] border-[hsl(140_70%_40%_/_0.3)]"
+                  : "bg-muted/40 text-muted-foreground/60 border-border/40"
+              )}>
+                {isConnected ? (
+                  <><span className="w-1.5 h-1.5 rounded-full bg-[hsl(140_70%_55%)]" /> Serveur</>
+                ) : (
+                  <><WifiOff size={9} /> Démo</>
+                )}
+              </span>
+            )}
             {/* Copy path button */}
             <button
               onClick={handleCopy}
@@ -151,7 +228,7 @@ export default function VideoPreviewModal({ video, onClose }: VideoPreviewModalP
 
         {/* Preview area */}
         <div className="relative bg-background/60 border-b border-border/40">
-          <div className="aspect-video flex flex-col items-center justify-center gap-3">
+          <div className="aspect-video flex flex-col items-center justify-center gap-3 relative overflow-hidden">
             {/* Decorative grid */}
             <div
               className="absolute inset-0 opacity-[0.04]"
@@ -161,18 +238,72 @@ export default function VideoPreviewModal({ video, onClose }: VideoPreviewModalP
                 backgroundSize: "32px 32px",
               }}
             />
-            {/* Format badge overlay */}
-            <div className="relative z-10 w-20 h-20 rounded-2xl bg-[hsl(var(--vr-violet)_/_0.1)] border border-[hsl(var(--vr-violet)_/_0.2)] flex items-center justify-center">
-              <Film size={32} className="text-[hsl(var(--vr-violet)_/_0.5)]" />
-            </div>
-            <div className="relative z-10 text-center space-y-1">
-              <p className="text-xs text-muted-foreground/70 font-medium">Aperçu non disponible</p>
-              <p className="text-[11px] text-muted-foreground/40">
-                Connectez le stockage pour lire les vidéos
-              </p>
-            </div>
-            {/* Format pill */}
-            <div className="absolute top-3 right-3 flex items-center gap-1.5 z-10">
+
+            {/* ── REAL VIDEO (server connected) ── */}
+            {isChecking && (
+              <div className="relative z-10 flex flex-col items-center gap-3">
+                <Loader2 size={28} className="text-[hsl(var(--vr-violet)_/_0.5)] animate-spin" />
+                <p className="text-xs text-muted-foreground/60">Vérification du serveur…</p>
+              </div>
+            )}
+
+            {isConnected && (
+              <>
+                {/* Hidden video element — always mounted so we can bind events */}
+                <video
+                  ref={videoRef}
+                  src={getVideoUrl(settings.serverUrl, video.name)}
+                  className={cn(
+                    "absolute inset-0 w-full h-full object-contain transition-opacity duration-300",
+                    videoState === "ready" ? "opacity-100" : "opacity-0"
+                  )}
+                  onLoadedData={() => setVideoState("ready")}
+                  onError={() => setVideoState("error")}
+                  onTimeUpdate={handleTimeUpdate}
+                  onEnded={handleVideoEnded}
+                  preload="metadata"
+                />
+
+                {/* Loading overlay */}
+                {videoState === "loading" && (
+                  <div className="relative z-10 flex flex-col items-center gap-3">
+                    <Loader2 size={28} className="text-[hsl(var(--vr-violet)_/_0.6)] animate-spin" />
+                    <p className="text-xs text-muted-foreground/60">Chargement du fichier…</p>
+                  </div>
+                )}
+
+                {/* Error overlay */}
+                {videoState === "error" && (
+                  <div className="relative z-10 flex flex-col items-center gap-3 text-center px-6">
+                    <div className="w-16 h-16 rounded-2xl bg-destructive/10 border border-destructive/20 flex items-center justify-center">
+                      <Film size={28} className="text-destructive/40" />
+                    </div>
+                    <div>
+                      <p className="text-xs font-medium text-muted-foreground/80">Fichier introuvable sur le serveur</p>
+                      <p className="text-[11px] text-muted-foreground/40 mt-0.5 font-mono">{video.name}</p>
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+
+            {/* ── DEMO PLACEHOLDER (server disconnected) ── */}
+            {!isChecking && !isConnected && (
+              <>
+                <div className="relative z-10 w-20 h-20 rounded-2xl bg-[hsl(var(--vr-violet)_/_0.1)] border border-[hsl(var(--vr-violet)_/_0.2)] flex items-center justify-center">
+                  <Film size={32} className="text-[hsl(var(--vr-violet)_/_0.5)]" />
+                </div>
+                <div className="relative z-10 text-center space-y-1">
+                  <p className="text-xs text-muted-foreground/70 font-medium">Aperçu non disponible</p>
+                  <p className="text-[11px] text-muted-foreground/40">
+                    Démarrez le serveur local pour lire
+                  </p>
+                </div>
+              </>
+            )}
+
+            {/* Format pill — always visible */}
+            <div className="absolute top-3 right-3 flex items-center gap-1.5 z-20">
               <span className={cn("px-2 py-0.5 rounded-full text-[10px] font-bold border", formatBadge[video.format])}>
                 {video.format}°
               </span>
@@ -182,45 +313,49 @@ export default function VideoPreviewModal({ video, onClose }: VideoPreviewModalP
             </div>
           </div>
 
-          {/* Simulated timeline */}
-          <div className="px-5 pb-4 pt-2 space-y-2">
-            {/* Progress bar */}
-            <div
-              className="relative h-1.5 rounded-full bg-border/50 cursor-pointer overflow-hidden group"
-              onClick={(e) => {
-                const rect = (e.currentTarget as HTMLDivElement).getBoundingClientRect();
-                const pct = ((e.clientX - rect.left) / rect.width) * 100;
-                setProgress(Math.min(100, Math.max(0, pct)));
-              }}
-            >
+          {/* Timeline controls — always shown (simulated in demo, real in connected) */}
+          {!isChecking && (
+            <div className="px-5 pb-4 pt-2 space-y-2">
+              {/* Progress bar */}
               <div
-                className="absolute left-0 top-0 h-full rounded-full bg-[hsl(var(--vr-violet))] transition-all duration-300"
-                style={{
-                  width: `${progress}%`,
-                  boxShadow: playing ? "0 0 8px hsl(var(--vr-violet) / 0.6)" : "none",
-                }}
-              />
-            </div>
-            {/* Controls row */}
-            <div className="flex items-center gap-3">
-              <button
-                onClick={() => setPlaying((p) => !p)}
-                className="flex items-center justify-center w-7 h-7 rounded-lg bg-[hsl(var(--vr-violet)_/_0.15)] border border-[hsl(var(--vr-violet)_/_0.35)] hover:bg-[hsl(var(--vr-violet)_/_0.25)] transition-colors text-[hsl(var(--vr-violet))]"
+                className="relative h-1.5 rounded-full bg-border/50 cursor-pointer overflow-hidden group"
+                onClick={handleProgressClick}
               >
-                {playing ? <Pause size={12} fill="currentColor" /> : <Play size={12} fill="currentColor" />}
-              </button>
-              <span className="text-[11px] font-mono text-muted-foreground tabular-nums">
-                {formatSeconds(currentSecs)}
-                <span className="text-muted-foreground/40 mx-1">/</span>
-                {video.duration === "—" ? "—" : video.duration}
-              </span>
-              {playing && (
-                <span className="ml-auto text-[10px] font-medium text-[hsl(var(--vr-violet)_/_0.7)] animate-pulse">
-                  ● EN COURS
+                <div
+                  className="absolute left-0 top-0 h-full rounded-full bg-[hsl(var(--vr-violet))] transition-all duration-150"
+                  style={{
+                    width: `${displayProgress}%`,
+                    boxShadow: displayPlaying ? "0 0 8px hsl(var(--vr-violet) / 0.6)" : "none",
+                  }}
+                />
+              </div>
+              {/* Controls row */}
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={isConnected ? toggleRealPlay : () => setPlaying((p) => !p)}
+                  disabled={isConnected && (videoState === "loading" || videoState === "error")}
+                  className="flex items-center justify-center w-7 h-7 rounded-lg bg-[hsl(var(--vr-violet)_/_0.15)] border border-[hsl(var(--vr-violet)_/_0.35)] hover:bg-[hsl(var(--vr-violet)_/_0.25)] disabled:opacity-30 transition-colors text-[hsl(var(--vr-violet))]"
+                >
+                  {displayPlaying ? <Pause size={12} fill="currentColor" /> : <Play size={12} fill="currentColor" />}
+                </button>
+                <span className="text-[11px] font-mono text-muted-foreground tabular-nums">
+                  {formatSeconds(displayCurrentSecs)}
+                  <span className="text-muted-foreground/40 mx-1">/</span>
+                  {displayDuration}
                 </span>
-              )}
+                {displayPlaying && (
+                  <span className="ml-auto text-[10px] font-medium text-[hsl(var(--vr-violet)_/_0.7)] animate-pulse">
+                    ● EN COURS
+                  </span>
+                )}
+                {isConnected && videoState === "ready" && !displayPlaying && (
+                  <span className="ml-auto text-[10px] text-[hsl(140_70%_55%_/_0.7)] font-medium">
+                    ● Prêt
+                  </span>
+                )}
+              </div>
             </div>
-          </div>
+          )}
         </div>
 
         {/* Metadata grid */}
