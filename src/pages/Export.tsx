@@ -10,6 +10,10 @@ import {
   Library as LibraryIcon,
   Film,
   Filter,
+  Search,
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown,
 } from "lucide-react";
 import { toast } from "sonner";
 
