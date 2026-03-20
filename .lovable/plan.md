@@ -1,68 +1,54 @@
 
-## Two features to build
+## Clarification de l'architecture et plan de données réelles
 
-### Feature 1 — Modale vidéo avancée (VideoPreviewModal.tsx)
+### Ce que cette app EST vs CE QU'ELLE PEUT DEVENIR
 
-**3 additions to the existing modal:**
+**Actuellement** : Frontend React pur. Toutes les données sont des mocks dans un store Zustand persisté en localStorage. Aucune vraie connexion.
 
-1. **Résolution estimée** — new metadata tile:
-   - `360°` → `4K (3840 × 2160)`
-   - `180°` → `8K (7680 × 4320)`
-   - Add a `Monitor` or `Sparkles` icon, in violet for 8K, cyan for 4K
+**Ce qu'on peut rendre réel dans ce frontend** :
+1. Les données des vidéos (vrais noms, vrais formats, vraies tailles) → entrées manuelles persistées
+2. Les données des casques (vrais serials, vraies IP) → entrées manuelles persistées  
+3. L'historique des syncs → généré par de vraies syncs
 
-2. **Timeline de lecture simulée** — animated progress bar in the preview area:
-   - Uses `useState` + `useEffect` + `setInterval` to auto-advance a `progress` (0–100) value every ~300ms
-   - Plays forward, then resets (loop)
-   - Show: play/pause toggle button, current time (computed from `video.duration`), total duration
-   - Styled as a dark bar with a violet fill + glow
-
-3. **Bouton "Copier le chemin"** — small button in the header area:
-   - Computes the file path: `settings.videoStoragePath + "/" + video.name` from the store
-   - `navigator.clipboard.writeText(...)` on click
-   - Shows a ✓ checkmark for 1.5s then reverts to the copy icon
-   - Uses `Copy` and `Check` icons from lucide-react
-
-Files to change:
-- `src/components/dashboard/VideoPreviewModal.tsx` — add all 3 features
-- `src/store/vrStore.ts` — no change needed (settings path already available)
-- VideoPreviewModal already takes `video` prop, just needs `settings.videoStoragePath` — add `useVRStore` import
+**Ce qui nécessitera un backend séparé** (hors Lovable) pour être VRAIMENT fonctionnel :
+- La sync ADB réelle → un serveur Node.js local qui tourne sur ton ordinateur et expose une API REST
+- La lecture des fichiers vidéo → servir les MP4 depuis ton disque via un serveur local (Express / Python)
 
 ---
 
-### Feature 2 — Page Statistiques (/stats)
+### Plan immédiat : Nettoyer les faux mocks, permettre la saisie de vraies données
 
-New page `src/pages/Stats.tsx` using Recharts (already installed).
+#### Étape 1 — Vider les faux mocks du store
+- Supprimer `MOCK_DEVICES` et `INITIAL_LIBRARIES` hardcodés
+- Démarrer avec des bibliothèques vides + 0 casque (ou garder les structures mais vider les données)
+- L'utilisateur entre SES vrais casques (serial réel, IP réelle, type réel)
+- L'utilisateur entre SES vraies vidéos (vrais noms de fichiers, vrais formats, vraies tailles)
 
-**4 charts/stats blocks:**
+#### Étape 2 — Améliorer le formulaire "Ajouter un casque"
+Champs : Nom personnalisé, Numéro de série Quest réel, Adresse IP Wi-Fi réelle, Type (Location/Animations), Stockage total (128/256 GB)
 
-1. **Donut chart — Répartition 360/180** (per library + combined)
-   - Two small donuts side by side: Location | Animations
-   - Data computed from `libraries` store
-   - Colors: violet = 360°, cyan = 180°
-   - Use `PieChart` + `Pie` + `Cell` from recharts
+#### Étape 3 — Améliorer le formulaire "Ajouter une vidéo"
+Champs : Nom exact du fichier (ex: `Mon_Experience_360.mp4`), Format (360/180), Stéréo (Mono/SBS/OU), Durée réelle, Taille réelle en GB
 
-2. **Bar chart — Évolution des syncs sur 30 jours**
-   - X axis: last 30 days (grouped by day)
-   - Y axis: number of files pushed
-   - Data: derive from `syncLogs` — group `videosPushed` by date
-   - Use `BarChart` + `Bar` + `XAxis` + `YAxis` + `Tooltip`
-   - Color: violet bars
+#### Étape 4 — Page "Connexion serveur local" dans Paramètres
+Ajouter un champ `URL du serveur local` (ex: `http://localhost:3001`) avec un bouton "Tester la connexion". Ce serveur Node.js (que je fournis sous forme de script) tourne sur ton Mac/PC et reçoit les ordres de sync ADB. Quand le serveur n'est pas détecté → mode "simulation" avec un badge orange "Mode démo". Quand détecté → mode "réel" avec badge vert "Serveur connecté".
 
-3. **Stat card — Casque le plus synchronisé**
-   - Count how many sync logs reference each device ID
-   - Show top device: name, serial, sync count
-   - Simple styled card, no chart
+#### Étape 5 — Fournir le script serveur Node.js (dans un fichier `server/sync-server.js`)
+Un fichier Express minimal que tu lances avec `node server/sync-server.js` sur ton ordinateur :
+- `GET /devices` → exécute `adb devices` et retourne les serials détectés
+- `POST /sync` → exécute `adb push` pour chaque vidéo vers le casque
+- `GET /video/:name` → sert le fichier MP4 depuis ton dossier de stockage
 
-4. **Stat card — Total des données transférées**
-   - Sum `videosPushed × average video size` estimate across all success logs
-   - Or: compute from libraries total video sizes as an indicator
-   - Show in GB with a HardDrive icon
+#### Fichiers à modifier/créer
+1. `src/store/vrStore.ts` — supprimer les mocks, partir de zéro
+2. `src/pages/Settings.tsx` — ajouter champ `serverUrl` + bouton "Tester la connexion"
+3. `src/pages/Devices.tsx` — améliorer le formulaire d'ajout avec les vrais champs
+4. `src/pages/Libraries.tsx` — améliorer le formulaire d'ajout vidéo avec les vrais champs
+5. `server/sync-server.js` — nouveau fichier script Node.js (documentation/template)
+6. `src/lib/serverApi.ts` — nouveau : fonctions `checkServer()`, `fetchDevices()`, `pushSync()` qui appellent le serveur local quand disponible, sinon mode simulation
 
-Layout: 2-column grid on desktop, 1-column on mobile.
-
-Register route in `src/App.tsx` and add nav item to `DashboardLayout.tsx`.
-
-**Files to create/modify:**
-1. `src/pages/Stats.tsx` — new page (recharts, 4 sections)
-2. `src/App.tsx` — add `/stats` route + import
-3. `src/components/dashboard/DashboardLayout.tsx` — add `{ to: "/stats", label: "Statistiques", icon: BarChart2 }` nav item + PAGE_TITLES entry
+### Ce que l'utilisateur verra
+- Un badge "Mode démo 🟠" ou "Serveur connecté 🟢" dans le header
+- Ses vrais casques dans la liste une fois saisis
+- Ses vraies vidéos dans les bibliothèques une fois saisies
+- Une vraie sync quand le serveur Node.js tourne sur son ordinateur
