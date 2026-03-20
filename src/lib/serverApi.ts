@@ -1,3 +1,11 @@
+/** Returns true when running inside the Lovable hosted preview (HTTPS, no local proxy) */
+export function isLovablePreview(): boolean {
+  return (
+    window.location.hostname.includes("lovable.app") ||
+    window.location.hostname.includes("lovableproject.com")
+  );
+}
+
 /**
  * serverApi.ts
  * -----------

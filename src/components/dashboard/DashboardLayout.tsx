@@ -17,7 +17,7 @@ import {
 } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
 import { useVRStore } from "@/store/vrStore";
-import { checkServer } from "@/lib/serverApi";
+import { checkServer, isLovablePreview } from "@/lib/serverApi";
 
 const NAV_ITEMS = [
   { to: "/", label: "Accueil", icon: LayoutDashboard, exact: true },
