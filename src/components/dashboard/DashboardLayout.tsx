@@ -36,6 +36,7 @@ const PAGE_TITLES: Record<string, string> = {
   "/devices": "Casques",
   "/sync": "Synchronisation",
   "/stats": "Statistiques",
+  "/export": "Export / Manifest",
   "/settings": "Paramètres",
 };
 
