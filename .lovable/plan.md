@@ -1,60 +1,61 @@
 
-## Ce que je comprends
+## Problèmes identifiés et corrections à apporter
 
-La page actuelle est juste une **documentation README** statique. Ce n'est pas du tout l'application. L'utilisateur veut que je construise le **dashboard web complet** — l'application réelle qui gère ses bibliothèques VR, ses casques et ses synchronisations.
+### Bug critique #1 — Ref sur composant fonctionnel (console error)
+`VideoRow` reçoit une `ref` quelque part — probablement via un composant Radix UI (`Tooltip`, `Button` shadcn) qui wrappait un composant fonctionnel sans `forwardRef`. Il faut revoir `VideoRow` pour éviter ça. En réalité le `fileRef` dans `PlaylistAccordion` est sur un `<input>` natif — pas de problème là. Le vrai bug est que `VideoRow` et `PlaylistAccordion` sont des fonctions locales dans `Libraries.tsx`, et React avertit qu'une ref a été passée à un function component. Correction : `VideoRow` doit devenir `React.forwardRef` ou s'assurer qu'aucune ref n'est transmise implicitement.
 
-## Ce que je vais construire : Le Dashboard VR Ultimate
+### Bug #2 — Sync : les logs en cours ne s'accumulent pas correctement
+Dans `handleSync`, la closure sur `newLog.lines` est stale — les mises à jour intermédiaires écrasent toujours les mêmes `lines` au lieu de les accumuler. Résultat : les logs de progression n'apparaissent pas correctement.
 
-Une application web complète à 4 pages, dark & tech, opérationnelle :
+### Bug #3 — Edition format vidéo manquante
+L'utilisateur doit pouvoir modifier le format (360°/180°) et le mode stéréo d'une vidéo existante. `VideoRow` ne propose pas cette fonctionnalité. Il faut ajouter un menu ou des boutons inline pour modifier `format` et `stereo`.
 
-```text
-/ (Accueil)           → Vue d'ensemble, status live des casques
-/libraries            → Gestion bibliothèques Location + Animations
-/devices              → Casques connectés (ADB simulé)
-/sync                 → Lancer la synchronisation push
-```
+### Bug #4 — `updateVideo` manquant dans le store
+Le store `vrStore.ts` n'expose pas de méthode `updateVideo`. Il faut l'ajouter pour supporter l'édition de format/stéréo.
 
-### Détail des 4 pages
+### Bug #5 — Renommage d'appareil et assignation type manquants
+Sur la page Casques, aucun moyen de renommer un casque ou de changer son type (Location / Animations). Il faut ajouter ces actions dans `DeviceCard`.
 
-**1. Accueil (`/`)** — Dashboard live
-- Header avec logo VR Ultimate + indicateur de statut
-- 4 KPI cards : nb vidéos Location, nb vidéos Animations, casques connectés, dernière sync
-- Activité récente (logs de sync)
-- Accès rapide aux 3 sections
+### Bug #6 — `updateDevice` manquant dans le store
+Il faut ajouter `updateDevice` au store pour permettre le renommage et le changement de type.
 
-**2. Bibliothèques (`/libraries`)**
-- Deux onglets : Location | Animations
-- Chaque bibliothèque liste ses playlists avec accordéon
-- Dans chaque playlist : liste des vidéos avec badge 360°/180°, format stéréo, taille
-- Bouton "+ Ajouter playlist" (modal)
-- Zone drag & drop pour uploader des vidéos (simulé dans le front)
-- Badge de statut par vidéo (360/180, Mono/SBS, taille)
+### Bug #7 — `addDevice` / `removeDevice` manquants
+La page Casques ne permet pas d'ajouter manuellement un casque (avec son IP / serial) ni d'en supprimer. Il faut ajouter ces fonctionnalités.
 
-**3. Casques (`/devices`)**
-- Liste des casques détectés (simulés avec données réalistes)
-- Card par casque : identifiant série, statut (connecté/déconnecté), type (Location/Animations), espace disque
-- Bouton "Rafraîchir" (appel ADB)
-- Instructions de connexion USB + Wi-Fi
+### Bug #8 — Sync : `lastSyncAt` des devices non mis à jour après sync
+Après une sync réussie, les `Device.lastSyncAt` du store ne sont pas mis à jour. Il faut le faire dans `handleSync` via `updateDevice`.
 
-**4. Sync (`/sync`)**
-- Sélecteur : bibliothèque (Location / Animations)
-- Sélecteur : casque cible (un précis ou "Tous")
-- Bouton "Lancer la sync"
-- Progress bar animée + logs de progression en temps réel (simulé)
-- Historique des syncs récentes avec statut ✅/❌
+### Améliorations fonctionnelles à apporter
 
-### Design
-- Même design system Dark VR déjà en place (violet/cyan, glows, animations)
-- Navigation sidebar ou topbar avec les 4 sections
-- Responsive mobile
+**Libraries page**
+- Ajouter `updateVideo` au store (format + stereo)
+- Ajouter des boutons inline sur `VideoRow` pour éditer format/stéréo avec sauvegarde immédiate
+- Ajouter le renommage d'une playlist (double-clic sur le nom)
+- Corriger le warning ref en déplaçant `VideoRow` hors du composant ou en utilisant `forwardRef`
 
-### Fichiers à créer/modifier
-- `src/pages/Index.tsx` → Dashboard home
-- `src/pages/Libraries.tsx` → Bibliothèques
-- `src/pages/Devices.tsx` → Casques
-- `src/pages/Sync.tsx` → Synchronisation
-- `src/components/dashboard/` → Composants réutilisables (StatsCard, VideoRow, DeviceCard, SyncLog, etc.)
-- `src/App.tsx` → Routes vers les 4 pages
-- Supprimer tous les composants `readme/` devenus inutiles
+**Devices page**
+- Ajouter `updateDevice` et `removeDevice` au store
+- Ajouter un bouton "Supprimer" sur chaque `DeviceCard`
+- Ajouter un bouton/modal "Ajouter un casque manuellement" (avec nom, serial, type, IP)
+- Permettre de modifier le nom et le type directement sur la card
 
-> Note : Sans backend réel (Next.js/Node), les données seront gérées en state React (localStorage pour la persistance). Les appels ADB réels nécessitent le serveur Node.js du projet VR — le dashboard web ici simule l'interface ; les vraies commandes ADB se font côté serveur.
+**Sync page**
+- Corriger la closure stale sur les logs (utiliser un ref ou la fonction updater de setState)
+- Mettre à jour `lastSyncAt` des devices après sync réussie
+- Ajouter un bouton "Vider l'historique" sur les logs
+
+**Store**
+- Ajouter : `updateVideo(libraryId, playlistId, videoId, updates)`
+- Ajouter : `updateDevice(deviceId, updates)`
+- Ajouter : `addDevice(device)`
+- Ajouter : `removeDevice(deviceId)`
+- Ajouter : `clearSyncLogs()`
+- Ajouter : `renamePlaylist(libraryId, playlistId, newName)`
+
+## Fichiers à modifier
+1. `src/store/vrStore.ts` — Ajouter les 6 nouvelles actions
+2. `src/components/dashboard/VideoRow.tsx` — Ajouter édition format/stéréo inline + corriger le warning ref
+3. `src/components/dashboard/DeviceCard.tsx` — Ajouter renommage, changement de type, suppression
+4. `src/pages/Libraries.tsx` — Connecter `updateVideo` + `renamePlaylist`, corriger ref warning
+5. `src/pages/Devices.tsx` — Ajouter modal "Nouveau casque", boutons de suppression
+6. `src/pages/Sync.tsx` — Corriger closure stale, mettre à jour `lastSyncAt`, ajouter "Vider historique"
