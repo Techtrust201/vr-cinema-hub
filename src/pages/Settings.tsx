@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useVRStore } from "@/store/vrStore";
+import { checkServer } from "@/lib/serverApi";
 import {
   FolderOpen,
   HardDrive,
@@ -10,6 +11,11 @@ import {
   Eye,
   EyeOff,
   Check,
+  Server,
+  Wifi,
+  WifiOff,
+  Loader2,
+  Terminal,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -21,10 +27,22 @@ export default function Settings() {
   const [confirmReset, setConfirmReset] = useState(false);
   const [saved, setSaved] = useState(false);
 
+  // Server connection test
+  const [serverStatus, setServerStatus] = useState<"idle" | "checking" | "connected" | "disconnected">("idle");
+
   const isDirty =
     form.videoStoragePath !== settings.videoStoragePath ||
     form.maxUploadGB !== settings.maxUploadGB ||
-    form.authToken !== settings.authToken;
+    form.authToken !== settings.authToken ||
+    form.serverUrl !== settings.serverUrl;
+
+  // Auto-check server status on mount
+  useEffect(() => {
+    if (settings.serverUrl) {
+      handleTestServer(settings.serverUrl);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleSave = () => {
     updateSettings(form);
@@ -40,9 +58,22 @@ export default function Settings() {
       return;
     }
     resetStore();
-    setForm({ videoStoragePath: "/videos/vr-ultimate", maxUploadGB: 10, authToken: "" });
+    setForm({ videoStoragePath: "/videos/vr-ultimate", maxUploadGB: 10, authToken: "", serverUrl: "http://localhost:3001" });
     setConfirmReset(false);
     toast.success("Données réinitialisées");
+  };
+
+  const handleTestServer = async (url?: string) => {
+    const target = url ?? form.serverUrl;
+    if (!target.trim()) return;
+    setServerStatus("checking");
+    const status = await checkServer(target.trim());
+    setServerStatus(status === "connected" ? "connected" : "disconnected");
+    if (status === "connected") {
+      toast.success("Serveur local connecté ✓");
+    } else {
+      toast.error("Serveur local non disponible — mode simulation actif");
+    }
   };
 
   const inputCls =
@@ -78,7 +109,7 @@ export default function Settings() {
               className={cn(inputCls, "font-mono text-[13px]")}
             />
             <p className="text-[11px] text-muted-foreground/60">
-              Répertoire local ou réseau où sont stockées les vidéos source.
+              Répertoire local ou réseau où sont stockées les vidéos source. Ce chemin est utilisé par le serveur local pour les push ADB.
             </p>
           </div>
 
@@ -102,6 +133,83 @@ export default function Settings() {
             </div>
             <p className="text-[11px] text-muted-foreground/60">
               Taille limite par vidéo lors de l'ajout dans une bibliothèque.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      {/* Server connection */}
+      <section className="rounded-xl border border-border/60 bg-[hsl(var(--vr-surface))] overflow-hidden">
+        <div className="px-5 py-4 border-b border-border/50 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Server size={15} className="text-[hsl(var(--vr-cyan))]" />
+            <h2 className="text-sm font-semibold">Serveur local ADB</h2>
+          </div>
+          {serverStatus !== "idle" && (
+            <span className={cn(
+              "flex items-center gap-1.5 text-[11px] font-medium px-2.5 py-1 rounded-full border",
+              serverStatus === "checking" && "text-muted-foreground border-border/50",
+              serverStatus === "connected" && "text-[hsl(140_70%_55%)] bg-[hsl(140_70%_40%_/_0.1)] border-[hsl(140_70%_40%_/_0.3)]",
+              serverStatus === "disconnected" && "text-[hsl(35_90%_55%)] bg-[hsl(35_90%_55%_/_0.1)] border-[hsl(35_90%_55%_/_0.3)]",
+            )}>
+              {serverStatus === "checking" && <Loader2 size={10} className="animate-spin" />}
+              {serverStatus === "connected" && <Wifi size={10} />}
+              {serverStatus === "disconnected" && <WifiOff size={10} />}
+              {serverStatus === "checking" ? "Vérification…" : serverStatus === "connected" ? "Serveur connecté" : "Mode simulation"}
+            </span>
+          )}
+        </div>
+        <div className="p-5 space-y-4">
+          <div className="space-y-2">
+            <label className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
+              <Server size={12} />
+              URL du serveur local
+            </label>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={form.serverUrl}
+                onChange={(e) => setForm({ ...form, serverUrl: e.target.value })}
+                placeholder="http://localhost:3001"
+                className={cn(inputCls, "font-mono text-[13px] flex-1")}
+              />
+              <button
+                type="button"
+                onClick={() => handleTestServer()}
+                disabled={serverStatus === "checking"}
+                className="shrink-0 px-4 py-2 rounded-lg border border-[hsl(var(--vr-cyan)_/_0.35)] bg-[hsl(var(--vr-cyan)_/_0.08)] text-[hsl(var(--vr-cyan))] text-xs font-medium hover:bg-[hsl(var(--vr-cyan)_/_0.15)] disabled:opacity-50 transition-all"
+              >
+                {serverStatus === "checking" ? (
+                  <Loader2 size={13} className="animate-spin" />
+                ) : "Tester"}
+              </button>
+            </div>
+            <p className="text-[11px] text-muted-foreground/60">
+              Lancez <code className="font-mono bg-background px-1 rounded text-[10px]">node server/sync-server.js</code> sur votre ordinateur pour activer les syncs ADB réelles et la lecture vidéo.
+            </p>
+          </div>
+
+          {/* Setup instructions */}
+          <div className="rounded-lg border border-border/40 bg-background/40 p-4 space-y-3">
+            <div className="flex items-center gap-2 text-xs font-semibold text-muted-foreground">
+              <Terminal size={12} />
+              Guide de démarrage rapide
+            </div>
+            <div className="space-y-2">
+              {[
+                { cmd: "cd server && npm init -y && npm install express cors", desc: "Installer les dépendances" },
+                { cmd: "VIDEO_STORAGE_PATH=/vos/videos node sync-server.js", desc: "Démarrer le serveur" },
+              ].map(({ cmd, desc }) => (
+                <div key={cmd} className="space-y-0.5">
+                  <p className="text-[10px] text-muted-foreground/60">{desc}</p>
+                  <code className="block text-[11px] font-mono bg-background px-3 py-1.5 rounded border border-border/40 text-foreground/80 overflow-x-auto whitespace-nowrap">
+                    {cmd}
+                  </code>
+                </div>
+              ))}
+            </div>
+            <p className="text-[10px] text-muted-foreground/50">
+              Sans serveur : l'application fonctionne en mode simulation (aucune vraie ADB, aucune lecture vidéo réelle).
             </p>
           </div>
         </div>
@@ -135,7 +243,7 @@ export default function Settings() {
             </button>
           </div>
           <p className="text-[11px] text-muted-foreground/60">
-            Token utilisé pour sécuriser l'accès au dashboard. Laissez vide pour désactiver.
+            Token transmis dans les headers des requêtes au serveur local. Laissez vide pour désactiver.
           </p>
         </div>
       </section>
@@ -169,7 +277,7 @@ export default function Settings() {
           <div>
             <p className="text-sm font-medium">Réinitialiser toutes les données</p>
             <p className="text-xs text-muted-foreground mt-1">
-              Remet les bibliothèques, casques et historique de sync à leurs valeurs par défaut. Cette action est irréversible.
+              Supprime tous les casques, vidéos, playlists et l'historique de sync. Cette action est irréversible.
             </p>
           </div>
           <button
