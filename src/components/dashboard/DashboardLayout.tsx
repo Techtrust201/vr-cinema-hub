@@ -1,6 +1,5 @@
 import { Outlet, NavLink, useLocation } from "react-router-dom";
 import { cn } from "@/lib/utils";
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 import {
   LayoutDashboard,
   Library,
@@ -149,10 +148,6 @@ function NotificationBell() {
       )}
     </div>
   );
-}
-
-function cn(...args: (string | undefined | false | null)[]) {
-  return args.filter(Boolean).join(" ");
 }
 
 export default function DashboardLayout() {
