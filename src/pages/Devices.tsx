@@ -1,10 +1,10 @@
 import { useState, useEffect } from "react";
 import { useVRStore, Device, LibraryType } from "@/store/vrStore";
 import DeviceCard from "@/components/dashboard/DeviceCard";
-import { RefreshCw, Usb, Wifi, Info, Plus, X, Scan, ChevronRight, Loader2 } from "lucide-react";
+import { RefreshCw, Usb, Wifi, Info, Plus, X, Scan, ChevronRight, Loader2, Signal } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
-import { checkServer, fetchServerDevices, ServerDevice, ServerStatus } from "@/lib/serverApi";
+import { checkServer, fetchServerDevices, fetchDeviceStatus, connectDevice, ServerDevice, ServerStatus } from "@/lib/serverApi";
 
 interface AddDeviceModalProps {
   onClose: () => void;
@@ -139,6 +139,104 @@ function AddDeviceModal({ onClose, initialSerial = "", initialName = "", initial
   );
 }
 
+interface WifiConnectModalProps {
+  onClose: () => void;
+}
+
+function WifiConnectModal({ onClose }: WifiConnectModalProps) {
+  const [ip, setIp] = useState("");
+  const [port, setPort] = useState("5555");
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState<{ success: boolean; output: string } | null>(null);
+
+  const handleConnect = async () => {
+    if (!ip.trim()) return;
+    setLoading(true);
+    setResult(null);
+    try {
+      const res = await connectDevice(ip.trim(), parseInt(port) || 5555);
+      setResult(res);
+      if (res.success) toast.success(`Connecté à ${res.address}`);
+      else toast.error(`Échec : ${res.output}`);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Erreur inconnue";
+      setResult({ success: false, output: message });
+      toast.error("Connexion Wi-Fi ADB échouée");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const inputCls = "px-3 py-2 rounded-lg bg-background border border-border focus:border-[hsl(var(--vr-cyan)_/_0.5)] focus:outline-none text-sm transition-colors";
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/70 backdrop-blur-sm" onClick={onClose}>
+      <div
+        className="w-full max-w-sm mx-4 rounded-xl border border-[hsl(var(--vr-cyan)_/_0.3)] bg-[hsl(var(--vr-surface))] p-6 shadow-[0_0_40px_hsl(var(--vr-cyan)_/_0.18)]"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between mb-5">
+          <div className="flex items-center gap-2">
+            <Wifi size={15} className="text-[hsl(var(--vr-cyan))]" />
+            <h3 className="text-base font-semibold">Connexion Wi-Fi ADB</h3>
+          </div>
+          <button onClick={onClose} className="p-1 rounded text-muted-foreground hover:bg-muted/50"><X size={15} /></button>
+        </div>
+
+        <div className="space-y-3">
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-muted-foreground">Adresse IP du casque *</label>
+            <input
+              autoFocus
+              type="text"
+              value={ip}
+              onChange={(e) => setIp(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleConnect()}
+              placeholder="192.168.1.42"
+              className={cn(inputCls, "w-full font-mono")}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-muted-foreground">Port ADB (défaut 5555)</label>
+            <input
+              type="text"
+              value={port}
+              onChange={(e) => setPort(e.target.value)}
+              placeholder="5555"
+              className={cn(inputCls, "w-full font-mono")}
+            />
+          </div>
+
+          {result && (
+            <div className={cn(
+              "px-3 py-2.5 rounded-lg text-xs font-mono break-all border",
+              result.success
+                ? "bg-[hsl(140_70%_40%_/_0.08)] border-[hsl(140_70%_40%_/_0.25)] text-[hsl(140_70%_55%)]"
+                : "bg-destructive/8 border-destructive/25 text-destructive"
+            )}>
+              {result.output}
+            </div>
+          )}
+
+          <div className="flex gap-2 pt-1">
+            <button type="button" onClick={onClose} className="flex-1 px-4 py-2 rounded-lg border border-border text-sm hover:bg-muted/50 transition-colors">
+              Fermer
+            </button>
+            <button
+              onClick={handleConnect}
+              disabled={!ip.trim() || loading}
+              className="flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-[hsl(var(--vr-cyan)_/_0.12)] border border-[hsl(var(--vr-cyan)_/_0.3)] text-[hsl(var(--vr-cyan))] text-sm font-medium hover:bg-[hsl(var(--vr-cyan)_/_0.2)] disabled:opacity-40 transition-all active:scale-95"
+            >
+              {loading ? <Loader2 size={14} className="animate-spin" /> : <Wifi size={14} />}
+              Connecter
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 interface AdbDetectPanelProps {
   adbDevices: ServerDevice[];
   onAdd: (d: ServerDevice) => void;
@@ -206,6 +304,7 @@ export default function Devices() {
   const { devices, settings, refreshDevices, updateDevice, removeDevice } = useVRStore();
   const [refreshing, setRefreshing] = useState(false);
   const [addModalOpen, setAddModalOpen] = useState(false);
+  const [wifiModalOpen, setWifiModalOpen] = useState(false);
   const [addInitial, setAddInitial] = useState<{ serial?: string; name?: string; ip?: string }>({});
 
   // ADB detect state
@@ -221,13 +320,36 @@ export default function Devices() {
   const connected = devices.filter((d) => d.status === "connected");
   const disconnected = devices.filter((d) => d.status === "disconnected");
 
-  const handleRefresh = () => {
+  /** Refresh real ADB status (battery + storage) for all connected devices */
+  const handleRefresh = async () => {
     setRefreshing(true);
-    setTimeout(() => {
+    if (serverStatus === "connected") {
+      // Real mode: fetch live data from ADB for each device
+      const results = await Promise.allSettled(
+        devices.map(async (d) => {
+          try {
+            const status = await fetchDeviceStatus(d.serial);
+            updateDevice(d.id, {
+              battery: status.battery,
+              storageUsedGB: status.storageUsedGB > 0 ? status.storageUsedGB : d.storageUsedGB,
+              storageTotalGB: status.storageTotalGB > 0 ? status.storageTotalGB : d.storageTotalGB,
+              status: status.status === "connected" ? "connected" : "disconnected",
+            });
+          } catch {
+            // Silently skip devices that don't respond
+          }
+        })
+      );
+      const updated = results.filter((r) => r.status === "fulfilled").length;
+      toast.success(`${updated} casque(s) actualisé(s) depuis ADB`);
+    } else {
+      // Demo mode: simulate
       refreshDevices();
-      setRefreshing(false);
-      toast.success("Liste des casques actualisée");
-    }, 1200);
+      setTimeout(() => {
+        toast.success("Liste des casques actualisée (mode démo)");
+      }, 800);
+    }
+    setRefreshing(false);
   };
 
   const handleRemove = (id: string, name: string) => {
@@ -269,6 +391,22 @@ export default function Devices() {
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap justify-end">
+          {/* Wi-Fi connect button */}
+          <button
+            onClick={() => setWifiModalOpen(true)}
+            disabled={serverStatus !== "connected"}
+            title={serverStatus !== "connected" ? "Démarrez le serveur local pour utiliser cette fonction" : "Connecter un casque via Wi-Fi ADB"}
+            className={cn(
+              "flex items-center gap-2 px-4 py-2 rounded-lg border text-sm font-medium transition-all active:scale-95",
+              serverStatus === "connected"
+                ? "border-[hsl(var(--vr-cyan)_/_0.35)] bg-[hsl(var(--vr-cyan)_/_0.08)] text-[hsl(var(--vr-cyan))] hover:bg-[hsl(var(--vr-cyan)_/_0.15)]"
+                : "border-border/40 bg-muted/30 text-muted-foreground/40 cursor-not-allowed"
+            )}
+          >
+            <Signal size={14} />
+            Wi-Fi ADB
+          </button>
+
           {/* ADB Detect button */}
           <button
             onClick={handleAdbDetect}
@@ -281,27 +419,26 @@ export default function Devices() {
                 : "border-border/40 bg-muted/30 text-muted-foreground/40 cursor-not-allowed"
             )}
           >
-            {adbDetecting
-              ? <Loader2 size={14} className="animate-spin" />
-              : <Scan size={14} />
-            }
+            {adbDetecting ? <Loader2 size={14} className="animate-spin" /> : <Scan size={14} />}
             Détecter via ADB
             {serverStatus === "checking" && <Loader2 size={11} className="animate-spin opacity-50" />}
             {serverStatus === "disconnected" && <span className="text-[10px] opacity-60">(serveur hors ligne)</span>}
           </button>
+
           <button
             onClick={() => { setAddInitial({}); setAddModalOpen(true); }}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg border border-[hsl(var(--vr-cyan)_/_0.3)] bg-[hsl(var(--vr-cyan)_/_0.08)] text-[hsl(var(--vr-cyan))] text-sm font-medium hover:bg-[hsl(var(--vr-cyan)_/_0.15)] transition-all active:scale-95"
+            className="flex items-center gap-2 px-4 py-2 rounded-lg border border-[hsl(var(--vr-violet)_/_0.3)] bg-[hsl(var(--vr-violet)_/_0.08)] text-[hsl(var(--vr-violet))] text-sm font-medium hover:bg-[hsl(var(--vr-violet)_/_0.15)] transition-all active:scale-95"
           >
             <Plus size={14} /> Ajouter
           </button>
           <button
             onClick={handleRefresh}
             disabled={refreshing}
+            title={serverStatus === "connected" ? "Lecture batterie + stockage depuis ADB" : "Rafraîchir (mode démo)"}
             className="flex items-center gap-2 px-4 py-2 rounded-lg border border-[hsl(var(--vr-violet)_/_0.3)] bg-[hsl(var(--vr-violet)_/_0.08)] text-[hsl(var(--vr-violet))] text-sm font-medium hover:bg-[hsl(var(--vr-violet)_/_0.15)] disabled:opacity-50 transition-all active:scale-95"
           >
             <RefreshCw size={14} className={cn(refreshing && "animate-spin")} />
-            Rafraîchir
+            {serverStatus === "connected" ? "Rafraîchir ADB" : "Rafraîchir"}
           </button>
         </div>
       </div>
@@ -406,20 +543,20 @@ export default function Devices() {
           <div className="space-y-3">
             <div className="flex items-center gap-2 text-sm font-medium text-foreground">
               <Wifi size={15} className="text-[hsl(var(--vr-cyan))]" />
-              Connexion Wi-Fi
+              Connexion Wi-Fi ADB
             </div>
             <ol className="space-y-2">
               {[
                 "Connecter le casque en USB d'abord",
-                "Installer Meta Quest Developer Hub",
-                "Utiliser le pairing Wi-Fi intégré dans MQDH",
-                "Une fois pairé, déconnecter l'USB",
-                "adb devices affiche l'IP (ex: 192.168.1.42:5555)",
+                "Terminal : adb tcpip 5555",
+                "Débrancher le câble USB",
+                "Cliquer sur « Wi-Fi ADB » en haut de la page",
+                "Entrer l'IP du casque et cliquer Connecter",
               ].map((step, i) => (
                 <li key={i} className="flex gap-2.5 text-xs text-muted-foreground">
                   <span className="shrink-0 w-4 h-4 rounded-full bg-[hsl(var(--vr-cyan)_/_0.15)] text-[hsl(var(--vr-cyan))] text-[10px] flex items-center justify-center font-bold">{i + 1}</span>
-                  {i === 4 ? (
-                    <span><code className="font-mono bg-background px-1 rounded">adb devices</code> affiche l'IP (ex: 192.168.1.42:5555)</span>
+                  {i === 1 ? (
+                    <span>Terminal : <code className="font-mono bg-background px-1 rounded">adb tcpip 5555</code></span>
                   ) : step}
                 </li>
               ))}
@@ -435,6 +572,9 @@ export default function Devices() {
           initialName={addInitial.name}
           initialIp={addInitial.ip}
         />
+      )}
+      {wifiModalOpen && (
+        <WifiConnectModal onClose={() => setWifiModalOpen(false)} />
       )}
       {adbPanelOpen && (
         <AdbDetectPanel
