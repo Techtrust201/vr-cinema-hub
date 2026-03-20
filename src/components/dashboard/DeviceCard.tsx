@@ -34,7 +34,7 @@ const statusMap = {
   },
 };
 
-export default function DeviceCard({ device, onUpdate, onRemove }: DeviceCardProps) {
+export default function DeviceCard({ device, onUpdate, onRemove, onPrepareWifi }: DeviceCardProps) {
   const s = statusMap[device.status];
   const storagePercent = Math.round((device.storageUsedGB / device.storageTotalGB) * 100);
   const [editingName, setEditingName] = useState(false);
