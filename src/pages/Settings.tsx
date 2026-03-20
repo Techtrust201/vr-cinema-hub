@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useVRStore } from "@/store/vrStore";
-import { checkServer } from "@/lib/serverApi";
+import { checkServer, isLovablePreview } from "@/lib/serverApi";
 import {
   FolderOpen,
   HardDrive,
@@ -28,8 +28,10 @@ export default function Settings() {
   const [confirmReset, setConfirmReset] = useState(false);
   const [saved, setSaved] = useState(false);
 
-  // Server connection test
-  const [serverStatus, setServerStatus] = useState<"idle" | "checking" | "connected" | "disconnected">("idle");
+  // Server connection test — skip auto-check in the Lovable hosted preview (no local proxy)
+  const [serverStatus, setServerStatus] = useState<"idle" | "checking" | "connected" | "disconnected">(
+    isLovablePreview() ? "disconnected" : "idle"
+  );
 
   const isDirty =
     form.videoStoragePath !== settings.videoStoragePath ||
@@ -37,8 +39,9 @@ export default function Settings() {
     form.authToken !== settings.authToken ||
     form.serverUrl !== settings.serverUrl;
 
-  // Auto-check server status on mount
+  // Auto-check server status on mount — skip in Lovable preview (no local proxy available)
   useEffect(() => {
+    if (isLovablePreview()) return;
     if (settings.serverUrl) {
       handleTestServer(settings.serverUrl);
     }
