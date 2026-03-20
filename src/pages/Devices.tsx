@@ -486,6 +486,7 @@ export default function Devices() {
                 device={d}
                 onUpdate={(updates) => updateDevice(d.id, updates)}
                 onRemove={() => handleRemove(d.id, d.name)}
+                onPrepareWifi={serverStatus === "connected" ? () => handlePrepareWifi(d) : undefined}
               />
             ))}
           </div>
