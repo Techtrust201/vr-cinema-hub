@@ -53,28 +53,17 @@ export interface SyncLog {
   lines: string[];
 }
 
-interface VRStore {
-  libraries: Library[];
-  devices: Device[];
-  syncLogs: SyncLog[];
-  // Playlist actions
-  addPlaylist: (libraryId: LibraryType, name: string) => void;
-  removePlaylist: (libraryId: LibraryType, playlistId: string) => void;
-  renamePlaylist: (libraryId: LibraryType, playlistId: string, newName: string) => void;
-  // Video actions
-  addVideo: (libraryId: LibraryType, playlistId: string, video: Video) => void;
-  removeVideo: (libraryId: LibraryType, playlistId: string, videoId: string) => void;
-  updateVideo: (libraryId: LibraryType, playlistId: string, videoId: string, updates: Partial<Pick<Video, "format" | "stereo" | "name">>) => void;
-  // Device actions
-  refreshDevices: () => void;
-  addDevice: (device: Device) => void;
-  removeDevice: (deviceId: string) => void;
-  updateDevice: (deviceId: string, updates: Partial<Device>) => void;
-  // Sync log actions
-  addSyncLog: (log: SyncLog) => void;
-  updateSyncLog: (id: string, updates: Partial<SyncLog>) => void;
-  clearSyncLogs: () => void;
+export interface VRSettings {
+  videoStoragePath: string;
+  maxUploadGB: number;
+  authToken: string;
 }
+
+const DEFAULT_SETTINGS: VRSettings = {
+  videoStoragePath: "/videos/vr-ultimate",
+  maxUploadGB: 10,
+  authToken: "",
+};
 
 const MOCK_DEVICES: Device[] = [
   {
@@ -220,12 +209,40 @@ const INITIAL_LOGS: SyncLog[] = [
   },
 ];
 
+interface VRStore {
+  libraries: Library[];
+  devices: Device[];
+  syncLogs: SyncLog[];
+  settings: VRSettings;
+  // Playlist actions
+  addPlaylist: (libraryId: LibraryType, name: string) => void;
+  removePlaylist: (libraryId: LibraryType, playlistId: string) => void;
+  renamePlaylist: (libraryId: LibraryType, playlistId: string, newName: string) => void;
+  // Video actions
+  addVideo: (libraryId: LibraryType, playlistId: string, video: Video) => void;
+  removeVideo: (libraryId: LibraryType, playlistId: string, videoId: string) => void;
+  updateVideo: (libraryId: LibraryType, playlistId: string, videoId: string, updates: Partial<Pick<Video, "format" | "stereo" | "name">>) => void;
+  // Device actions
+  refreshDevices: () => void;
+  addDevice: (device: Device) => void;
+  removeDevice: (deviceId: string) => void;
+  updateDevice: (deviceId: string, updates: Partial<Device>) => void;
+  // Sync log actions
+  addSyncLog: (log: SyncLog) => void;
+  updateSyncLog: (id: string, updates: Partial<SyncLog>) => void;
+  clearSyncLogs: () => void;
+  // Settings actions
+  updateSettings: (updates: Partial<VRSettings>) => void;
+  resetStore: () => void;
+}
+
 export const useVRStore = create<VRStore>()(
   persist(
     (set) => ({
       libraries: INITIAL_LIBRARIES,
       devices: MOCK_DEVICES,
       syncLogs: INITIAL_LOGS,
+      settings: DEFAULT_SETTINGS,
 
       addPlaylist: (libraryId, name) =>
         set((s) => ({
@@ -338,6 +355,17 @@ export const useVRStore = create<VRStore>()(
         })),
 
       clearSyncLogs: () => set({ syncLogs: [] }),
+
+      updateSettings: (updates) =>
+        set((s) => ({ settings: { ...s.settings, ...updates } })),
+
+      resetStore: () =>
+        set({
+          libraries: INITIAL_LIBRARIES,
+          devices: MOCK_DEVICES,
+          syncLogs: INITIAL_LOGS,
+          settings: DEFAULT_SETTINGS,
+        }),
     }),
     { name: "vr-ultimate-store" }
   )
