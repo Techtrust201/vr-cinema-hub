@@ -12,6 +12,7 @@ import {
   AlertTriangle,
   Settings,
   Clock,
+  BarChart2,
 } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
 import { useVRStore } from "@/store/vrStore";
