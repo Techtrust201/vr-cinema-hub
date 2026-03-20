@@ -1,6 +1,7 @@
 import { useState, useRef } from "react";
 import { useVRStore, LibraryType, Video, VideoFormat, StereoMode } from "@/store/vrStore";
 import VideoRow from "@/components/dashboard/VideoRow";
+import VideoPreviewModal from "@/components/dashboard/VideoPreviewModal";
 import { cn } from "@/lib/utils";
 import {
   ChevronDown,
