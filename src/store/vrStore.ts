@@ -58,6 +58,8 @@ export interface VRSettings {
   maxUploadGB: number;
   authToken: string;
   serverUrl: string;
+  /** Public tunnel URL (e.g. https://abc.ngrok.io) — used when running from Lovable preview */
+  publicServerUrl: string;
 }
 
 const DEFAULT_SETTINGS: VRSettings = {
@@ -65,6 +67,7 @@ const DEFAULT_SETTINGS: VRSettings = {
   maxUploadGB: 10,
   authToken: "",
   serverUrl: "http://localhost:3001",
+  publicServerUrl: "",
 };
 
 // ─── Demo data ──────────────────────────────────────────────────────────────

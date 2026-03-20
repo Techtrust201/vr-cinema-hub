@@ -17,6 +17,8 @@ import {
   Loader2,
   Terminal,
   FlaskConical,
+  Globe,
+  ExternalLink,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -37,7 +39,8 @@ export default function Settings() {
     form.videoStoragePath !== settings.videoStoragePath ||
     form.maxUploadGB !== settings.maxUploadGB ||
     form.authToken !== settings.authToken ||
-    form.serverUrl !== settings.serverUrl;
+    form.serverUrl !== settings.serverUrl ||
+    form.publicServerUrl !== settings.publicServerUrl;
 
   // Auto-check server status on mount — skip in Lovable preview (no local proxy available)
   useEffect(() => {
@@ -62,21 +65,24 @@ export default function Settings() {
       return;
     }
     resetStore();
-    setForm({ videoStoragePath: "/videos/vr-ultimate", maxUploadGB: 10, authToken: "", serverUrl: "http://localhost:3001" });
+    setForm({ videoStoragePath: "/videos/vr-ultimate", maxUploadGB: 10, authToken: "", serverUrl: "http://localhost:3001", publicServerUrl: "" });
     setConfirmReset(false);
     toast.success("Données réinitialisées");
   };
 
   const handleTestServer = async (url?: string) => {
-    const target = url ?? form.serverUrl;
+    // Use public URL if provided, otherwise use local URL
+    const target = url ?? (form.publicServerUrl.trim() || form.serverUrl);
     if (!target.trim()) return;
     setServerStatus("checking");
-    const status = await checkServer(target.trim());
+    // For public URL, pass it as baseUrl; for local URL in non-preview, use relative /api
+    const isPublic = target.startsWith("http") && !target.includes("localhost");
+    const status = await checkServer(isPublic ? target : undefined);
     setServerStatus(status === "connected" ? "connected" : "disconnected");
     if (status === "connected") {
-      toast.success("Serveur local connecté ✓");
+      toast.success("Serveur connecté ✓");
     } else {
-      toast.error("Serveur local non disponible — mode simulation actif");
+      toast.error("Serveur non disponible — mode simulation actif");
     }
   };
 
@@ -188,22 +194,47 @@ export default function Settings() {
                 ) : "Tester"}
               </button>
             </div>
+          </div>
+
+          {/* Public / ngrok URL */}
+          <div className="space-y-2">
+            <label className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
+              <Globe size={12} />
+              URL publique (ngrok) <span className="text-muted-foreground/50 font-normal">— optionnel</span>
+            </label>
+            <input
+              type="text"
+              value={form.publicServerUrl}
+              onChange={(e) => setForm({ ...form, publicServerUrl: e.target.value })}
+              placeholder="https://xxxx-xx-xx-xx-xx.ngrok-free.app"
+              className={cn(inputCls, "font-mono text-[13px]")}
+            />
             <p className="text-[11px] text-muted-foreground/60">
-              Lancez <code className="font-mono bg-background px-1 rounded text-[10px]">node server/sync-server.js</code> sur votre ordinateur pour activer les syncs ADB réelles et la lecture vidéo.
+              Permet d'atteindre votre serveur local depuis le preview Lovable. Collez l'URL affichée par <code className="font-mono bg-background px-1 rounded">ngrok http 3001</code>.
             </p>
+            {form.publicServerUrl && (
+              <a
+                href={`${form.publicServerUrl.replace(/\/$/, "")}/api/health`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 text-[11px] text-[hsl(var(--vr-cyan))] hover:underline"
+              >
+                <ExternalLink size={10} />
+                Tester l'URL dans le navigateur
+              </a>
+            )}
           </div>
 
           {/* Setup instructions */}
           <div className="rounded-lg border border-border/40 bg-background/40 p-4 space-y-3">
             <div className="flex items-center gap-2 text-xs font-semibold text-muted-foreground">
               <Terminal size={12} />
-              Guide de démarrage (en local sur votre ordinateur)
+              Guide de démarrage
             </div>
             <div className="space-y-2">
               {[
-                { cmd: "npm run setup:server", desc: "1. Installer les dépendances du serveur (une seule fois)" },
-                { cmd: "npm run build", desc: "2. Compiler le frontend React" },
-                { cmd: "VIDEO_STORAGE_PATH=/vos/videos npm start", desc: "3. Lancer l'app complète → http://localhost:3001" },
+                { cmd: "npm run dev:all", desc: "1. Lance Vite :8080 + serveur ADB :3001 en une commande" },
+                { cmd: "npm run build && npm start", desc: "2. (prod) Build + tout sur :3001" },
               ].map(({ cmd, desc }) => (
                 <div key={cmd} className="space-y-0.5">
                   <p className="text-[10px] text-muted-foreground/60">{desc}</p>
@@ -213,13 +244,17 @@ export default function Settings() {
                 </div>
               ))}
             </div>
-            <div className="rounded border border-[hsl(var(--vr-cyan)_/_0.25)] bg-[hsl(var(--vr-cyan)_/_0.05)] px-3 py-2 text-[10px] text-[hsl(var(--vr-cyan))] space-y-0.5">
-              <p className="font-semibold">En développement (hot-reload)</p>
-              <code className="block font-mono opacity-80">npm run dev &amp;&amp; npm run dev:server</code>
-              <p className="opacity-70 pt-0.5">Vite sur :8080 proxy → serveur ADB sur :3001. Le /api est routé automatiquement.</p>
+            <div className="rounded border border-[hsl(var(--vr-cyan)_/_0.25)] bg-[hsl(var(--vr-cyan)_/_0.05)] px-3 py-2.5 text-[10px] text-[hsl(var(--vr-cyan))] space-y-1.5">
+              <p className="font-semibold flex items-center gap-1.5">
+                <Globe size={10} />
+                Tester depuis le preview Lovable avec ngrok
+              </p>
+              <code className="block font-mono opacity-80">brew install ngrok/ngrok/ngrok</code>
+              <code className="block font-mono opacity-80">ngrok http 3001</code>
+              <p className="opacity-70 pt-0.5">Copiez l'URL <code className="font-mono">https://xxxx.ngrok-free.app</code> dans le champ "URL publique" ci-dessus, puis sauvegardez.</p>
             </div>
             <p className="text-[10px] text-muted-foreground/50">
-              Sans serveur : simulation active (pas d'ADB réel, pas de lecture vidéo). Le serveur sert aussi le frontend buildé sur <code className="font-mono">localhost:3001</code>.
+              Sans serveur : simulation active (pas d'ADB réel, pas de lecture vidéo).
             </p>
           </div>
         </div>
@@ -335,3 +370,4 @@ export default function Settings() {
     </div>
   );
 }
+
