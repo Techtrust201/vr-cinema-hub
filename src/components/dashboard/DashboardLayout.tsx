@@ -14,6 +14,7 @@ import {
   Settings,
   Clock,
   BarChart2,
+  FileDown,
 } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
 import { useVRStore } from "@/store/vrStore";
