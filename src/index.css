@@ -8,8 +8,9 @@ All colors MUST be HSL.
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
+    /* VR Ultimate Dark Theme */
+    --background: 240 11% 4%;
+    --foreground: 220 20% 92%;
 
     --card: 0 0% 100%;
     --card-foreground: 222.2 84% 4.9%;
