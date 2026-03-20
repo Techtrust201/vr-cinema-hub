@@ -39,6 +39,17 @@ export default function DeviceCard({ device, onUpdate, onRemove, onPrepareWifi }
   const storagePercent = Math.round((device.storageUsedGB / device.storageTotalGB) * 100);
   const [editingName, setEditingName] = useState(false);
   const [nameValue, setNameValue] = useState(device.name);
+  const [preparingWifi, setPreparingWifi] = useState(false);
+
+  const handlePrepareWifi = async () => {
+    if (!onPrepareWifi) return;
+    setPreparingWifi(true);
+    try {
+      await onPrepareWifi();
+    } finally {
+      setPreparingWifi(false);
+    }
+  };
 
   const commitName = () => {
     const trimmed = nameValue.trim();
