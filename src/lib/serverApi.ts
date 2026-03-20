@@ -1,10 +1,14 @@
 /**
  * serverApi.ts
  * -----------
- * Bridge between the React frontend and the optional local Node.js sync server.
+ * Bridge between the React frontend and the local Node.js sync server.
  *
- * When the server is running (node server/sync-server.js), real ADB operations
- * are performed. Otherwise, the app falls back to simulation mode.
+ * All requests use RELATIVE paths (/api/...) so they work:
+ *   - In dev:  Vite proxies /api/* → http://localhost:3001  (no mixed-content block)
+ *   - In prod: Express serves the React build AND handles /api/* on the same port
+ *
+ * The `serverUrl` parameter is kept for backward-compat but is no longer used
+ * for the actual fetch — the proxy / same-origin routing handles it.
  */
 
 export type ServerStatus = "checking" | "connected" | "disconnected";
@@ -29,10 +33,10 @@ export interface SyncResult {
   lines: string[];
 }
 
-/** Check if the local sync server is reachable */
-export async function checkServer(serverUrl: string): Promise<ServerStatus> {
+/** Check if the local sync server is reachable via the Vite proxy */
+export async function checkServer(_serverUrl?: string): Promise<ServerStatus> {
   try {
-    const res = await fetch(`${serverUrl.replace(/\/$/, "")}/health`, {
+    const res = await fetch("/api/health", {
       signal: AbortSignal.timeout(3000),
     });
     return res.ok ? "connected" : "disconnected";
@@ -42,15 +46,15 @@ export async function checkServer(serverUrl: string): Promise<ServerStatus> {
 }
 
 /** Fetch real ADB devices from the server */
-export async function fetchServerDevices(serverUrl: string): Promise<ServerDevice[]> {
-  const res = await fetch(`${serverUrl.replace(/\/$/, "")}/devices`);
+export async function fetchServerDevices(_serverUrl?: string): Promise<ServerDevice[]> {
+  const res = await fetch("/api/devices");
   if (!res.ok) throw new Error("Failed to fetch devices");
   return res.json();
 }
 
 /** Trigger a real ADB push sync via the server */
-export async function pushSync(serverUrl: string, payload: SyncPayload): Promise<SyncResult> {
-  const res = await fetch(`${serverUrl.replace(/\/$/, "")}/sync`, {
+export async function pushSync(_serverUrl: string | undefined, payload: SyncPayload): Promise<SyncResult> {
+  const res = await fetch("/api/sync", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
@@ -59,7 +63,7 @@ export async function pushSync(serverUrl: string, payload: SyncPayload): Promise
   return res.json();
 }
 
-/** Get the video file URL served by the local server */
-export function getVideoUrl(serverUrl: string, videoName: string): string {
-  return `${serverUrl.replace(/\/$/, "")}/video/${encodeURIComponent(videoName)}`;
+/** Get the video file URL — relative so it works both in dev (proxy) and prod (same origin) */
+export function getVideoUrl(_serverUrl: string | undefined, videoName: string): string {
+  return `/api/video/${encodeURIComponent(videoName)}`;
 }

@@ -10,7 +10,10 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "start": "node server/sync-server.js",
+    "dev:server": "node server/sync-server.js",
+    "setup:server": "cd server && npm init -y && npm install express cors"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",

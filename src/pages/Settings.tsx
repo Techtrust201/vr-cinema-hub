@@ -194,12 +194,13 @@ export default function Settings() {
           <div className="rounded-lg border border-border/40 bg-background/40 p-4 space-y-3">
             <div className="flex items-center gap-2 text-xs font-semibold text-muted-foreground">
               <Terminal size={12} />
-              Guide de démarrage rapide
+              Guide de démarrage (en local sur votre ordinateur)
             </div>
             <div className="space-y-2">
               {[
-                { cmd: "cd server && npm init -y && npm install express cors", desc: "Installer les dépendances" },
-                { cmd: "VIDEO_STORAGE_PATH=/vos/videos node sync-server.js", desc: "Démarrer le serveur" },
+                { cmd: "npm run setup:server", desc: "1. Installer les dépendances du serveur (une seule fois)" },
+                { cmd: "npm run build", desc: "2. Compiler le frontend React" },
+                { cmd: "VIDEO_STORAGE_PATH=/vos/videos npm start", desc: "3. Lancer l'app complète → http://localhost:3001" },
               ].map(({ cmd, desc }) => (
                 <div key={cmd} className="space-y-0.5">
                   <p className="text-[10px] text-muted-foreground/60">{desc}</p>
@@ -209,8 +210,13 @@ export default function Settings() {
                 </div>
               ))}
             </div>
+            <div className="rounded border border-[hsl(var(--vr-cyan)_/_0.25)] bg-[hsl(var(--vr-cyan)_/_0.05)] px-3 py-2 text-[10px] text-[hsl(var(--vr-cyan))] space-y-0.5">
+              <p className="font-semibold">En développement (hot-reload)</p>
+              <code className="block font-mono opacity-80">npm run dev &amp;&amp; npm run dev:server</code>
+              <p className="opacity-70 pt-0.5">Vite sur :8080 proxy → serveur ADB sur :3001. Le /api est routé automatiquement.</p>
+            </div>
             <p className="text-[10px] text-muted-foreground/50">
-              Sans serveur : l'application fonctionne en mode simulation (aucune vraie ADB, aucune lecture vidéo réelle).
+              Sans serveur : simulation active (pas d'ADB réel, pas de lecture vidéo). Le serveur sert aussi le frontend buildé sur <code className="font-mono">localhost:3001</code>.
             </p>
           </div>
         </div>

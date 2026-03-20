@@ -11,6 +11,15 @@ export default defineConfig(({ mode }) => ({
     hmr: {
       overlay: false,
     },
+    proxy: {
+      // In local dev, /api/* is proxied to the Node sync server on :3001
+      // This avoids mixed-content browser errors (HTTPS → HTTP)
+      "/api": {
+        target: "http://localhost:3001",
+        changeOrigin: true,
+        rewrite: (p) => p.replace(/^\/api/, ""),
+      },
+    },
   },
   plugins: [react(), mode === "development" && componentTagger()].filter(Boolean),
   resolve: {
