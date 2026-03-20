@@ -1,5 +1,5 @@
 import { useState, useMemo } from "react";
-import { useVRStore } from "@/store/vrStore";
+import { useVRStore, type Library } from "@/store/vrStore";
 import { cn } from "@/lib/utils";
 import {
   Download,
@@ -7,7 +7,7 @@ import {
   FileText,
   Copy,
   Check,
-  Library,
+  Library as LibraryIcon,
   Film,
   Filter,
 } from "lucide-react";
@@ -29,7 +29,7 @@ interface FlatVideo {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-function flattenLibraries(libraries: ReturnType<typeof useVRStore>["libraries"]["map"] extends never ? never : ReturnType<typeof useVRStore>["libraries"]): FlatVideo[] {
+function flattenLibraries(libraries: Library[]): FlatVideo[] {
   const rows: FlatVideo[] = [];
   for (const lib of libraries) {
     for (const pl of lib.playlists) {
