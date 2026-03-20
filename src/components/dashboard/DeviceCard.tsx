@@ -161,11 +161,28 @@ export default function DeviceCard({ device, onUpdate, onRemove, onPrepareWifi }
       </div>
 
       {/* Footer */}
-      <div className="flex items-center justify-between pt-1 border-t border-border/40">
+      <div className="flex items-center justify-between gap-2 pt-1 border-t border-border/40">
         {device.status === "connected" && (
           <span className="flex items-center gap-1 text-xs text-muted-foreground">
             <Battery size={12} /> {device.battery}%
           </span>
+        )}
+        {/* Préparer Wi-Fi button — USB only (no ipAddress) */}
+        {onPrepareWifi && !device.ipAddress && (
+          <button
+            onClick={handlePrepareWifi}
+            disabled={preparingWifi || device.status !== "connected"}
+            title={device.status !== "connected" ? "Casque doit être connecté en USB" : "Active le mode TCP pour la connexion Wi-Fi ADB"}
+            className={cn(
+              "opacity-0 group-hover:opacity-100 flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium border transition-all active:scale-95",
+              device.status === "connected"
+                ? "border-[hsl(var(--vr-cyan)_/_0.35)] bg-[hsl(var(--vr-cyan)_/_0.08)] text-[hsl(var(--vr-cyan))] hover:bg-[hsl(var(--vr-cyan)_/_0.18)]"
+                : "border-border/30 text-muted-foreground/40 cursor-not-allowed"
+            )}
+          >
+            {preparingWifi ? <Loader2 size={11} className="animate-spin" /> : <Signal size={11} />}
+            Préparer Wi-Fi
+          </button>
         )}
         <span className="text-xs text-muted-foreground ml-auto">
           {device.lastSyncAt
