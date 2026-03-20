@@ -43,25 +43,32 @@ const PAGE_TITLES: Record<string, string> = {
 
 function ServerModeBadge() {
   const { settings } = useVRStore();
-  // In the Lovable hosted preview there is no local proxy — skip polling entirely
+  // In the Lovable hosted preview there is no local proxy — skip polling unless a public URL is set
   const preview = isLovablePreview();
+  const publicUrl = settings.publicServerUrl?.trim();
+
+  // If preview AND no public URL → always "disconnected" (demo mode), no polling
+  const skipPolling = preview && !publicUrl;
+
   const [status, setStatus] = useState<"checking" | "connected" | "disconnected">(
-    preview ? "disconnected" : "checking"
+    skipPolling ? "disconnected" : "checking"
   );
 
   useEffect(() => {
-    if (preview) return; // no polling in Lovable preview
+    if (skipPolling) return;
     let alive = true;
-    checkServer(settings.serverUrl).then((s) => {
+    // Use public URL if set (works from Lovable preview too), else rely on relative /api proxy
+    const baseUrl = publicUrl || undefined;
+    checkServer(baseUrl).then((s) => {
       if (alive) setStatus(s === "connected" ? "connected" : "disconnected");
     });
     const interval = setInterval(() => {
-      checkServer(settings.serverUrl).then((s) => {
+      checkServer(baseUrl).then((s) => {
         if (alive) setStatus(s === "connected" ? "connected" : "disconnected");
       });
     }, 15000);
     return () => { alive = false; clearInterval(interval); };
-  }, [settings.serverUrl, preview]);
+  }, [settings.serverUrl, publicUrl, skipPolling]);
 
   return (
     <span className={cn(
