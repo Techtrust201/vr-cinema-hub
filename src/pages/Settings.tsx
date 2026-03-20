@@ -39,8 +39,9 @@ export default function Settings() {
     form.authToken !== settings.authToken ||
     form.serverUrl !== settings.serverUrl;
 
-  // Auto-check server status on mount
+  // Auto-check server status on mount — skip in Lovable preview (no local proxy available)
   useEffect(() => {
+    if (isLovablePreview()) return;
     if (settings.serverUrl) {
       handleTestServer(settings.serverUrl);
     }
