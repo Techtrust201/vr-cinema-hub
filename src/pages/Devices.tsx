@@ -1,13 +1,140 @@
 import { useState } from "react";
-import { useVRStore } from "@/store/vrStore";
+import { useVRStore, Device, LibraryType } from "@/store/vrStore";
 import DeviceCard from "@/components/dashboard/DeviceCard";
-import { RefreshCw, Headset, Usb, Wifi, Info } from "lucide-react";
+import { RefreshCw, Usb, Wifi, Info, Plus, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
+function AddDeviceModal({ onClose }: { onClose: () => void }) {
+  const addDevice = useVRStore((s) => s.addDevice);
+  const [form, setForm] = useState({
+    name: "",
+    serial: "",
+    type: "location" as LibraryType,
+    ipAddress: "",
+    storageTotalGB: 128,
+  });
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!form.name.trim() || !form.serial.trim()) return;
+    const device: Device = {
+      id: `d-${Date.now()}`,
+      serial: form.serial.trim().toUpperCase(),
+      name: form.name.trim(),
+      type: form.type,
+      status: "disconnected",
+      storageUsedGB: 0,
+      storageTotalGB: form.storageTotalGB,
+      battery: 0,
+      lastSyncAt: null,
+      ipAddress: form.ipAddress.trim() || null,
+    };
+    addDevice(device);
+    toast.success(`Casque "${device.name}" ajouté`);
+    onClose();
+  };
+
+  const field = (label: string, node: React.ReactNode) => (
+    <div className="space-y-1.5">
+      <label className="text-xs font-medium text-muted-foreground">{label}</label>
+      {node}
+    </div>
+  );
+
+  const inputCls = "w-full px-3 py-2 rounded-lg bg-background border border-border focus:border-[hsl(var(--vr-violet)_/_0.5)] focus:outline-none text-sm transition-colors";
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/70 backdrop-blur-sm" onClick={onClose}>
+      <div
+        className="w-full max-w-md mx-4 rounded-xl border border-[hsl(var(--vr-violet)_/_0.3)] bg-[hsl(var(--vr-surface))] p-6 shadow-[0_0_40px_hsl(var(--vr-violet)_/_0.2)]"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between mb-5">
+          <h3 className="text-base font-semibold">Ajouter un casque</h3>
+          <button onClick={onClose} className="p-1 rounded text-muted-foreground hover:bg-muted/50"><X size={15} /></button>
+        </div>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          {field("Nom du casque *", (
+            <input
+              autoFocus
+              type="text"
+              value={form.name}
+              onChange={(e) => setForm({ ...form, name: e.target.value })}
+              placeholder="Quest 3 — Location #3"
+              className={inputCls}
+            />
+          ))}
+          {field("Numéro de série *", (
+            <input
+              type="text"
+              value={form.serial}
+              onChange={(e) => setForm({ ...form, serial: e.target.value })}
+              placeholder="1WMHHA000X0000"
+              className={cn(inputCls, "font-mono")}
+            />
+          ))}
+          {field("Type de bibliothèque", (
+            <div className="grid grid-cols-2 gap-2">
+              {(["location", "animations"] as LibraryType[]).map((t) => (
+                <button
+                  key={t}
+                  type="button"
+                  onClick={() => setForm({ ...form, type: t })}
+                  className={cn(
+                    "px-3 py-2 rounded-lg border text-sm font-medium transition-all capitalize",
+                    form.type === t
+                      ? t === "location"
+                        ? "bg-[hsl(var(--vr-violet)_/_0.15)] border-[hsl(var(--vr-violet)_/_0.4)] text-[hsl(var(--vr-violet))]"
+                        : "bg-[hsl(var(--vr-cyan)_/_0.12)] border-[hsl(var(--vr-cyan)_/_0.4)] text-[hsl(var(--vr-cyan))]"
+                      : "border-border/60 text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  {t}
+                </button>
+              ))}
+            </div>
+          ))}
+          {field("Adresse IP (Wi-Fi, optionnel)", (
+            <input
+              type="text"
+              value={form.ipAddress}
+              onChange={(e) => setForm({ ...form, ipAddress: e.target.value })}
+              placeholder="192.168.1.45"
+              className={cn(inputCls, "font-mono")}
+            />
+          ))}
+          {field("Stockage total (GB)", (
+            <select
+              value={form.storageTotalGB}
+              onChange={(e) => setForm({ ...form, storageTotalGB: Number(e.target.value) })}
+              className={inputCls}
+            >
+              {[64, 128, 256, 512].map((v) => <option key={v} value={v}>{v} GB</option>)}
+            </select>
+          ))}
+          <div className="flex gap-2 pt-1">
+            <button type="button" onClick={onClose} className="flex-1 px-4 py-2 rounded-lg border border-border text-sm hover:bg-muted/50 transition-colors">
+              Annuler
+            </button>
+            <button
+              type="submit"
+              disabled={!form.name.trim() || !form.serial.trim()}
+              className="flex-1 px-4 py-2 rounded-lg bg-[hsl(var(--vr-violet))] text-white text-sm font-medium hover:bg-[hsl(var(--vr-violet)_/_0.85)] disabled:opacity-40 transition-colors"
+            >
+              Ajouter
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 export default function Devices() {
-  const { devices, refreshDevices } = useVRStore();
+  const { devices, refreshDevices, updateDevice, removeDevice } = useVRStore();
   const [refreshing, setRefreshing] = useState(false);
+  const [addModalOpen, setAddModalOpen] = useState(false);
 
   const connected = devices.filter((d) => d.status === "connected");
   const disconnected = devices.filter((d) => d.status === "disconnected");
@@ -21,6 +148,11 @@ export default function Devices() {
     }, 1200);
   };
 
+  const handleRemove = (id: string, name: string) => {
+    removeDevice(id);
+    toast.info(`Casque "${name}" supprimé`);
+  };
+
   return (
     <div className="p-6 md:p-8 space-y-8 animate-fade-in-up">
       {/* Header */}
@@ -31,14 +163,22 @@ export default function Devices() {
             Appareils Meta Quest détectés via ADB
           </p>
         </div>
-        <button
-          onClick={handleRefresh}
-          disabled={refreshing}
-          className="flex items-center gap-2 px-4 py-2 rounded-lg border border-[hsl(var(--vr-violet)_/_0.3)] bg-[hsl(var(--vr-violet)_/_0.08)] text-[hsl(var(--vr-violet))] text-sm font-medium hover:bg-[hsl(var(--vr-violet)_/_0.15)] disabled:opacity-50 transition-all active:scale-95"
-        >
-          <RefreshCw size={14} className={cn(refreshing && "animate-spin")} />
-          Rafraîchir
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setAddModalOpen(true)}
+            className="flex items-center gap-2 px-4 py-2 rounded-lg border border-[hsl(var(--vr-cyan)_/_0.3)] bg-[hsl(var(--vr-cyan)_/_0.08)] text-[hsl(var(--vr-cyan))] text-sm font-medium hover:bg-[hsl(var(--vr-cyan)_/_0.15)] transition-all active:scale-95"
+          >
+            <Plus size={14} /> Ajouter
+          </button>
+          <button
+            onClick={handleRefresh}
+            disabled={refreshing}
+            className="flex items-center gap-2 px-4 py-2 rounded-lg border border-[hsl(var(--vr-violet)_/_0.3)] bg-[hsl(var(--vr-violet)_/_0.08)] text-[hsl(var(--vr-violet))] text-sm font-medium hover:bg-[hsl(var(--vr-violet)_/_0.15)] disabled:opacity-50 transition-all active:scale-95"
+          >
+            <RefreshCw size={14} className={cn(refreshing && "animate-spin")} />
+            Rafraîchir
+          </button>
+        </div>
       </div>
 
       {/* Summary */}
@@ -68,7 +208,14 @@ export default function Devices() {
             Connectés ({connected.length})
           </h2>
           <div className="grid sm:grid-cols-2 gap-4">
-            {connected.map((d) => <DeviceCard key={d.id} device={d} />)}
+            {connected.map((d) => (
+              <DeviceCard
+                key={d.id}
+                device={d}
+                onUpdate={(updates) => updateDevice(d.id, updates)}
+                onRemove={() => handleRemove(d.id, d.name)}
+              />
+            ))}
           </div>
         </section>
       )}
@@ -81,9 +228,22 @@ export default function Devices() {
             Déconnectés ({disconnected.length})
           </h2>
           <div className="grid sm:grid-cols-2 gap-4">
-            {disconnected.map((d) => <DeviceCard key={d.id} device={d} />)}
+            {disconnected.map((d) => (
+              <DeviceCard
+                key={d.id}
+                device={d}
+                onUpdate={(updates) => updateDevice(d.id, updates)}
+                onRemove={() => handleRemove(d.id, d.name)}
+              />
+            ))}
           </div>
         </section>
+      )}
+
+      {devices.length === 0 && (
+        <div className="rounded-xl border border-dashed border-border/50 py-16 flex flex-col items-center gap-3 text-muted-foreground/50">
+          <p className="text-sm">Aucun casque. Ajoutez-en un ou rafraîchissez.</p>
+        </div>
       )}
 
       {/* Connection guide */}
@@ -129,7 +289,7 @@ export default function Devices() {
                 "Installer Meta Quest Developer Hub",
                 "Utiliser le pairing Wi-Fi intégré dans MQDH",
                 "Une fois pairé, déconnecter l'USB",
-                'adb devices affiche l\'IP (ex: 192.168.1.42:5555)',
+                "adb devices affiche l'IP (ex: 192.168.1.42:5555)",
               ].map((step, i) => (
                 <li key={i} className="flex gap-2.5 text-xs text-muted-foreground">
                   <span className="shrink-0 w-4 h-4 rounded-full bg-[hsl(var(--vr-cyan)_/_0.15)] text-[hsl(var(--vr-cyan))] text-[10px] flex items-center justify-center font-bold">{i + 1}</span>
@@ -142,6 +302,8 @@ export default function Devices() {
           </div>
         </div>
       </section>
+
+      {addModalOpen && <AddDeviceModal onClose={() => setAddModalOpen(false)} />}
     </div>
   );
 }

@@ -10,6 +10,9 @@ import {
   MapPin,
   Clapperboard,
   FolderOpen,
+  Pencil,
+  Check,
+  X,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -80,8 +83,21 @@ interface PlaylistAccordionProps {
 function PlaylistAccordion({ libraryId, playlistId, name, videos }: PlaylistAccordionProps) {
   const [open, setOpen] = useState(true);
   const [dragging, setDragging] = useState(false);
+  const [editingName, setEditingName] = useState(false);
+  const [nameValue, setNameValue] = useState(name);
   const fileRef = useRef<HTMLInputElement>(null);
-  const { addVideo, removeVideo, removePlaylist } = useVRStore();
+  const { addVideo, removeVideo, removePlaylist, updateVideo, renamePlaylist } = useVRStore();
+
+  const commitName = () => {
+    const trimmed = nameValue.trim();
+    if (trimmed && trimmed !== name) {
+      renamePlaylist(libraryId, playlistId, trimmed);
+      toast.success("Playlist renommée");
+    } else {
+      setNameValue(name);
+    }
+    setEditingName(false);
+  };
 
   const handleFiles = (files: FileList | null) => {
     if (!files) return;
@@ -107,18 +123,42 @@ function PlaylistAccordion({ libraryId, playlistId, name, videos }: PlaylistAcco
     <div className="rounded-xl border border-border/60 bg-[hsl(var(--vr-surface)_/_0.5)] overflow-hidden">
       {/* Playlist header */}
       <div className="flex items-center gap-3 px-4 py-3">
-        <button onClick={() => setOpen(!open)} className="flex items-center gap-2 flex-1 min-w-0 text-left">
-          <ChevronDown size={15} className={cn("text-muted-foreground transition-transform shrink-0", open && "rotate-180")} />
-          <FolderOpen size={15} className="text-[hsl(var(--vr-violet))] shrink-0" />
-          <span className="text-sm font-medium text-foreground truncate">{name}</span>
-          <span className="text-xs text-muted-foreground/60 shrink-0">({videos.length})</span>
+        <button onClick={() => setOpen(!open)} className="p-0.5 text-muted-foreground shrink-0">
+          <ChevronDown size={15} className={cn("transition-transform", open && "rotate-180")} />
         </button>
+        <FolderOpen size={15} className="text-[hsl(var(--vr-violet))] shrink-0" />
+
+        {editingName ? (
+          <div className="flex items-center gap-1.5 flex-1 min-w-0">
+            <input
+              autoFocus
+              value={nameValue}
+              onChange={(e) => setNameValue(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") commitName(); if (e.key === "Escape") { setNameValue(name); setEditingName(false); } }}
+              className="flex-1 min-w-0 px-2 py-0.5 text-sm font-medium rounded border border-[hsl(var(--vr-violet)_/_0.5)] bg-background focus:outline-none"
+            />
+            <button onClick={commitName} className="p-1 text-[hsl(140_70%_55%)] hover:bg-muted/50 rounded shrink-0"><Check size={12} /></button>
+            <button onClick={() => { setNameValue(name); setEditingName(false); }} className="p-1 text-muted-foreground hover:bg-muted/50 rounded shrink-0"><X size={12} /></button>
+          </div>
+        ) : (
+          <div className="flex items-center gap-1.5 flex-1 min-w-0 group/pl">
+            <span className="text-sm font-medium text-foreground truncate">{name}</span>
+            <span className="text-xs text-muted-foreground/60 shrink-0">({videos.length})</span>
+            <button
+              onClick={() => setEditingName(true)}
+              className="opacity-0 group-hover/pl:opacity-100 p-0.5 rounded text-muted-foreground/50 hover:text-[hsl(var(--vr-violet))] transition-all shrink-0"
+            >
+              <Pencil size={11} />
+            </button>
+          </div>
+        )}
+
         <button
           onClick={() => {
             removePlaylist(libraryId, playlistId);
             toast.info(`Playlist "${name}" supprimée`);
           }}
-          className="p-1.5 rounded text-muted-foreground/40 hover:text-destructive hover:bg-destructive/10 transition-all"
+          className="p-1.5 rounded text-muted-foreground/40 hover:text-destructive hover:bg-destructive/10 transition-all shrink-0"
         >
           <Trash2 size={13} />
         </button>
@@ -134,6 +174,10 @@ function PlaylistAccordion({ libraryId, playlistId, name, videos }: PlaylistAcco
                   key={v.id}
                   video={v}
                   onRemove={() => removeVideo(libraryId, playlistId, v.id)}
+                  onUpdate={(updates) => {
+                    updateVideo(libraryId, playlistId, v.id, updates);
+                    toast.success("Format mis à jour");
+                  }}
                 />
               ))}
             </div>

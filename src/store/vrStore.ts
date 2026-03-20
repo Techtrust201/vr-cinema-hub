@@ -57,13 +57,23 @@ interface VRStore {
   libraries: Library[];
   devices: Device[];
   syncLogs: SyncLog[];
+  // Playlist actions
   addPlaylist: (libraryId: LibraryType, name: string) => void;
   removePlaylist: (libraryId: LibraryType, playlistId: string) => void;
+  renamePlaylist: (libraryId: LibraryType, playlistId: string, newName: string) => void;
+  // Video actions
   addVideo: (libraryId: LibraryType, playlistId: string, video: Video) => void;
   removeVideo: (libraryId: LibraryType, playlistId: string, videoId: string) => void;
+  updateVideo: (libraryId: LibraryType, playlistId: string, videoId: string, updates: Partial<Pick<Video, "format" | "stereo" | "name">>) => void;
+  // Device actions
   refreshDevices: () => void;
+  addDevice: (device: Device) => void;
+  removeDevice: (deviceId: string) => void;
+  updateDevice: (deviceId: string, updates: Partial<Device>) => void;
+  // Sync log actions
   addSyncLog: (log: SyncLog) => void;
   updateSyncLog: (id: string, updates: Partial<SyncLog>) => void;
+  clearSyncLogs: () => void;
 }
 
 const MOCK_DEVICES: Device[] = [
@@ -221,13 +231,7 @@ export const useVRStore = create<VRStore>()(
         set((s) => ({
           libraries: s.libraries.map((lib) =>
             lib.id === libraryId
-              ? {
-                  ...lib,
-                  playlists: [
-                    ...lib.playlists,
-                    { id: `pl-${Date.now()}`, name, videos: [] },
-                  ],
-                }
+              ? { ...lib, playlists: [...lib.playlists, { id: `pl-${Date.now()}`, name, videos: [] }] }
               : lib
           ),
         })),
@@ -237,6 +241,20 @@ export const useVRStore = create<VRStore>()(
           libraries: s.libraries.map((lib) =>
             lib.id === libraryId
               ? { ...lib, playlists: lib.playlists.filter((p) => p.id !== playlistId) }
+              : lib
+          ),
+        })),
+
+      renamePlaylist: (libraryId, playlistId, newName) =>
+        set((s) => ({
+          libraries: s.libraries.map((lib) =>
+            lib.id === libraryId
+              ? {
+                  ...lib,
+                  playlists: lib.playlists.map((p) =>
+                    p.id === playlistId ? { ...p, name: newName } : p
+                  ),
+                }
               : lib
           ),
         })),
@@ -271,12 +289,44 @@ export const useVRStore = create<VRStore>()(
           ),
         })),
 
+      updateVideo: (libraryId, playlistId, videoId, updates) =>
+        set((s) => ({
+          libraries: s.libraries.map((lib) =>
+            lib.id === libraryId
+              ? {
+                  ...lib,
+                  playlists: lib.playlists.map((p) =>
+                    p.id === playlistId
+                      ? {
+                          ...p,
+                          videos: p.videos.map((v) =>
+                            v.id === videoId ? { ...v, ...updates } : v
+                          ),
+                        }
+                      : p
+                  ),
+                }
+              : lib
+          ),
+        })),
+
       refreshDevices: () =>
         set((s) => ({
           devices: s.devices.map((d) => ({
             ...d,
             status: d.status === "disconnected" && Math.random() > 0.7 ? "connected" : d.status,
           })),
+        })),
+
+      addDevice: (device) =>
+        set((s) => ({ devices: [...s.devices, device] })),
+
+      removeDevice: (deviceId) =>
+        set((s) => ({ devices: s.devices.filter((d) => d.id !== deviceId) })),
+
+      updateDevice: (deviceId, updates) =>
+        set((s) => ({
+          devices: s.devices.map((d) => (d.id === deviceId ? { ...d, ...updates } : d)),
         })),
 
       addSyncLog: (log) =>
@@ -286,6 +336,8 @@ export const useVRStore = create<VRStore>()(
         set((s) => ({
           syncLogs: s.syncLogs.map((l) => (l.id === id ? { ...l, ...updates } : l)),
         })),
+
+      clearSyncLogs: () => set({ syncLogs: [] }),
     }),
     { name: "vr-ultimate-store" }
   )

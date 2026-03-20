@@ -1,9 +1,12 @@
-import { Battery, Wifi, Usb, MapPin, Clapperboard } from "lucide-react";
+import { Battery, Wifi, Usb, MapPin, Clapperboard, Pencil, Trash2, Check, X } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { Device } from "@/store/vrStore";
+import { Device, LibraryType } from "@/store/vrStore";
+import { useState } from "react";
 
 interface DeviceCardProps {
   device: Device;
+  onUpdate?: (updates: Partial<Device>) => void;
+  onRemove?: () => void;
 }
 
 const statusMap = {
@@ -30,38 +33,91 @@ const statusMap = {
   },
 };
 
-export default function DeviceCard({ device }: DeviceCardProps) {
+export default function DeviceCard({ device, onUpdate, onRemove }: DeviceCardProps) {
   const s = statusMap[device.status];
   const storagePercent = Math.round((device.storageUsedGB / device.storageTotalGB) * 100);
+  const [editingName, setEditingName] = useState(false);
+  const [nameValue, setNameValue] = useState(device.name);
+
+  const commitName = () => {
+    const trimmed = nameValue.trim();
+    if (trimmed && trimmed !== device.name) onUpdate?.({ name: trimmed });
+    else setNameValue(device.name);
+    setEditingName(false);
+  };
+
+  const toggleType = () => {
+    const next: LibraryType = device.type === "location" ? "animations" : "location";
+    onUpdate?.({ type: next });
+  };
 
   return (
     <div className={cn(
-      "rounded-xl border bg-[hsl(var(--vr-surface))] p-5 flex flex-col gap-4 transition-all duration-300",
+      "rounded-xl border bg-[hsl(var(--vr-surface))] p-5 flex flex-col gap-4 transition-all duration-300 group",
       s.border, s.glow
     )}>
       {/* Header */}
       <div className="flex items-start justify-between gap-3">
-        <div>
-          <p className="font-semibold text-sm text-foreground">{device.name}</p>
+        <div className="flex-1 min-w-0">
+          {editingName ? (
+            <div className="flex items-center gap-1.5">
+              <input
+                autoFocus
+                value={nameValue}
+                onChange={(e) => setNameValue(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") commitName(); if (e.key === "Escape") { setNameValue(device.name); setEditingName(false); } }}
+                className="flex-1 min-w-0 px-2 py-0.5 text-sm font-semibold rounded border border-[hsl(var(--vr-violet)_/_0.5)] bg-background focus:outline-none"
+              />
+              <button onClick={commitName} className="p-1 text-[hsl(140_70%_55%)] hover:bg-muted/50 rounded"><Check size={12} /></button>
+              <button onClick={() => { setNameValue(device.name); setEditingName(false); }} className="p-1 text-muted-foreground hover:bg-muted/50 rounded"><X size={12} /></button>
+            </div>
+          ) : (
+            <div className="flex items-center gap-1.5 group/name">
+              <p className="font-semibold text-sm text-foreground truncate">{device.name}</p>
+              {onUpdate && (
+                <button
+                  onClick={() => setEditingName(true)}
+                  className="opacity-0 group-hover/name:opacity-100 p-0.5 rounded text-muted-foreground/50 hover:text-[hsl(var(--vr-violet))] transition-all"
+                >
+                  <Pencil size={11} />
+                </button>
+              )}
+            </div>
+          )}
           <p className="text-xs font-mono text-muted-foreground mt-0.5">{device.serial}</p>
         </div>
-        <div className={cn("flex items-center gap-1.5 text-xs font-medium shrink-0", s.color)}>
-          <span className={cn("w-2 h-2 rounded-full", s.dot)} />
-          {s.label}
+        <div className="flex items-center gap-2 shrink-0">
+          <div className={cn("flex items-center gap-1.5 text-xs font-medium", s.color)}>
+            <span className={cn("w-2 h-2 rounded-full", s.dot)} />
+            {s.label}
+          </div>
+          {onRemove && (
+            <button
+              onClick={onRemove}
+              className="opacity-0 group-hover:opacity-100 p-1 rounded text-muted-foreground/40 hover:text-destructive hover:bg-destructive/10 transition-all"
+            >
+              <Trash2 size={13} />
+            </button>
+          )}
         </div>
       </div>
 
-      {/* Type badge */}
+      {/* Type badge — clickable to toggle */}
       <div className="flex items-center gap-2">
-        {device.type === "location" ? (
-          <span className="flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full bg-[hsl(var(--vr-violet)_/_0.12)] text-[hsl(var(--vr-violet))] border border-[hsl(var(--vr-violet)_/_0.25)]">
-            <MapPin size={11} /> Location
-          </span>
-        ) : (
-          <span className="flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full bg-[hsl(var(--vr-cyan)_/_0.12)] text-[hsl(var(--vr-cyan))] border border-[hsl(var(--vr-cyan)_/_0.25)]">
-            <Clapperboard size={11} /> Animations
-          </span>
-        )}
+        <button
+          onClick={onUpdate ? toggleType : undefined}
+          className={cn(
+            "flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full border transition-all",
+            onUpdate && "hover:opacity-80 active:scale-95",
+            device.type === "location"
+              ? "bg-[hsl(var(--vr-violet)_/_0.12)] text-[hsl(var(--vr-violet))] border-[hsl(var(--vr-violet)_/_0.25)]"
+              : "bg-[hsl(var(--vr-cyan)_/_0.12)] text-[hsl(var(--vr-cyan))] border-[hsl(var(--vr-cyan)_/_0.25)]"
+          )}
+        >
+          {device.type === "location" ? <MapPin size={11} /> : <Clapperboard size={11} />}
+          {device.type === "location" ? "Location" : "Animations"}
+          {onUpdate && <span className="opacity-40 ml-0.5 text-[9px]">▼</span>}
+        </button>
         {device.ipAddress && (
           <span className="flex items-center gap-1 text-xs text-muted-foreground font-mono">
             <Wifi size={10} /> {device.ipAddress}
