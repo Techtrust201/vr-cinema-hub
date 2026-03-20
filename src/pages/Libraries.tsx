@@ -86,6 +86,7 @@ function PlaylistAccordion({ libraryId, playlistId, name, videos }: PlaylistAcco
   const [dragging, setDragging] = useState(false);
   const [editingName, setEditingName] = useState(false);
   const [nameValue, setNameValue] = useState(name);
+  const [previewVideo, setPreviewVideo] = useState<Video | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const { addVideo, removeVideo, removePlaylist, updateVideo, renamePlaylist } = useVRStore();
 
