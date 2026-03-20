@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useVRStore } from "@/store/vrStore";
-import { checkServer } from "@/lib/serverApi";
+import { checkServer, isLovablePreview } from "@/lib/serverApi";
 import {
   FolderOpen,
   HardDrive,

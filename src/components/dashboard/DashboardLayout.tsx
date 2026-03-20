@@ -40,9 +40,14 @@ const PAGE_TITLES: Record<string, string> = {
 
 function ServerModeBadge() {
   const { settings } = useVRStore();
-  const [status, setStatus] = useState<"checking" | "connected" | "disconnected">("checking");
+  // In the Lovable hosted preview there is no local proxy — skip polling entirely
+  const preview = isLovablePreview();
+  const [status, setStatus] = useState<"checking" | "connected" | "disconnected">(
+    preview ? "disconnected" : "checking"
+  );
 
   useEffect(() => {
+    if (preview) return; // no polling in Lovable preview
     let alive = true;
     checkServer(settings.serverUrl).then((s) => {
       if (alive) setStatus(s === "connected" ? "connected" : "disconnected");
@@ -53,7 +58,7 @@ function ServerModeBadge() {
       });
     }, 15000);
     return () => { alive = false; clearInterval(interval); };
-  }, [settings.serverUrl]);
+  }, [settings.serverUrl, preview]);
 
   return (
     <span className={cn(
