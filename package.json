@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:all": "concurrently -n \"VITE,SERVER\" -c \"cyan,yellow\" \"vite\" \"node server/sync-server.js\"",
     "build": "vite build",
     "build:dev": "vite build --mode development",
     "lint": "eslint .",
@@ -12,8 +13,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "start": "node server/sync-server.js",
-    "dev:server": "node server/sync-server.js",
-    "setup:server": "cd server && npm init -y && npm install express cors"
+    "dev:server": "node server/sync-server.js"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
