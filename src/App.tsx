@@ -8,6 +8,7 @@ import Index from "./pages/Index";
 import Libraries from "./pages/Libraries";
 import Devices from "./pages/Devices";
 import Sync from "./pages/Sync";
+import Settings from "./pages/Settings";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -24,6 +25,7 @@ const App = () => (
             <Route path="/libraries" element={<Libraries />} />
             <Route path="/devices" element={<Devices />} />
             <Route path="/sync" element={<Sync />} />
+            <Route path="/settings" element={<Settings />} />
           </Route>
           <Route path="*" element={<NotFound />} />
         </Routes>
