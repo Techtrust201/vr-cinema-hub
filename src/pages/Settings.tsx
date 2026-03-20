@@ -28,8 +28,10 @@ export default function Settings() {
   const [confirmReset, setConfirmReset] = useState(false);
   const [saved, setSaved] = useState(false);
 
-  // Server connection test
-  const [serverStatus, setServerStatus] = useState<"idle" | "checking" | "connected" | "disconnected">("idle");
+  // Server connection test — skip auto-check in the Lovable hosted preview (no local proxy)
+  const [serverStatus, setServerStatus] = useState<"idle" | "checking" | "connected" | "disconnected">(
+    isLovablePreview() ? "disconnected" : "idle"
+  );
 
   const isDirty =
     form.videoStoragePath !== settings.videoStoragePath ||
