@@ -1,27 +1,36 @@
 #!/usr/bin/env node
 /**
- * VR Ultimate — Local Sync Server
- * ================================
- * Run this on your Mac/PC to enable real ADB sync from the dashboard.
+ * VR Ultimate — Full-Stack Server (frontend + ADB sync API)
+ * ==========================================================
+ * This single server:
+ *   1. Serves the React production build from ../dist/  (after npm run build)
+ *   2. Exposes the ADB sync API under /api/*
+ *   3. Handles React Router client-side routes via catch-all → index.html
  *
  * Prerequisites:
  *   - Node.js >= 18
  *   - ADB installed and in PATH (Android Platform Tools)
  *   - Meta Quest connected via USB or Wi-Fi ADB
  *
- * Install deps:
- *   cd server && npm init -y && npm install express cors
+ * First-time setup (run once from the project root):
+ *   npm install              ← install React deps
+ *   npm install -g express   ← OR: cd server && npm init -y && npm install express cors
  *
- * Run:
- *   node server/sync-server.js
+ * Build + run (production, single command):
+ *   npm run build && npm start
+ *   → App available at http://localhost:3001
  *
- * Configure in the dashboard under Paramètres > URL du serveur local
- * Default: http://localhost:3001
+ * Development (hot-reload):
+ *   npm run dev              ← Vite dev server on :8080, proxies /api → :3001
+ *   node server/sync-server.js  ← ADB API on :3001
+ *
+ * Override video storage path:
+ *   VIDEO_STORAGE_PATH=/my/videos npm start
  */
 
 const express = require("express");
 const cors = require("cors");
-const { execSync, exec } = require("child_process");
+const { execSync } = require("child_process");
 const path = require("path");
 const fs = require("fs");
 
