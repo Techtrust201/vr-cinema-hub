@@ -56,8 +56,21 @@ app.get("/health", (req, res) => {
   res.json({ ok: true, version: "1.0.0", storagePath: VIDEO_STORAGE_PATH });
 });
 
+// ─── Helper: check if ADB is in PATH ─────────────────────────────────────────
+function checkAdb() {
+  try {
+    execSync("adb version", { encoding: "utf8", stdio: "pipe" });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 // ─── List ADB devices ─────────────────────────────────────────────────────────
 function listAdbDevices(res) {
+  if (!checkAdb()) {
+    return res.status(503).json({ error: "ADB not found in PATH. Install Android Platform Tools." });
+  }
   try {
     const output = execSync("adb devices -l", { encoding: "utf8" });
     const lines = output.split("\n").slice(1).filter((l) => l.trim() && !l.startsWith("*"));
@@ -79,6 +92,73 @@ function listAdbDevices(res) {
 
 app.get("/api/devices", (req, res) => listAdbDevices(res));
 app.get("/devices", (req, res) => listAdbDevices(res)); // backward compat
+
+// ─── Connect a device via Wi-Fi ADB ──────────────────────────────────────────
+app.post("/api/connect", (req, res) => {
+  const { ip, port = 5555 } = req.body;
+  if (!ip) return res.status(400).json({ error: "Missing ip" });
+  if (!checkAdb()) return res.status(503).json({ error: "ADB not found in PATH" });
+  try {
+    const output = execSync(`adb connect ${ip}:${port}`, { encoding: "utf8", timeout: 10000 });
+    const success = output.toLowerCase().includes("connected");
+    res.json({ success, output: output.trim(), address: `${ip}:${port}` });
+  } catch (err) {
+    res.status(500).json({ error: "adb connect failed", detail: err.message });
+  }
+});
+
+// ─── Real device status (battery + storage) from ADB ─────────────────────────
+app.get("/api/device-status/:serial", (req, res) => {
+  const { serial } = req.params;
+  if (!checkAdb()) return res.status(503).json({ error: "ADB not found in PATH" });
+  try {
+    // Battery level
+    let battery = 0;
+    try {
+      const batteryOut = execSync(`adb -s ${serial} shell dumpsys battery`, { encoding: "utf8", timeout: 5000 });
+      const match = batteryOut.match(/level:\s*(\d+)/);
+      if (match) battery = parseInt(match[1], 10);
+    } catch {}
+
+    // Storage /sdcard
+    let storageUsedGB = 0;
+    let storageTotalGB = 0;
+    try {
+      const dfOut = execSync(`adb -s ${serial} shell df /sdcard`, { encoding: "utf8", timeout: 5000 });
+      const lines = dfOut.split("\n").filter((l) => l.includes("/sdcard") || l.match(/\d+/));
+      // Parse last data line: Filesystem 1K-blocks Used Available Use% Mounted
+      const dataLine = lines.find((l) => l.match(/\d{4,}/));
+      if (dataLine) {
+        const parts = dataLine.trim().split(/\s+/);
+        // df on Android: Filesystem Size Used Avail Use% Mount
+        // Sometimes sizes are in K, sometimes with suffix (G/M)
+        const parseSize = (s) => {
+          if (!s) return 0;
+          const n = parseFloat(s);
+          if (s.endsWith("G")) return n;
+          if (s.endsWith("M")) return n / 1024;
+          if (s.endsWith("K") || !isNaN(n)) return n / (1024 * 1024); // KB → GB
+          return 0;
+        };
+        if (parts.length >= 4) {
+          storageTotalGB = parseSize(parts[1]);
+          storageUsedGB = parseSize(parts[2]);
+        }
+      }
+    } catch {}
+
+    // Connection status
+    let status = "offline";
+    try {
+      const stateOut = execSync(`adb -s ${serial} get-state`, { encoding: "utf8", timeout: 3000 }).trim();
+      status = stateOut === "device" ? "connected" : stateOut;
+    } catch {}
+
+    res.json({ serial, battery, storageUsedGB, storageTotalGB, status });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to read device status", detail: err.message });
+  }
+});
 
 // ─── Sync videos to a device ──────────────────────────────────────────────────
 async function handleSync(req, res) {

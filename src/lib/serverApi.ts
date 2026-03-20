@@ -75,3 +75,29 @@ export async function pushSync(_serverUrl: string | undefined, payload: SyncPayl
 export function getVideoUrl(_serverUrl: string | undefined, videoName: string): string {
   return `/api/video/${encodeURIComponent(videoName)}`;
 }
+
+/** Connect a device via Wi-Fi ADB (adb connect IP:PORT) */
+export async function connectDevice(ip: string, port = 5555): Promise<{ success: boolean; output: string; address: string }> {
+  const res = await fetch("/api/connect", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ip, port }),
+  });
+  if (!res.ok) throw new Error("Wi-Fi connect failed");
+  return res.json();
+}
+
+export interface DeviceAdbStatus {
+  serial: string;
+  battery: number;
+  storageUsedGB: number;
+  storageTotalGB: number;
+  status: string;
+}
+
+/** Read real battery + storage from ADB for a connected device */
+export async function fetchDeviceStatus(serial: string): Promise<DeviceAdbStatus> {
+  const res = await fetch(`/api/device-status/${encodeURIComponent(serial)}`);
+  if (!res.ok) throw new Error("Failed to fetch device status");
+  return res.json();
+}
