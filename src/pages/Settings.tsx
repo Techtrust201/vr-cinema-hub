@@ -16,12 +16,13 @@ import {
   WifiOff,
   Loader2,
   Terminal,
+  FlaskConical,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
 export default function Settings() {
-  const { settings, updateSettings, resetStore } = useVRStore();
+  const { settings, updateSettings, resetStore, loadDemoData } = useVRStore();
   const [form, setForm] = useState({ ...settings });
   const [showToken, setShowToken] = useState(false);
   const [confirmReset, setConfirmReset] = useState(false);
@@ -267,6 +268,34 @@ export default function Settings() {
         </button>
       </div>
 
+      {/* Demo data */}
+      <section className="rounded-xl border border-[hsl(var(--vr-violet)_/_0.3)] bg-[hsl(var(--vr-violet)_/_0.04)] overflow-hidden">
+        <div className="px-5 py-4 border-b border-[hsl(var(--vr-violet)_/_0.2)] flex items-center gap-2">
+          <FlaskConical size={15} className="text-[hsl(var(--vr-violet))]" />
+          <h2 className="text-sm font-semibold">Données de démo</h2>
+        </div>
+        <div className="p-5 flex items-start justify-between gap-4">
+          <div>
+            <p className="text-sm font-medium">Charger les données de test</p>
+            <p className="text-xs text-muted-foreground mt-1">
+              Injecte 9 vidéos VR réalistes, 3 casques Quest avec serials/IPs réels et 4 entrées de sync dans le store. Idéal pour tester toutes les fonctionnalités.
+            </p>
+            <ul className="mt-2 space-y-0.5 text-[11px] text-muted-foreground/70 font-mono">
+              <li>• 2 playlists Location (Paris, New York) — 5 vidéos 360°/180°</li>
+              <li>• 2 playlists Animations — 4 vidéos 180° SBS/OU 8K</li>
+              <li>• Quest Pro · Quest 3 · Quest 2 (serials + IP réels)</li>
+            </ul>
+          </div>
+          <button
+            onClick={() => { loadDemoData(); toast.success("Données de démo chargées ✓"); }}
+            className="shrink-0 flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all active:scale-95 border border-[hsl(var(--vr-violet)_/_0.4)] text-[hsl(var(--vr-violet))] hover:bg-[hsl(var(--vr-violet)_/_0.1)]"
+          >
+            <FlaskConical size={13} />
+            Charger démo
+          </button>
+        </div>
+      </section>
+
       {/* Danger zone */}
       <section className="rounded-xl border border-destructive/30 bg-destructive/5 overflow-hidden">
         <div className="px-5 py-4 border-b border-destructive/20 flex items-center gap-2">
@@ -277,7 +306,7 @@ export default function Settings() {
           <div>
             <p className="text-sm font-medium">Réinitialiser toutes les données</p>
             <p className="text-xs text-muted-foreground mt-1">
-              Supprime tous les casques, vidéos, playlists et l'historique de sync. Cette action est irréversible.
+              Supprime tous les casques, vidéos, playlists et l'historique de sync. Réinitialise avec les données de démo.
             </p>
           </div>
           <button

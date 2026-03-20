@@ -67,11 +67,260 @@ const DEFAULT_SETTINGS: VRSettings = {
   serverUrl: "http://localhost:3001",
 };
 
-// Empty initial state — user enters real data
-const EMPTY_LIBRARIES: Library[] = [
-  { id: "location", name: "Location", playlists: [] },
-  { id: "animations", name: "Animations", playlists: [] },
+// ─── Demo data ──────────────────────────────────────────────────────────────
+
+const now = Date.now();
+const daysAgo = (d: number) => new Date(now - d * 86_400_000).toISOString();
+
+export const DEMO_LIBRARIES: Library[] = [
+  {
+    id: "location",
+    name: "Location",
+    playlists: [
+      {
+        id: "pl-loc-01",
+        name: "Paris — Cathédrale Notre-Dame",
+        videos: [
+          {
+            id: "v-loc-01",
+            name: "Notre-Dame_Reconstruction_360_4K.mp4",
+            format: "360",
+            stereo: "mono",
+            sizeGB: 3.8,
+            duration: "08:24",
+            addedAt: daysAgo(18),
+          },
+          {
+            id: "v-loc-02",
+            name: "Notre-Dame_Exterieur_360_4K.mp4",
+            format: "360",
+            stereo: "mono",
+            sizeGB: 2.4,
+            duration: "05:10",
+            addedAt: daysAgo(15),
+          },
+          {
+            id: "v-loc-03",
+            name: "Notre-Dame_Nef_360_SBS.mp4",
+            format: "360",
+            stereo: "sbs",
+            sizeGB: 5.1,
+            duration: "11:38",
+            addedAt: daysAgo(10),
+          },
+        ],
+      },
+      {
+        id: "pl-loc-02",
+        name: "New York — Times Square",
+        videos: [
+          {
+            id: "v-loc-04",
+            name: "NYC_TimesSquare_360_SBS_Day.mp4",
+            format: "360",
+            stereo: "sbs",
+            sizeGB: 4.2,
+            duration: "09:15",
+            addedAt: daysAgo(7),
+          },
+          {
+            id: "v-loc-05",
+            name: "NYC_TimesSquare_180_OU_Night.mp4",
+            format: "180",
+            stereo: "ou",
+            sizeGB: 6.7,
+            duration: "14:52",
+            addedAt: daysAgo(5),
+          },
+        ],
+      },
+    ],
+  },
+  {
+    id: "animations",
+    name: "Animations",
+    playlists: [
+      {
+        id: "pl-anim-01",
+        name: "Expériences Interactives",
+        videos: [
+          {
+            id: "v-anim-01",
+            name: "EscapeRoom_VR_180_SBS_8K.mp4",
+            format: "180",
+            stereo: "sbs",
+            sizeGB: 8.3,
+            duration: "22:05",
+            addedAt: daysAgo(20),
+          },
+          {
+            id: "v-anim-02",
+            name: "SpaceWalk_NASA_180_OU_8K.mp4",
+            format: "180",
+            stereo: "ou",
+            sizeGB: 7.9,
+            duration: "18:47",
+            addedAt: daysAgo(12),
+          },
+        ],
+      },
+      {
+        id: "pl-anim-02",
+        name: "Visites Guidées",
+        videos: [
+          {
+            id: "v-anim-03",
+            name: "Louvre_VigilDesNuits_360_Mono.mp4",
+            format: "360",
+            stereo: "mono",
+            sizeGB: 3.1,
+            duration: "07:33",
+            addedAt: daysAgo(8),
+          },
+          {
+            id: "v-anim-04",
+            name: "ISS_Station_Orbitale_360_Mono.mp4",
+            format: "360",
+            stereo: "mono",
+            sizeGB: 4.6,
+            duration: "12:20",
+            addedAt: daysAgo(3),
+          },
+        ],
+      },
+    ],
+  },
 ];
+
+export const DEMO_DEVICES: Device[] = [
+  {
+    id: "dev-quest-pro-01",
+    serial: "3A4F8B2C1D9E0F5A",
+    name: "Quest Pro — Salle A",
+    type: "location",
+    status: "connected",
+    storageUsedGB: 87.3,
+    storageTotalGB: 128,
+    battery: 72,
+    lastSyncAt: daysAgo(2),
+    ipAddress: "192.168.1.101",
+  },
+  {
+    id: "dev-quest3-studio",
+    serial: "7E2A9C4B6F1D3E8A",
+    name: "Quest 3 — Studio Animations",
+    type: "animations",
+    status: "connected",
+    storageUsedGB: 44.8,
+    storageTotalGB: 256,
+    battery: 91,
+    lastSyncAt: daysAgo(10),
+    ipAddress: "192.168.1.102",
+  },
+  {
+    id: "dev-quest2-demo",
+    serial: "1B3D5F7A9C2E4B6H",
+    name: "Quest 2 — Démo Clients",
+    type: "location",
+    status: "disconnected",
+    storageUsedGB: 62.1,
+    storageTotalGB: 128,
+    battery: 34,
+    lastSyncAt: null,
+    ipAddress: "192.168.1.103",
+  },
+];
+
+export const DEMO_SYNC_LOGS: SyncLog[] = [
+  {
+    id: "sync-log-01",
+    at: daysAgo(0.4), // ~10 hours ago
+    library: "location",
+    deviceIds: ["dev-quest-pro-01"],
+    videosTotal: 7,
+    videosPushed: 5,
+    videosSkipped: 2,
+    status: "success",
+    lines: [
+      "🔍 Connexion à Quest Pro — Salle A (192.168.1.101)…",
+      "✓ Appareil détecté : 3A4F8B2C1D9E0F5A",
+      "📂 Chemin cible : /sdcard/Movies/VR_Ultimate/",
+      "→ Notre-Dame_Reconstruction_360_4K.mp4 — déjà présent, skip",
+      "→ Notre-Dame_Exterieur_360_4K.mp4 — déjà présent, skip",
+      "✓ Notre-Dame_Nef_360_SBS.mp4 [5.1 GB] — 100%",
+      "✓ NYC_TimesSquare_360_SBS_Day.mp4 [4.2 GB] — 100%",
+      "✓ NYC_TimesSquare_180_OU_Night.mp4 [6.7 GB] — 100%",
+      "✓ EscapeRoom_VR_180_SBS_8K.mp4 [8.3 GB] — 100%",
+      "✓ SpaceWalk_NASA_180_OU_8K.mp4 [7.9 GB] — 100%",
+      "✅ Sync terminée — 5 fichiers poussés, 2 ignorés. Durée : 4m 17s",
+    ],
+  },
+  {
+    id: "sync-log-02",
+    at: daysAgo(3),
+    library: "animations",
+    deviceIds: ["dev-quest3-studio"],
+    videosTotal: 4,
+    videosPushed: 3,
+    videosSkipped: 1,
+    status: "success",
+    lines: [
+      "🔍 Connexion à Quest 3 — Studio Animations (192.168.1.102)…",
+      "✓ Appareil détecté : 7E2A9C4B6F1D3E8A",
+      "📂 Chemin cible : /sdcard/Movies/VR_Ultimate/",
+      "→ EscapeRoom_VR_180_SBS_8K.mp4 — déjà présent, skip",
+      "✓ SpaceWalk_NASA_180_OU_8K.mp4 [7.9 GB] — 100%",
+      "✓ Louvre_VigilDesNuits_360_Mono.mp4 [3.1 GB] — 100%",
+      "✓ ISS_Station_Orbitale_360_Mono.mp4 [4.6 GB] — 100%",
+      "✅ Sync terminée — 3 fichiers poussés, 1 ignoré. Durée : 2m 48s",
+    ],
+  },
+  {
+    id: "sync-log-03",
+    at: daysAgo(5),
+    library: "location",
+    deviceIds: ["dev-quest2-demo"],
+    videosTotal: 5,
+    videosPushed: 2,
+    videosSkipped: 0,
+    status: "error",
+    lines: [
+      "🔍 Connexion à Quest 2 — Démo Clients (192.168.1.103)…",
+      "✓ Appareil détecté : 1B3D5F7A9C2E4B6H",
+      "📂 Chemin cible : /sdcard/Movies/VR_Ultimate/",
+      "✓ Notre-Dame_Reconstruction_360_4K.mp4 [3.8 GB] — 100%",
+      "✓ Notre-Dame_Exterieur_360_4K.mp4 [2.4 GB] — 100%",
+      "→ Notre-Dame_Nef_360_SBS.mp4 — transfert en cours… 47%",
+      "Erreur : connexion USB perdue (LIBUSB_ERROR_IO)",
+      "Erreur : sync interrompue — 2 fichiers transférés sur 5",
+    ],
+  },
+  {
+    id: "sync-log-04",
+    at: daysAgo(14),
+    library: "location",
+    deviceIds: ["dev-quest-pro-01"],
+    videosTotal: 7,
+    videosPushed: 7,
+    videosSkipped: 0,
+    status: "success",
+    lines: [
+      "🔍 Connexion à Quest Pro — Salle A (192.168.1.101)…",
+      "✓ Appareil détecté : 3A4F8B2C1D9E0F5A",
+      "📂 Chemin cible : /sdcard/Movies/VR_Ultimate/",
+      "✓ Notre-Dame_Reconstruction_360_4K.mp4 [3.8 GB] — 100%",
+      "✓ Notre-Dame_Exterieur_360_4K.mp4 [2.4 GB] — 100%",
+      "✓ Notre-Dame_Nef_360_SBS.mp4 [5.1 GB] — 100%",
+      "✓ NYC_TimesSquare_360_SBS_Day.mp4 [4.2 GB] — 100%",
+      "✓ NYC_TimesSquare_180_OU_Night.mp4 [6.7 GB] — 100%",
+      "✓ EscapeRoom_VR_180_SBS_8K.mp4 [8.3 GB] — 100%",
+      "✓ SpaceWalk_NASA_180_OU_8K.mp4 [7.9 GB] — 100%",
+      "✅ Sync complète — 7 fichiers poussés. Durée : 8m 03s",
+    ],
+  },
+];
+
+// ─── Store ───────────────────────────────────────────────────────────────────
 
 interface VRStore {
   libraries: Library[];
@@ -98,14 +347,15 @@ interface VRStore {
   // Settings actions
   updateSettings: (updates: Partial<VRSettings>) => void;
   resetStore: () => void;
+  loadDemoData: () => void;
 }
 
 export const useVRStore = create<VRStore>()(
   persist(
     (set) => ({
-      libraries: EMPTY_LIBRARIES,
-      devices: [],
-      syncLogs: [],
+      libraries: DEMO_LIBRARIES,
+      devices: DEMO_DEVICES,
+      syncLogs: DEMO_SYNC_LOGS,
       settings: DEFAULT_SETTINGS,
 
       addPlaylist: (libraryId, name) =>
@@ -225,10 +475,17 @@ export const useVRStore = create<VRStore>()(
 
       resetStore: () =>
         set({
-          libraries: EMPTY_LIBRARIES,
-          devices: [],
-          syncLogs: [],
+          libraries: DEMO_LIBRARIES,
+          devices: DEMO_DEVICES,
+          syncLogs: DEMO_SYNC_LOGS,
           settings: DEFAULT_SETTINGS,
+        }),
+
+      loadDemoData: () =>
+        set({
+          libraries: DEMO_LIBRARIES,
+          devices: DEMO_DEVICES,
+          syncLogs: DEMO_SYNC_LOGS,
         }),
     }),
     { name: "vr-ultimate-store" }
