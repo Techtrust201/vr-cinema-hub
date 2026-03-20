@@ -169,6 +169,9 @@ function PlaylistAccordion({ libraryId, playlistId, name, videos }: PlaylistAcco
       {open && (
         <div className="border-t border-border/40 px-4 pb-4 pt-3 space-y-2">
           {/* Video list */}
+          {previewVideo && (
+            <VideoPreviewModal video={previewVideo} onClose={() => setPreviewVideo(null)} />
+          )}
           {videos.length > 0 ? (
             <div className="space-y-1.5">
               {videos.map((v) => (
@@ -180,6 +183,7 @@ function PlaylistAccordion({ libraryId, playlistId, name, videos }: PlaylistAcco
                     updateVideo(libraryId, playlistId, v.id, updates);
                     toast.success("Format mis à jour");
                   }}
+                  onPreview={() => setPreviewVideo(v)}
                 />
               ))}
             </div>
