@@ -10,6 +10,7 @@ import Devices from "./pages/Devices";
 import Sync from "./pages/Sync";
 import Settings from "./pages/Settings";
 import Stats from "./pages/Stats";
+import Export from "./pages/Export";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -28,6 +29,7 @@ const App = () => (
             <Route path="/sync" element={<Sync />} />
             <Route path="/settings" element={<Settings />} />
             <Route path="/stats" element={<Stats />} />
+            <Route path="/export" element={<Export />} />
           </Route>
           <Route path="*" element={<NotFound />} />
         </Routes>

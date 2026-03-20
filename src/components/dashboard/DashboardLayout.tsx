@@ -14,6 +14,7 @@ import {
   Settings,
   Clock,
   BarChart2,
+  FileDown,
 } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
 import { useVRStore } from "@/store/vrStore";
@@ -25,6 +26,7 @@ const NAV_ITEMS = [
   { to: "/devices", label: "Casques", icon: Headset },
   { to: "/sync", label: "Synchronisation", icon: RefreshCw },
   { to: "/stats", label: "Statistiques", icon: BarChart2 },
+  { to: "/export", label: "Export", icon: FileDown },
   { to: "/settings", label: "Paramètres", icon: Settings },
 ];
 
@@ -34,6 +36,7 @@ const PAGE_TITLES: Record<string, string> = {
   "/devices": "Casques",
   "/sync": "Synchronisation",
   "/stats": "Statistiques",
+  "/export": "Export / Manifest",
   "/settings": "Paramètres",
 };
 
