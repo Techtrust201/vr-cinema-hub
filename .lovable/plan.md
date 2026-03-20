@@ -1,63 +1,68 @@
 
-## Analysis
+## Two features to build
 
-The codebase is clean and well-structured. I need to add 3 features + fix/verify the existing sync logic:
+### Feature 1 — Modale vidéo avancée (VideoPreviewModal.tsx)
 
-1. **Page Paramètres** (`/settings`) — storage path, max upload size, auth token, reset store
-2. **Notification system in DashboardLayout header** — connected badge, 7-day warning, last sync
-3. **Video preview modal in Libraries** — click on video opens HTML5 player modal with metadata
-4. **The sync logs accumulation is already fixed** (uses `linesRef`) — just needs verification via test
+**3 additions to the existing modal:**
 
-## Plan
+1. **Résolution estimée** — new metadata tile:
+   - `360°` → `4K (3840 × 2160)`
+   - `180°` → `8K (7680 × 4320)`
+   - Add a `Monitor` or `Sparkles` icon, in violet for 8K, cyan for 4K
 
-### 1. Settings page — `src/pages/Settings.tsx` (new)
-- Local state for 3 config fields: `videoStoragePath`, `maxUploadGB`, `authToken`
-- Persisted in a new `settings` slice of the Zustand store (add `VRSettings` interface)
-- "Réinitialiser les données" button: calls a new `resetStore()` action with a confirmation step
-- Visual: 3 input fields with labels + description, reset button in a red danger zone card
+2. **Timeline de lecture simulée** — animated progress bar in the preview area:
+   - Uses `useState` + `useEffect` + `setInterval` to auto-advance a `progress` (0–100) value every ~300ms
+   - Plays forward, then resets (loop)
+   - Show: play/pause toggle button, current time (computed from `video.duration`), total duration
+   - Styled as a dark bar with a violet fill + glow
 
-### 2. Extend vrStore — `src/store/vrStore.ts`
-- Add `settings: VRSettings` to the store state
-- Add `updateSettings(updates: Partial<VRSettings>)` action
-- Add `resetStore()` action that resets libraries, devices, syncLogs to their initial mock values
+3. **Bouton "Copier le chemin"** — small button in the header area:
+   - Computes the file path: `settings.videoStoragePath + "/" + video.name` from the store
+   - `navigator.clipboard.writeText(...)` on click
+   - Shows a ✓ checkmark for 1.5s then reverts to the copy icon
+   - Uses `Copy` and `Check` icons from lucide-react
 
-### 3. Notification bell in DashboardLayout — `src/components/dashboard/DashboardLayout.tsx`
-- Add a persistent top header bar (not just mobile) with the notification area
-- Show a bell icon with badge count in the sidebar footer or header
-- Notifications computed from store:
-  - Count of connected devices → green badge
-  - Devices not synced in 7+ days (or `lastSyncAt === null`) → orange warning
-  - Last global sync timestamp
-- Use a small dropdown panel on click (no external library, custom)
+Files to change:
+- `src/components/dashboard/VideoPreviewModal.tsx` — add all 3 features
+- `src/store/vrStore.ts` — no change needed (settings path already available)
+- VideoPreviewModal already takes `video` prop, just needs `settings.videoStoragePath` — add `useVRStore` import
 
-### 4. Video preview modal — `src/components/dashboard/VideoPreviewModal.tsx` (new)
-- Opens when user clicks anywhere on a `VideoRow` (not on the action buttons)
-- Contains: `<video>` HTML5 player (src will be empty/placeholder since files aren't real), metadata display
-- Since videos are simulated (no real file URL), show a "Aperçu non disponible" placeholder with the video icon, but still display all metadata nicely
-- Displays: name, format, stereo, size, duration, addedAt
-- VideoRow needs a new `onPreview` callback prop
+---
 
-### 5. Route — `src/App.tsx`
-- Add `/settings` route
-- Add `Settings` nav item to DashboardLayout sidebar with `Settings` icon
+### Feature 2 — Page Statistiques (/stats)
 
-### Files to change:
-1. `src/store/vrStore.ts` — add `VRSettings`, `updateSettings`, `resetStore`
-2. `src/pages/Settings.tsx` — new page
-3. `src/App.tsx` — add `/settings` route
-4. `src/components/dashboard/DashboardLayout.tsx` — add Settings nav item + persistent header with notifications
-5. `src/components/dashboard/VideoPreviewModal.tsx` — new modal component
-6. `src/components/dashboard/VideoRow.tsx` — add `onPreview` prop + click handler on the row body
-7. `src/pages/Libraries.tsx` — wire `onPreview` to open `VideoPreviewModal`
+New page `src/pages/Stats.tsx` using Recharts (already installed).
 
-### Header notification design
-The sidebar footer gets replaced with a proper bottom section. A persistent topbar is added to the main content area (always visible, not just mobile) with:
-- Left: page title (auto from route)
-- Right: notification bell icon with badge + connected count chip
+**4 charts/stats blocks:**
 
-The notification dropdown shows:
-- Connected devices count with green indicator
-- List of devices overdue for sync (>7 days or never synced)  
-- Last successful sync timestamp
+1. **Donut chart — Répartition 360/180** (per library + combined)
+   - Two small donuts side by side: Location | Animations
+   - Data computed from `libraries` store
+   - Colors: violet = 360°, cyan = 180°
+   - Use `PieChart` + `Pie` + `Cell` from recharts
 
-This keeps the sidebar clean and adds value to every page.
+2. **Bar chart — Évolution des syncs sur 30 jours**
+   - X axis: last 30 days (grouped by day)
+   - Y axis: number of files pushed
+   - Data: derive from `syncLogs` — group `videosPushed` by date
+   - Use `BarChart` + `Bar` + `XAxis` + `YAxis` + `Tooltip`
+   - Color: violet bars
+
+3. **Stat card — Casque le plus synchronisé**
+   - Count how many sync logs reference each device ID
+   - Show top device: name, serial, sync count
+   - Simple styled card, no chart
+
+4. **Stat card — Total des données transférées**
+   - Sum `videosPushed × average video size` estimate across all success logs
+   - Or: compute from libraries total video sizes as an indicator
+   - Show in GB with a HardDrive icon
+
+Layout: 2-column grid on desktop, 1-column on mobile.
+
+Register route in `src/App.tsx` and add nav item to `DashboardLayout.tsx`.
+
+**Files to create/modify:**
+1. `src/pages/Stats.tsx` — new page (recharts, 4 sections)
+2. `src/App.tsx` — add `/stats` route + import
+3. `src/components/dashboard/DashboardLayout.tsx` — add `{ to: "/stats", label: "Statistiques", icon: BarChart2 }` nav item + PAGE_TITLES entry
