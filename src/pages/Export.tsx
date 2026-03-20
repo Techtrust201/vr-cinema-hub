@@ -246,7 +246,7 @@ export default function Export() {
               )}
             >
               <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                <Library size={11} />
+                <LibraryIcon size={11} />
                 {s.name}
               </div>
               <p className="text-2xl font-bold tabular-nums text-foreground">{s.count}</p>
