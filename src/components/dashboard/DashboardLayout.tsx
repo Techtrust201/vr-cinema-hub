@@ -35,6 +35,43 @@ const PAGE_TITLES: Record<string, string> = {
   "/settings": "Paramètres",
 };
 
+import { checkServer } from "@/lib/serverApi";
+
+function ServerModeBadge() {
+  const { settings } = useVRStore();
+  const [status, setStatus] = useState<"checking" | "connected" | "disconnected">("checking");
+
+  useEffect(() => {
+    let alive = true;
+    checkServer(settings.serverUrl).then((s) => {
+      if (alive) setStatus(s === "connected" ? "connected" : "disconnected");
+    });
+    const interval = setInterval(() => {
+      checkServer(settings.serverUrl).then((s) => {
+        if (alive) setStatus(s === "connected" ? "connected" : "disconnected");
+      });
+    }, 15000);
+    return () => { alive = false; clearInterval(interval); };
+  }, [settings.serverUrl]);
+
+  return (
+    <span className={cn(
+      "hidden sm:flex items-center gap-1.5 text-[10px] font-semibold px-2.5 py-1 rounded-full border uppercase tracking-wider transition-colors",
+      status === "checking" && "text-muted-foreground/60 border-border/30",
+      status === "connected" && "text-[hsl(140_70%_55%)] bg-[hsl(140_70%_40%_/_0.08)] border-[hsl(140_70%_40%_/_0.25)]",
+      status === "disconnected" && "text-[hsl(35_90%_55%)] bg-[hsl(35_90%_55%_/_0.08)] border-[hsl(35_90%_55%_/_0.25)]",
+    )}>
+      <span className={cn(
+        "w-1.5 h-1.5 rounded-full",
+        status === "checking" && "bg-muted-foreground/40",
+        status === "connected" && "bg-[hsl(140_70%_55%)] animate-pulse",
+        status === "disconnected" && "bg-[hsl(35_90%_55%)]",
+      )} />
+      {status === "checking" ? "…" : status === "connected" ? "Serveur connecté" : "Mode démo"}
+    </span>
+  );
+}
+
 function NotificationBell() {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
