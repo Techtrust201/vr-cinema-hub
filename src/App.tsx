@@ -9,6 +9,7 @@ import Libraries from "./pages/Libraries";
 import Devices from "./pages/Devices";
 import Sync from "./pages/Sync";
 import Settings from "./pages/Settings";
+import Stats from "./pages/Stats";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();

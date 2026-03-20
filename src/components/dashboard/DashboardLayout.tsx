@@ -21,6 +21,7 @@ const NAV_ITEMS = [
   { to: "/libraries", label: "Bibliothèques", icon: Library },
   { to: "/devices", label: "Casques", icon: Headset },
   { to: "/sync", label: "Synchronisation", icon: RefreshCw },
+  { to: "/stats", label: "Statistiques", icon: BarChart2 },
   { to: "/settings", label: "Paramètres", icon: Settings },
 ];
 
