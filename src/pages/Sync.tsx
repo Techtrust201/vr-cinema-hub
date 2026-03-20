@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from "react";
 import { useVRStore, LibraryType, SyncLog } from "@/store/vrStore";
 import SyncLogItem from "@/components/dashboard/SyncLogItem";
 import { cn } from "@/lib/utils";
-import { Play, RefreshCw, Headset, Library } from "lucide-react";
+import { Play, RefreshCw, Headset, Library, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 function generateSyncLines(
@@ -35,13 +35,15 @@ function generateSyncLines(
 }
 
 export default function Sync() {
-  const { libraries, devices, syncLogs, addSyncLog, updateSyncLog } = useVRStore();
+  const { libraries, devices, syncLogs, addSyncLog, updateSyncLog, updateDevice, clearSyncLogs } = useVRStore();
   const [selectedLib, setSelectedLib] = useState<LibraryType>("location");
   const [selectedDevice, setSelectedDevice] = useState<"all" | string>("all");
   const [running, setRunning] = useState(false);
   const [progress, setProgress] = useState(0);
   const [activeLogId, setActiveLogId] = useState<string | null>(null);
   const logsEndRef = useRef<HTMLDivElement>(null);
+  // Use a ref to accumulate lines without stale closure issues
+  const linesRef = useRef<string[]>([]);
 
   const connectedDevices = devices.filter((d) => d.status === "connected");
   const library = libraries.find((l) => l.id === selectedLib);
@@ -66,6 +68,10 @@ export default function Sync() {
     const logId = `log-${Date.now()}`;
     const pushed = Math.ceil(allVideos.length * 0.4);
     const skipped = allVideos.length - pushed;
+    const startLine = `[${new Date().toLocaleTimeString()}] Démarrage de la synchronisation…`;
+
+    // Init lines ref
+    linesRef.current = [startLine];
 
     const newLog: SyncLog = {
       id: logId,
@@ -76,7 +82,7 @@ export default function Sync() {
       videosPushed: 0,
       videosSkipped: 0,
       status: "running",
-      lines: [`[${new Date().toLocaleTimeString()}] Démarrage de la synchronisation...`],
+      lines: [startLine],
     };
 
     addSyncLog(newLog);
@@ -84,9 +90,8 @@ export default function Sync() {
     setRunning(true);
     setProgress(0);
 
-    // Simulate step-by-step progress
     let step = 0;
-    const totalSteps = allVideos.length + 3; // connect + compare + manifest
+    const totalSteps = allVideos.length + 3;
 
     const interval = setInterval(() => {
       step++;
@@ -97,7 +102,7 @@ export default function Sync() {
         clearInterval(interval);
         setProgress(100);
 
-        const lines = generateSyncLines(
+        const finalLines = generateSyncLines(
           selectedLib,
           targetDevices.map((d) => d.name).join(", "),
           targetDevices[0].serial,
@@ -110,19 +115,21 @@ export default function Sync() {
           status: "success",
           videosPushed: pushed,
           videosSkipped: skipped,
-          lines,
+          lines: finalLines,
         });
+
+        // Update lastSyncAt on all target devices
+        const now = new Date().toISOString();
+        targetDevices.forEach((d) => updateDevice(d.id, { lastSyncAt: now }));
 
         setRunning(false);
         setActiveLogId(null);
         toast.success(`Sync terminée — ${pushed} fichier(s) envoyé(s)`);
       } else {
-        updateSyncLog(logId, {
-          lines: [
-            ...newLog.lines,
-            `Traitement en cours… ${pct}%`,
-          ],
-        });
+        // Accumulate lines without stale closure — use updater callback pattern via ref
+        const progressLine = `[${new Date().toLocaleTimeString()}] Traitement en cours… ${pct}%`;
+        linesRef.current = [...linesRef.current, progressLine];
+        updateSyncLog(logId, { lines: [...linesRef.current] });
       }
     }, 300);
   };
@@ -299,9 +306,19 @@ export default function Sync() {
 
       {/* History */}
       <div className="space-y-3">
-        <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
-          Historique des synchronisations
-        </h2>
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
+            Historique des synchronisations
+          </h2>
+          {syncLogs.length > 0 && (
+            <button
+              onClick={() => { clearSyncLogs(); toast.info("Historique vidé"); }}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs text-muted-foreground border border-border/50 hover:border-destructive/40 hover:text-destructive transition-all"
+            >
+              <Trash2 size={11} /> Vider l'historique
+            </button>
+          )}
+        </div>
         {syncLogs.length === 0 ? (
           <p className="text-xs text-muted-foreground/60">Aucune synchronisation effectuée.</p>
         ) : (
