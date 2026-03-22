@@ -7,16 +7,21 @@ Dashboard de gestion de contenu VR pour casques Meta Quest — synchronisation d
 ## Table des matières
 
 1. [Vue d'ensemble](#vue-densemble)
-2. [Architecture](#architecture)
-3. [Structure des fichiers](#structure-des-fichiers)
-4. [Prérequis](#prérequis)
-5. [Installation](#installation)
-6. [3 modes de fonctionnement](#3-modes-de-fonctionnement)
-7. [Guide connexion Meta Quest](#guide-connexion-meta-quest)
-8. [Pages de l'application](#pages-de-lapplication)
-9. [Démo vs Réel — ce qui est simulé vs câblé](#démo-vs-réel)
-10. [Ce qui reste à faire](#ce-qui-reste-à-faire)
-11. [Troubleshooting](#troubleshooting)
+2. [Est-ce qu'il faut Unity ou un moteur 3D ?](#unity--non)
+3. [Comment fonctionnent les vidéos VR ?](#comment-fonctionnent-les-vidéos-vr)
+4. [Où stocker les vidéos](#où-stocker-les-vidéos)
+5. [Lecture sur le casque (sans Unity)](#lecture-sur-le-casque)
+6. [Architecture](#architecture)
+7. [Structure des fichiers](#structure-des-fichiers)
+8. [Prérequis](#prérequis)
+9. [Installation](#installation)
+10. [3 modes de fonctionnement](#3-modes-de-fonctionnement)
+11. [Guide connexion Meta Quest](#guide-connexion-meta-quest)
+12. [Pages de l'application](#pages-de-lapplication)
+13. [Démo vs Réel](#démo-vs-réel)
+14. [Ce qui reste à faire](#ce-qui-reste-à-faire)
+15. [Troubleshooting](#troubleshooting)
+16. [Stack technique](#stack-technique)
 
 ---
 
@@ -30,9 +35,159 @@ VR Ultimate Dashboard est une application **fullstack locale** composée de :
 L'application gère :
 - 📚 **Bibliothèques** de vidéos VR (360° et 180°, stéréo SBS/OU/Mono) organisées en playlists
 - 🥽 **Casques Meta Quest** — connexion USB et Wi-Fi ADB, suivi batterie/stockage
-- 🔄 **Synchronisation** — push `adb` des vidéos vers les casques
+- 🔄 **Synchronisation** — push `adb` des vidéos vers les casques avec logs en temps réel
 - 📊 **Statistiques** — usage, formats, distribution
 - 📤 **Export** — manifeste JSON/CSV des bibliothèques
+
+---
+
+## Unity ? Non.
+
+> **Tu n'as absolument pas besoin de Unity, Unreal Engine, ni d'aucun moteur de jeu.**
+
+Voici pourquoi cette confusion arrive souvent : quand on pense "VR", on pense à des jeux VR ou des expériences interactives — qui eux nécessitent effectivement Unity.
+
+**Mais ici on ne fait pas ça.** On distribue des **vidéos préenregistrées** en 360° sur des casques Meta Quest. C'est exactement comme copier un film `.mp4` sur une clé USB, sauf que le fichier contient une projection sphérique que le casque lit en immersion.
+
+### Ce que fait cette app concrètement :
+```
+Ta bibliothèque de fichiers .mp4 VR
+        ↓
+  VR Ultimate Dashboard
+        ↓
+  adb push (transfert USB/Wi-Fi)
+        ↓
+  Casque Meta Quest
+        ↓
+  SkyBox Player (app gratuite sur le casque)
+        ↓
+  Immersion totale 360°
+```
+
+Aucune compilation, aucun moteur 3D côté production. Juste du **transfert de fichiers vidéo**.
+
+---
+
+## Comment fonctionnent les vidéos VR ?
+
+### Formats de vidéo VR
+
+Une vidéo VR est un fichier `.mp4` classique, mais avec une particularité : l'image contient **toute la sphère à plat**, comme une carte du monde planisphère.
+
+Il y a plusieurs formats selon la façon dont la sphère est "dépliée" :
+
+| Format | Description | Usage |
+|--------|-------------|-------|
+| **360° Équirectangulaire** | Toute la sphère dans une image 2:1 | Le plus commun |
+| **180° Semi-sphérique** | Juste l'hémisphère avant | Caméras comme Insta360 EVO |
+| **Mono** | Une seule image (pas de relief) | Contenu simple |
+| **Side-by-Side (SBS)** | Image gauche + image droite côte à côte | Relief 3D stéréoscopique |
+| **Over-Under (OU)** | Image gauche dessus + droite dessous | Relief 3D stéréoscopique |
+
+### D'où viennent ces vidéos ?
+
+Tu peux obtenir des vidéos VR de plusieurs sources :
+
+**🎥 Tourner les tiennes :**
+- Caméra Insta360 X4, GoPro MAX, Ricoh Theta Z1...
+- Elles exportent directement en MP4 équirectangulaire
+
+**💾 Télécharger depuis des plateformes :**
+- [VeeR VR](https://veer.tv) — contenu gratuit et premium
+- [Within (Oculus TV)](https://www.oculus.com/experiences/quest/) — films VR officiels
+- [Vimeo 360](https://vimeo.com/channels/360video) — créateurs indépendants
+- [YouTube 360°](https://www.youtube.com/360) — puis télécharger avec yt-dlp
+
+**🎨 Créer en post-production :**
+- Adobe Premiere / DaVinci Resolve peuvent exporter en 360°
+- Renders 3D (Blender, Cinema 4D) en projection équirectangulaire
+
+### Convention de nommage recommandée
+
+Les fichiers sont identifiés par leur **nom exact**. Utilise une convention lisible :
+
+```
+[Lieu ou Titre]_[Format]_[Résolution]_[Stéréo optionnel].mp4
+
+Exemples :
+  Notre-Dame_Reconstruction_360_4K.mp4
+  NYC_TimesSquare_360_SBS_Day.mp4
+  EscapeRoom_VR_180_SBS_8K.mp4
+  Concert_Daft_Punk_360_mono.mp4
+```
+
+---
+
+## Où stocker les vidéos
+
+### Sur ton ordinateur (source)
+
+Les vidéos doivent exister **localement** sur ta machine. L'emplacement se configure dans l'app → **Paramètres** → "Chemin du stockage vidéo".
+
+Défaut : `/videos/vr-ultimate/`
+
+```
+/videos/vr-ultimate/              ← chemin configuré dans les Paramètres
+├── Notre-Dame_360_4K.mp4         ← le fichier source
+├── EscapeRoom_180_SBS_8K.mp4
+├── NYC_TimesSquare_360_SBS.mp4
+└── ...
+```
+
+> Les fichiers ne sont **pas** dans le projet — c'est ton disque dur personnel. L'app ne les copie pas, elle les **envoie directement** depuis leur emplacement vers le casque.
+
+### Sur le casque Meta Quest (destination)
+
+Après la synchronisation ADB, les fichiers atterrissent dans :
+
+```
+/sdcard/Movies/VR-Ultimate/       ← dossier automatiquement créé par l'app
+├── Notre-Dame_360_4K.mp4
+├── EscapeRoom_180_SBS_8K.mp4
+└── ...
+```
+
+C'est le chemin standard lu par SkyBox Player et le gestionnaire de médias Quest.
+
+---
+
+## Lecture sur le casque
+
+### Sans Unity — comment ça marche réellement
+
+Le Meta Quest est un Android. Les fichiers MP4 dans `/sdcard/Movies/` sont automatiquement indexés par le **gestionnaire de médias Android**. N'importe quelle app de lecture VR peut les lire.
+
+### Applications recommandées sur le casque
+
+| App | Prix | Avantages |
+|-----|------|-----------|
+| **SkyBox VR Video Player** | Gratuit | Meilleur player, détecte automatiquement SBS/OU/360/180, sous-titres, streaming local |
+| **Pigasus VR Media Player** | ~5€ | Streaming réseau (SMB/DLNA), bonne interface |
+| **Gestionnaire Quest natif** | Intégré | Basique, liste les vidéos mais sans options avancées |
+| **DeoVR** | Gratuit | Populaire pour contenu adulte, mais marche pour tout |
+
+### Processus complet de bout en bout
+
+```
+1. Tu as un fichier  →  /Users/toi/VR-Videos/Film360.mp4
+2. npm run dev:all   →  Lance l'app sur localhost:8080
+3. Casque branché    →  adb devices détecte le serial
+4. Dans l'app        →  Synchronisation → Lancer ADB réel
+5. Côté serveur      →  adb push /Users/toi/VR-Videos/Film360.mp4 /sdcard/Movies/VR-Ultimate/
+6. Sur le casque     →  Ouvrir SkyBox → onglet "Local" → Film360.mp4 apparaît
+7. Play              →  Immersion 360° complète
+```
+
+Durée du transfert : environ **1 GB/min** en USB 3.0, **100-200 MB/min** en Wi-Fi.
+
+### Le player 360° dans l'app (aperçu desktop)
+
+L'app inclut un player 360° **dans le navigateur** (bouton "360°" dans l'aperçu vidéo). Ce n'est PAS l'expérience VR réelle — c'est juste pour vérifier que la vidéo est correcte avant de la transférer. La vraie immersion se passe dans le casque.
+
+**Fonctionnement du player web :**
+- Clic bouton "360°" → canvas Three.js avec sphère inversée
+- Glisser la souris pour regarder autour
+- Sur mobile/tablette : bouton "Gyro" pour orienter en bougeant l'appareil (iOS demande une permission)
 
 ---
 
@@ -51,13 +206,15 @@ L'application gère :
 │  │  src/store/vrStore.ts    │     │  GET  /api/health             │  │
 │  │  src/lib/serverApi.ts    │     │  GET  /api/devices            │  │
 │  │                          │     │  GET  /api/device-status/:s   │  │
-│  │  Zustand (persist)       │     │  POST /api/connect            │  │
-│  │  ↕ localStorage          │     │  POST /api/tcpip/:serial      │  │
-│  └─────────────────────────┘     │  POST /api/sync               │  │
-│                                   │  GET  /api/video/:name        │  │
-│  Proxy Vite :                     │                               │  │
-│  /api/* → :3001                   │  ↕ child_process.execSync()   │  │
-│  (développement uniquement)        └──────────────┬───────────────┘  │
+│  │  Zustand (persist)       │     │  GET  /api/device-ip/:serial  │  │
+│  │  ↕ localStorage          │     │  POST /api/connect            │  │
+│  └─────────────────────────┘     │  POST /api/tcpip/:serial      │  │
+│                                   │  POST /api/sync/start         │  │
+│  Proxy Vite :                     │  GET  /api/sync/stream/:jobId │  │
+│  /api/* → :3001                   │  GET  /api/video/:name        │  │
+│  (développement uniquement)        │                               │  │
+│                                   │  ↕ child_process.spawn()      │  │
+│                                   └──────────────┬───────────────┘  │
 │                                                   │                  │
 │                                                   ▼                  │
 │                                           ADB (adb devices,          │
@@ -71,17 +228,16 @@ L'application gère :
                                             └────────────────┘
 ```
 
-### Flux de données
+### Flux de données — Synchronisation en temps réel
 
 ```
-Utilisateur clique "Sync"
-  → Sync.tsx appelle pushSync() dans serverApi.ts
-    → fetch POST /api/sync (proxy Vite → Express :3001)
-      → sync-server.js : execSync("adb -s SERIAL push fichier.mp4 /sdcard/...")
-        → Fichier transféré sur le casque
-          → Résultat JSON retourné au frontend
-            → SyncLog mis à jour dans le store Zustand
-              → UI mise à jour en temps réel
+Utilisateur clique "Lancer la sync"
+  → Sync.tsx appelle startSync() dans serverApi.ts
+    → POST /api/sync/start → { jobId }
+      → sync-server.js démarre spawn("adb push ...") en arrière-plan
+    → Sync.tsx ouvre EventSource sur /api/sync/stream/:jobId
+      → Chaque ligne stdout d'adb push est émise en SSE
+        → SyncLog mis à jour ligne par ligne en temps réel
 ```
 
 ---
@@ -93,29 +249,32 @@ vr-ultimate/
 │
 ├── server/
 │   └── sync-server.js          ← Serveur Express + toutes les routes ADB
+│                                  (spawn pour SSE, execSync pour les autres)
 │
 ├── src/
 │   ├── lib/
 │   │   └── serverApi.ts        ← Bridge fetch() frontend ↔ backend
+│   │                              (startSync, createSyncStream, fetchDeviceIp...)
 │   │
 │   ├── store/
 │   │   └── vrStore.ts          ← État global Zustand (persist localStorage)
+│   │                              (devices, libraries, settings, syncLogs)
 │   │
 │   ├── pages/
 │   │   ├── Index.tsx           ← Dashboard principal (stats, dernière sync)
 │   │   ├── Libraries.tsx       ← Gestion des bibliothèques et playlists
-│   │   ├── Devices.tsx         ← Casques ADB (USB + Wi-Fi)
-│   │   ├── Sync.tsx            ← Lancer une synchronisation
+│   │   ├── Devices.tsx         ← Casques ADB (USB + Wi-Fi + auto-détection IP)
+│   │   ├── Sync.tsx            ← Lancer une sync, logs SSE en temps réel
 │   │   ├── Stats.tsx           ← Statistiques & graphiques
 │   │   ├── Export.tsx          ← Export JSON/CSV
-│   │   └── Settings.tsx        ← Configuration serveur, chemins, token
+│   │   └── Settings.tsx        ← Config serveur, chemins, token, ngrok
 │   │
 │   └── components/
 │       └── dashboard/
 │           ├── DashboardLayout.tsx   ← Sidebar + badge serveur
 │           ├── DeviceCard.tsx        ← Carte casque (batterie, stockage, Wi-Fi)
 │           ├── VideoRow.tsx          ← Ligne vidéo dans une playlist
-│           ├── VideoPreviewModal.tsx ← Player HTML5 pour aperçu vidéo
+│           ├── VideoPreviewModal.tsx ← Player HTML5 + player 360° Three.js + gyro
 │           ├── SyncLogItem.tsx       ← Entrée de log de sync
 │           └── StatsCard.tsx         ← Carte statistique
 │
@@ -154,15 +313,7 @@ Ou télécharger manuellement : https://developer.android.com/tools/releases/pla
 
 Les vidéos doivent être présentes **localement** sur ta machine dans le chemin configuré dans les Paramètres (défaut : `/videos/vr-ultimate/`).
 
-Les noms de fichiers dans l'app doivent correspondre **exactement** aux fichiers sur disque :
-```
-/videos/vr-ultimate/
-├── Notre-Dame_Reconstruction_360_4K.mp4
-├── Notre-Dame_Exterieur_360_4K.mp4
-├── NYC_TimesSquare_360_SBS_Day.mp4
-├── EscapeRoom_VR_180_SBS_8K.mp4
-└── ...
-```
+Les noms de fichiers dans l'app doivent correspondre **exactement** aux fichiers sur disque (casse, espaces, extension).
 
 ---
 
@@ -260,20 +411,19 @@ Si tu vois rien → câble non data, ou mode développeur non activé.
 2. Dans **Casques** → "Détecter via ADB" → le casque apparaît avec son serial
 3. Cliquer "Ajouter" → remplir le nom et la bibliothèque assignée
 
-### Étape 4 — Passer en Wi-Fi (optionnel mais recommandé)
+### Étape 4 — Préparer le Wi-Fi (optionnel mais recommandé)
 
-Le Wi-Fi permet de synchoniser **sans câble** tant que le casque est sur le même réseau.
+Le Wi-Fi permet de synchroniser **sans câble** tant que le casque est sur le même réseau Wi-Fi.
 
 1. Brancher le casque en USB (étapes 1-3 faites)
-2. Dans **Casques** → survoler la carte du casque → cliquer **"Préparer Wi-Fi"**
-   - L'app envoie automatiquement `adb tcpip 5555` au serveur
-   - Toast de confirmation : "Casque prêt — débranchez le câble"
-3. Débrancher le câble USB
-4. Cliquer **"Wi-Fi ADB"** dans la barre en haut de la page Casques
-5. Entrer l'adresse IP du casque (visible dans Paramètres → À propos → Connexion Wi-Fi)
-6. Cliquer "Connecter" → le casque est maintenant accessible sans fil
+2. Dans **Casques** → survoler la carte du casque connecté → cliquer **"Préparer Wi-Fi"**
+   - L'app envoie `adb tcpip 5555` au serveur
+   - **Automatiquement**, l'IP Wi-Fi du casque est lue depuis ADB (`adb shell ip addr show wlan0`)
+   - Le modal "Wi-Fi ADB" s'ouvre avec l'IP **déjà pré-remplie** — plus rien à chercher manuellement
+3. Cliquer "Connecter" dans le modal
+4. Débrancher le câble USB — le casque reste accessible en Wi-Fi
 
-> **Note** : Si le casque se déconnecte du Wi-Fi ou redémarre, répéter depuis l'étape 1 (rebrancher USB pour réinitialiser tcpip).
+> **Note** : `tcpip 5555` est réinitialisé à chaque redémarrage du casque. Il faut rebrancher en USB et recommencer si le casque est éteint.
 
 ### Étape 5 — Synchroniser des vidéos
 
@@ -281,7 +431,14 @@ Le Wi-Fi permet de synchoniser **sans câble** tant que le casque est sur le mê
 2. Choisir la bibliothèque source (Location ou Animations)
 3. Choisir le(s) casque(s) cible(s)
 4. Cliquer **"Lancer (ADB réel)"**
-5. Les fichiers `.mp4` sont copiés dans `/sdcard/Movies/VR-Ultimate/` sur le casque
+5. Les logs apparaissent **ligne par ligne en temps réel** — tu vois la progression exacte de chaque fichier
+6. Les fichiers `.mp4` sont copiés dans `/sdcard/Movies/VR-Ultimate/` sur le casque
+
+### Étape 6 — Regarder sur le casque
+
+1. Ouvrir **SkyBox VR Video Player** (télécharger gratuitement sur l'Oculus Store si pas déjà installé)
+2. Onglet **"Local"** → les vidéos synchronisées apparaissent automatiquement
+3. Cliquer → immersion 360° complète
 
 ---
 
@@ -290,9 +447,9 @@ Le Wi-Fi permet de synchoniser **sans câble** tant que le casque est sur le mê
 | Page | Route | Description |
 |------|-------|-------------|
 | **Dashboard** | `/` | Vue d'ensemble : dernière sync, total vidéos, casques connectés |
-| **Bibliothèques** | `/libraries` | Gérer les playlists et vidéos (ajouter, renommer, supprimer, preview) |
-| **Casques** | `/devices` | Voir/ajouter/supprimer les casques, connexion Wi-Fi, bouton Préparer Wi-Fi |
-| **Synchronisation** | `/sync` | Lancer une sync ADB ou simulée, voir les logs en direct |
+| **Bibliothèques** | `/libraries` | Gérer les playlists et vidéos (ajouter, renommer, supprimer, preview 360°) |
+| **Casques** | `/devices` | Voir/ajouter/supprimer les casques, connexion Wi-Fi, Préparer Wi-Fi (auto-IP) |
+| **Synchronisation** | `/sync` | Lancer une sync ADB, logs SSE en temps réel ligne par ligne |
 | **Statistiques** | `/stats` | Graphiques : formats, tailles, historique de sync |
 | **Export** | `/export` | Générer un export JSON/CSV du catalogue |
 | **Paramètres** | `/settings` | Chemin vidéo, URL serveur, ngrok, token, reset démo |
@@ -306,54 +463,40 @@ Le Wi-Fi permet de synchoniser **sans câble** tant que le casque est sur le mê
 | Affichage des casques | Données fictives dans le store | `adb devices -l` → vrais serials |
 | Batterie & stockage | Valeurs fictives | `adb shell dumpsys battery` + `df /sdcard` |
 | Statut connecté/déconnecté | Simulé aléatoirement | `adb get-state` en temps réel |
-| Sync vidéos | Animation de progression simulée | `adb push` réel fichier par fichier |
+| Sync vidéos | Animation de progression simulée | `adb push` réel avec spawn + SSE |
+| Logs de sync | Lignes simulées | Vraies lignes stdout d'adb push en temps réel |
+| Progression (%) | Calculée sur durée estimée | Parsée depuis la sortie `[XX%]` d'adb |
 | Skip si déjà présent | Toujours skip (simulé) | Comparaison taille locale vs distante |
-| Preview vidéo | Tentative de lecture `/api/video/:name` | Stream HTTP range avec le fichier réel |
+| Preview vidéo | Message "démarrez le serveur" | Stream HTTP range avec le fichier réel |
+| Player 360° | ❌ (non disponible sans serveur) | Canvas Three.js + OrbitControls |
+| Gyroscope mobile (360°) | ❌ | DeviceOrientationEvent → rotation caméra |
 | Préparer Wi-Fi | ❌ (bouton inactif) | `adb -s SERIAL tcpip 5555` |
+| Auto-détection IP | ❌ | `adb shell ip addr show wlan0` → IP pré-remplie |
 | Connexion Wi-Fi | ❌ (bouton désactivé) | `adb connect IP:5555` |
 
 ---
 
 ## Ce qui reste à faire
 
-### ✅ Déjà fait
+### ✅ Déjà implémenté
+
 - [x] Frontend React complet (7 pages, sidebar, design system)
-- [x] Serveur Express avec 7 endpoints ADB
+- [x] Serveur Express avec tous les endpoints ADB
 - [x] Proxy Vite `/api` → `:3001`
 - [x] `npm run dev:all` (concurrently)
 - [x] Support ngrok (URL publique dans les Paramètres)
 - [x] Bouton "Préparer Wi-Fi" → `adb tcpip 5555`
+- [x] Auto-détection IP après "Préparer Wi-Fi" → `adb shell ip addr show wlan0`
 - [x] Bouton "Wi-Fi ADB" → `adb connect IP:PORT`
 - [x] Refresh batterie/stockage depuis ADB (`/api/device-status/:serial`)
 - [x] Streaming vidéo HTTP range pour preview
+- [x] **Logs de sync en temps réel (SSE)** — spawn + EventSource
+- [x] **Player 360° immersif** — Three.js sphere inversée + VideoTexture
+- [x] **Gyroscope mobile** — DeviceOrientationEvent → rotation caméra + permission iOS
 
-### 🔲 Reste à implémenter (par priorité)
+### 🔲 Reste à implémenter
 
-#### A — Logs de sync en temps réel ⚡ (priorité haute)
-
-**Problème actuel** : `handleSync` dans `sync-server.js` utilise `execSync` → le serveur bloque jusqu'à la fin du push. Pour un fichier de 8 GB, ça peut prendre 10 minutes sans retour.
-
-**Solution** : Remplacer `execSync` par `spawn` + Server-Sent Events (SSE)
-
-```js
-// server/sync-server.js
-app.get("/api/sync/stream", (req, res) => {
-  res.setHeader("Content-Type", "text/event-stream");
-  res.setHeader("Cache-Control", "no-cache");
-  const { serial, file } = req.query;
-  const proc = spawn("adb", ["-s", serial, "push", file, "/sdcard/Movies/VR-Ultimate/"]);
-  proc.stdout.on("data", (d) => res.write(`data: ${d.toString()}\n\n`));
-  proc.on("close", () => res.write("data: [DONE]\n\n"));
-});
-```
-
-```ts
-// src/pages/Sync.tsx — côté client
-const es = new EventSource(`/api/sync/stream?serial=${serial}&file=${name}`);
-es.onmessage = (e) => appendLine(e.data);
-```
-
-#### B — Authentification serveur 🔒 (priorité moyenne)
+#### A — Authentification serveur 🔒 (priorité moyenne)
 
 **Problème** : N'importe qui sur le réseau local peut appeler `/api/sync` et déclencher des `adb push`.
 
@@ -371,48 +514,24 @@ app.use("/api", (req, res, next) => {
 ```
 
 ```ts
-// src/lib/serverApi.ts — injecter le token
-headers: { "X-Auth-Token": authToken ?? "" }
+// src/lib/serverApi.ts — injecter le token dans les headers
+headers: { "X-Auth-Token": settings.authToken ?? "" }
 ```
 
-#### C — Player 360°/180° immersif 🌐 (priorité basse)
+Le token se configure dans **Paramètres** → champ "Token d'authentification".
 
-**Problème actuel** : Le `VideoPreviewModal` utilise `<video>` HTML5 natif → les vidéos 360° s'affichent "plates" (projection équirectangulaire non traitée).
-
-**Solution** : Intégrer un player VR web comme [A-Frame](https://aframe.io) ou le plugin VR de [Video.js](https://github.com/nicholasgasior/vjs-plugin-vr)
-
-```bash
-npm install aframe
-```
-
-```tsx
-// Composant VideoPreviewModal amélioré
-<a-scene>
-  <a-videosphere src="#video360" rotation="0 -90 0" />
-  <a-video id="video360" src="/api/video/filename.mp4" />
-</a-scene>
-```
-
-> Cet aperçu reste un bonus — les vidéos sont lues correctement dans le casque via SkyBox Player ou le gestionnaire natif Quest.
-
-#### D — Détection automatique de l'IP du casque 📶
-
-**Problème** : Pour la connexion Wi-Fi, l'utilisateur doit trouver l'IP manuellement dans le casque.
-
-**Solution** : Lire l'IP directement depuis ADB pendant que le casque est en USB
-
-```js
-// server/sync-server.js
-app.get("/api/device-ip/:serial", (req, res) => {
-  const out = execSync(`adb -s ${req.params.serial} shell ip route`, { encoding: "utf8" });
-  const match = out.match(/src\s+([\d.]+)/);
-  res.json({ ip: match?.[1] ?? null });
-});
-```
-
-#### E — Notifications système (optionnel)
+#### B — Notifications système (optionnel)
 
 Envoyer une notification macOS/Linux quand la sync se termine via `node-notifier`.
+
+```bash
+npm install node-notifier
+```
+
+```js
+// Après fin de sync dans sync-server.js
+notifier.notify({ title: "VR Sync", message: `${count} fichiers synchronisés ✓` });
+```
 
 ---
 
@@ -482,18 +601,34 @@ node server/sync-server.js
 3. Vérifier que les noms correspondent exactement (casse, espaces, extension)
 
 ### Preview vidéo ne fonctionne pas
-→ Normal si le serveur n'est pas lancé (mode démo).
+→ Normal si le serveur n'est pas lancé (mode démo).  
 → En mode réel, le fichier doit exister dans `VIDEO_STORAGE_PATH`.
-→ La vidéo s'affiche "plate" dans le navigateur : c'est normal pour les vidéos 360° (voir section "Player 360° immersif" dans la roadmap).
+
+### Le bouton 360° n'apparaît pas
+→ Il n'est visible que si le serveur est connecté **ET** que la vidéo a fini de charger (état "Prêt").  
+→ Vérifier que le fichier `.mp4` existe côté serveur.
+
+### Gyroscope ne fonctionne pas sur iPhone/iPad
+→ iOS 13+ requiert une permission explicite.  
+→ Cliquer le bouton "Gyro" déclenche une popup système — cliquer **Autoriser**.  
+→ Si la popup n'apparaît pas, vérifier dans iOS Paramètres → Safari → Accès aux capteurs de mouvement.
+
+### Auto-détection IP ne trouve rien
+→ Le casque doit être connecté au Wi-Fi **ET** branché en USB au moment du clic "Préparer Wi-Fi".  
+→ Si l'IP est `null` dans la réponse, le casque n'est peut-être pas connecté au Wi-Fi — vérifier dans le casque : Paramètres → Wi-Fi.
 
 ### Wi-Fi ADB : "adb connect" réussit mais le casque ne répond plus après redémarrage
-→ `tcpip 5555` est réinitialisé à chaque redémarrage du casque. Il faut rebrancher en USB et refaire "Préparer Wi-Fi" à chaque fois.
+→ `tcpip 5555` est réinitialisé à chaque redémarrage du casque. Rebrancher en USB et refaire "Préparer Wi-Fi".
 
 ### `ngrok: command not found`
 ```bash
 brew install ngrok/ngrok/ngrok
 # ou télécharger depuis https://ngrok.com/download
 ```
+
+### Les logs SSE ne s'affichent pas en temps réel
+→ Vérifier que le serveur tourne en mode `dev:all` (pas juste `dev`).  
+→ En production via ngrok, vérifier que les headers SSE passent bien (certains proxys bufferisent les chunks).
 
 ---
 
@@ -509,8 +644,10 @@ brew install ngrok/ngrok/ngrok
 | Graphiques | Recharts |
 | UI components | shadcn/ui (Radix UI) |
 | Notifications | Sonner |
+| Player 360° | @react-three/fiber + @react-three/drei + Three.js |
 | Backend | Express 4 (Node.js) |
-| ADB bridge | `child_process.execSync` |
+| ADB bridge | `child_process.spawn` + `execSync` |
+| Streaming temps réel | Server-Sent Events (SSE) |
 | Lancement parallèle | concurrently |
 | Tests | Vitest + Testing Library |
 | E2E | Playwright |
