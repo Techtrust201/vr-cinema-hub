@@ -147,8 +147,19 @@ export default function Settings() {
               <Switch
                 checked={!form.demoMode}
                 onCheckedChange={(checked) => {
-                  setForm({ ...form, demoMode: !checked });
-                  toast.info(checked ? "Mode Réel activé — démarrez npm run dev:all" : "Mode Démo activé");
+                  const newDemoMode = !checked;
+                  setForm({ ...form, demoMode: newDemoMode });
+                  // Applique immédiatement — pas besoin de cliquer Sauvegarder
+                  updateSettings({ demoMode: newDemoMode });
+                  if (newDemoMode) {
+                    // Retour en Mode Démo → recharge les données fictives
+                    loadDemoData();
+                    toast.info("Mode Démo activé — données fictives restaurées");
+                  } else {
+                    // Passage en Mode Réel → vide toutes les fausses données
+                    setRealModeData();
+                    toast.success("Mode Réel activé — démarrez npm run dev:all et branchez vos casques");
+                  }
                 }}
               />
             </div>
