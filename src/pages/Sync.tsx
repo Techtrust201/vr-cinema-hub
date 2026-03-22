@@ -155,8 +155,18 @@ export default function Sync() {
 
       if (totalErrors > 0) {
         toast.warning(`Sync terminée avec ${totalErrors} erreur(s)`);
+        pushNotification({
+          title: "Sync ADB terminée avec erreurs",
+          body: `${totalPushed} fichier(s) envoyé(s), ${totalErrors} erreur(s)`,
+          type: "sync_error",
+        });
       } else {
         toast.success(`Sync ADB terminée — ${totalPushed} fichier(s) envoyé(s)`);
+        pushNotification({
+          title: "Sync ADB réussie",
+          body: `${totalPushed} fichier(s) envoyé(s), ${totalSkipped} ignoré(s)`,
+          type: "sync_done",
+        });
       }
     } catch (err) {
       const errLine = `[${new Date().toLocaleTimeString()}] ✗ Erreur : ${err instanceof Error ? err.message : "Erreur inconnue"}`;
