@@ -45,6 +45,28 @@ const PAGE_TITLES: Record<string, string> = {
 };
 
 
+function DemoModeBadge() {
+  const { settings } = useVRStore();
+  return (
+    <Link
+      to="/settings"
+      title={settings.demoMode ? "Mode Démo — cliquer pour changer" : "Mode Réel — cliquer pour changer"}
+      className={cn(
+        "hidden sm:flex items-center gap-1.5 text-[10px] font-semibold px-2.5 py-1 rounded-full border uppercase tracking-wider transition-all hover:opacity-80",
+        settings.demoMode
+          ? "text-[hsl(35_90%_55%)] bg-[hsl(35_90%_55%_/_0.08)] border-[hsl(35_90%_55%_/_0.25)]"
+          : "text-[hsl(140_70%_55%)] bg-[hsl(140_70%_40%_/_0.08)] border-[hsl(140_70%_40%_/_0.25)]"
+      )}
+    >
+      {settings.demoMode
+        ? <FlaskConical size={10} />
+        : <Zap size={10} />
+      }
+      {settings.demoMode ? "Mode Démo" : "Mode Réel"}
+    </Link>
+  );
+}
+
 function ServerModeBadge() {
   const { settings } = useVRStore();
   // In the Lovable hosted preview there is no local proxy — skip polling unless a public URL is set
