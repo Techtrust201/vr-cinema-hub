@@ -102,11 +102,11 @@ export default function Sync() {
           deviceSerial: device.serial,
           videoStoragePath: settings.videoStoragePath,
           videos: allVideos.map((v) => ({ name: v.name, sizeGB: v.sizeGB })),
-        });
+        }, settings.authToken);
 
         // Stream SSE lines
         await new Promise<void>((resolve, reject) => {
-          const es = createSyncStream(jobId, settings.serverUrl);
+          const es = createSyncStream(jobId, settings.serverUrl, settings.authToken);
           const accLines: string[] = [startLine, deviceLine];
 
           es.onmessage = (ev) => {
