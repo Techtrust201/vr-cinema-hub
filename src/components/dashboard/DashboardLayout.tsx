@@ -1,4 +1,4 @@
-import { Outlet, NavLink, useLocation } from "react-router-dom";
+import { Outlet, NavLink, useLocation, Link } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import {
   LayoutDashboard,
@@ -15,6 +15,10 @@ import {
   Clock,
   BarChart2,
   FileDown,
+  FlaskConical,
+  Zap,
+  CheckCheck,
+  Trash2,
 } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
 import { useVRStore } from "@/store/vrStore";
