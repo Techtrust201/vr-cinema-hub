@@ -315,9 +315,15 @@ export default function Devices() {
   const [adbDevices, setAdbDevices] = useState<ServerDevice[]>([]);
   const [adbPanelOpen, setAdbPanelOpen] = useState(false);
 
+  const isDemo = settings.demoMode;
+
   useEffect(() => {
-    checkServer(settings.serverUrl).then(setServerStatus);
-  }, [settings.serverUrl]);
+    if (isDemo) {
+      setServerStatus("disconnected");
+      return;
+    }
+    checkServer(settings.serverUrl, settings.authToken).then(setServerStatus);
+  }, [settings.serverUrl, settings.authToken, isDemo]);
 
   const connected = devices.filter((d) => d.status === "connected");
   const disconnected = devices.filter((d) => d.status === "disconnected");
