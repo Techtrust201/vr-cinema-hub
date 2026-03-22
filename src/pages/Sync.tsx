@@ -247,7 +247,7 @@ export default function Sync() {
 
     const logId = `log-${Date.now()}`;
 
-    if (!forceSimulation && serverStatus === "connected") {
+    if (!forceSimulation && !settings.demoMode && serverStatus === "connected") {
       handleRealSync(logId);
     } else {
       handleSimulatedSync(logId);
