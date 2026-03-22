@@ -198,6 +198,16 @@ export const DEMO_LIBRARIES: Library[] = [
   },
 ];
 
+/**
+ * Liste des noms de fichiers des vidéos de démo (fictives).
+ * Utilisée pour savoir quand utiliser la vidéo d'exemple en fallback :
+ * si le fichier n'existe pas sur le serveur ET que c'est une vidéo de démo,
+ * on charge une vidéo 360° d'exemple pour que la démo fonctionne.
+ */
+export const DEMO_VIDEO_NAMES = new Set(
+  DEMO_LIBRARIES.flatMap((lib) => lib.playlists.flatMap((p) => p.videos.map((v) => v.name)))
+);
+
 export const DEMO_DEVICES: Device[] = [
   {
     id: "dev-quest-pro-01",

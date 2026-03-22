@@ -14,17 +14,22 @@
  *   GET  /api/video/:name       — serve video file with range support
  */
 
-const express = require("express");
-const cors = require("cors");
-const { execSync, spawn } = require("child_process");
-const path = require("path");
-const fs = require("fs");
-const crypto = require("crypto");
+import express from "express";
+import cors from "cors";
+import { execSync, spawn } from "child_process";
+import path from "path";
+import fs from "fs";
+import crypto from "crypto";
+import { fileURLToPath } from "url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // ─── node-notifier (optional — silently disabled if not installed) ─────────────
 let notifier = null;
 try {
-  notifier = require("node-notifier");
+  const mod = await import("node-notifier");
+  notifier = mod.default;
 } catch {}
 
 const app = express();

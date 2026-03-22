@@ -100,6 +100,18 @@ export function getVideoUrl(baseUrl: string | undefined, videoName: string): str
   return `${apiBase(baseUrl)}/video/${encodeURIComponent(videoName)}`;
 }
 
+/**
+ * URL d'une vidéo 360° d'exemple pour le mode démo.
+ *
+ * En mode démo, les vidéos listées (EscapeRoom_VR_180_SBS_8K.mp4, etc.) sont fictives
+ * et n'existent pas sur le disque. Quand le serveur est connecté mais renvoie 404 (fichier
+ * introuvable), on utilise cette URL en fallback pour afficher une vraie vidéo 360° et
+ * permettre de démontrer le lecteur (y compris le bouton 360°).
+ *
+ * Source : A-Frame CDN, vidéo de test 360° avec CORS activé.
+ */
+export const SAMPLE_VIDEO_URL = "https://cdn.aframe.io/360-video-boilerplate/video/city.mp4";
+
 /** Connect a device via Wi-Fi ADB (adb connect IP:PORT) */
 export async function connectDevice(ip: string, port = 5555, baseUrl?: string, authToken?: string): Promise<{ success: boolean; output: string; address: string }> {
   const res = await apiFetch(`${apiBase(baseUrl)}/connect`, {

@@ -1,9 +1,9 @@
 import { useState, useEffect, useRef, useCallback, Suspense } from "react";
 import { X, Film, Calendar, Clock, HardDrive, Eye, Play, Pause, Monitor, Copy, Check, Loader2, WifiOff, Globe, LayoutTemplate, Smartphone } from "lucide-react";
-import { Video } from "@/store/vrStore";
+import { Video, DEMO_VIDEO_NAMES } from "@/store/vrStore";
 import { useVRStore } from "@/store/vrStore";
 import { cn } from "@/lib/utils";
-import { checkServer, getVideoUrl, ServerStatus } from "@/lib/serverApi";
+import { checkServer, getVideoUrl, SAMPLE_VIDEO_URL, ServerStatus } from "@/lib/serverApi";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import * as THREE from "three";
@@ -171,6 +171,13 @@ export default function VideoPreviewModal({ video, onClose }: VideoPreviewModalP
   // HTML5 video state
   const videoRef = useRef<HTMLVideoElement>(null);
   const [videoState, setVideoState] = useState<"loading" | "ready" | "error">("loading");
+
+  /**
+   * Fallback démo : quand le serveur renvoie 404 (fichier fictif introuvable),
+   * on charge une vidéo 360° d'exemple pour que la démo soit fonctionnelle.
+   * Réinitialisé à chaque changement de vidéo.
+   */
+  const [useFallbackSample, setUseFallbackSample] = useState(false);
   const [realPlaying, setRealPlaying] = useState(false);
   const [realProgress, setRealProgress] = useState(0);
   const [realCurrentSecs, setRealCurrentSecs] = useState(0);
@@ -186,6 +193,12 @@ export default function VideoPreviewModal({ video, onClose }: VideoPreviewModalP
   useEffect(() => {
     checkServer(settings.serverUrl).then(setServerStatus);
   }, [settings.serverUrl]);
+
+  /** Réinitialiser le fallback quand on ouvre une autre vidéo */
+  useEffect(() => {
+    setUseFallbackSample(false);
+    setVideoState("loading");
+  }, [video.id]);
 
   // Reset 360 mode when disconnected
   useEffect(() => {
@@ -412,16 +425,39 @@ export default function VideoPreviewModal({ video, onClose }: VideoPreviewModalP
             {/* ── REAL VIDEO (server connected) ── */}
             {isConnected && (
               <>
-                {/* Hidden video element — always mounted so texture & controls work */}
+                {/**
+                 * URL de la vidéo :
+                 * - En fallback démo : vidéo 360° d'exemple (fichiers démo fictifs n'existent pas)
+                 * - Sinon : /api/video/:name depuis le serveur local
+                 */}
                 <video
                   ref={videoRef}
-                  src={getVideoUrl(settings.serverUrl, video.name)}
+                  src={
+                    useFallbackSample
+                      ? SAMPLE_VIDEO_URL
+                      : getVideoUrl(settings.serverUrl, video.name)
+                  }
                   className={cn(
                     "absolute inset-0 w-full h-full object-contain transition-opacity duration-300",
                     videoState === "ready" && !mode360 ? "opacity-100" : "opacity-0 pointer-events-none"
                   )}
                   onLoadedData={() => setVideoState("ready")}
-                  onError={() => setVideoState("error")}
+                  onError={() => {
+                    /**
+                     * Fichier introuvable (404). En mode démo, les vidéos listées sont fictives.
+                     * On tente une seule fois de charger la vidéo d'exemple pour que la démo fonctionne.
+                     */
+                    if (
+                      settings.demoMode &&
+                      DEMO_VIDEO_NAMES.has(video.name) &&
+                      !useFallbackSample
+                    ) {
+                      setUseFallbackSample(true);
+                      setVideoState("loading");
+                    } else {
+                      setVideoState("error");
+                    }
+                  }}
                   onTimeUpdate={handleTimeUpdate}
                   onEnded={handleVideoEnded}
                   preload="metadata"
@@ -446,16 +482,27 @@ export default function VideoPreviewModal({ video, onClose }: VideoPreviewModalP
                   </div>
                 )}
 
-                {/* Error overlay */}
+                {/* Error overlay — fichier introuvable ou échec du fallback */}
                 {videoState === "error" && (
                   <div className="relative z-10 flex flex-col items-center gap-3 text-center px-6">
                     <div className="w-16 h-16 rounded-2xl bg-destructive/10 border border-destructive/20 flex items-center justify-center">
                       <Film size={28} className="text-destructive/40" />
                     </div>
                     <div>
-                      <p className="text-xs font-medium text-muted-foreground/80">Fichier introuvable sur le serveur</p>
+                      <p className="text-xs font-medium text-muted-foreground/80">
+                        {useFallbackSample
+                          ? "La vidéo d'exemple n'a pas pu être chargée (réseau ou CORS)"
+                          : "Fichier introuvable sur le serveur"}
+                      </p>
                       <p className="text-[11px] text-muted-foreground/40 mt-0.5 font-mono">{video.name}</p>
                     </div>
+                  </div>
+                )}
+
+                {/* Indicateur : on affiche la vidéo d'exemple car le fichier démo est fictif */}
+                {useFallbackSample && videoState === "ready" && (
+                  <div className="absolute bottom-14 left-1/2 -translate-x-1/2 z-20 px-3 py-1.5 rounded-full bg-black/60 text-white/90 text-[10px] font-medium backdrop-blur-sm border border-white/10 max-w-[90%] text-center">
+                    Vidéo d'exemple — les fichiers de démo sont fictifs
                   </div>
                 )}
               </>
