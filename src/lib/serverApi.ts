@@ -97,6 +97,39 @@ export async function prepareTcpip(serial: string, baseUrl?: string): Promise<{ 
   return res.json();
 }
 
+/** Auto-detect Wi-Fi IP of a USB-connected device via adb ip addr */
+export async function fetchDeviceIp(serial: string, baseUrl?: string): Promise<{ ip: string }> {
+  const res = await fetch(`${apiBase(baseUrl)}/device-ip/${encodeURIComponent(serial)}`);
+  if (!res.ok) throw new Error("Could not detect Wi-Fi IP");
+  return res.json();
+}
+
+export interface SyncStartResult {
+  jobId: string;
+}
+
+/** Start an async sync job — returns a jobId immediately */
+export async function startSync(
+  baseUrl: string | undefined,
+  payload: SyncPayload
+): Promise<SyncStartResult> {
+  const res = await fetch(`${apiBase(baseUrl)}/sync/start`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error("Failed to start sync job");
+  return res.json();
+}
+
+/**
+ * Open an SSE stream for a sync job.
+ * Each message is a JSON string: { line: string } | { done: true, summary: SyncResult }
+ */
+export function createSyncStream(jobId: string, baseUrl?: string): EventSource {
+  return new EventSource(`${apiBase(baseUrl)}/sync/stream/${encodeURIComponent(jobId)}`);
+}
+
 export interface DeviceAdbStatus {
   serial: string;
   battery: number;
