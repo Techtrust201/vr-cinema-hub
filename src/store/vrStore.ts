@@ -60,6 +60,8 @@ export interface VRSettings {
   serverUrl: string;
   /** Public tunnel URL (e.g. https://abc.ngrok.io) — used when running from Lovable preview */
   publicServerUrl: string;
+  /** true = demo/simulation mode (no real ADB server required) */
+  demoMode: boolean;
 }
 
 const DEFAULT_SETTINGS: VRSettings = {
@@ -68,6 +70,7 @@ const DEFAULT_SETTINGS: VRSettings = {
   authToken: "",
   serverUrl: "http://localhost:3001",
   publicServerUrl: "",
+  demoMode: true,
 };
 
 // ─── Demo data ──────────────────────────────────────────────────────────────
