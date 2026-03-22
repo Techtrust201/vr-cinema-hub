@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useVRStore } from "@/store/vrStore";
+import { Switch } from "@/components/ui/switch";
 import { checkServer, isLovablePreview } from "@/lib/serverApi";
 import {
   FolderOpen,
