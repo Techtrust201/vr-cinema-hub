@@ -4,7 +4,7 @@ import DeviceCard from "@/components/dashboard/DeviceCard";
 import { RefreshCw, Usb, Wifi, Info, Plus, X, Scan, ChevronRight, Loader2, Signal } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
-import { checkServer, fetchServerDevices, fetchDeviceStatus, connectDevice, prepareTcpip, ServerDevice, ServerStatus } from "@/lib/serverApi";
+import { checkServer, fetchServerDevices, fetchDeviceStatus, connectDevice, prepareTcpip, fetchDeviceIp, ServerDevice, ServerStatus } from "@/lib/serverApi";
 
 interface AddDeviceModalProps {
   onClose: () => void;
@@ -141,10 +141,11 @@ function AddDeviceModal({ onClose, initialSerial = "", initialName = "", initial
 
 interface WifiConnectModalProps {
   onClose: () => void;
+  initialIp?: string;
 }
 
-function WifiConnectModal({ onClose }: WifiConnectModalProps) {
-  const [ip, setIp] = useState("");
+function WifiConnectModal({ onClose, initialIp = "" }: WifiConnectModalProps) {
+  const [ip, setIp] = useState(initialIp);
   const [port, setPort] = useState("5555");
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<{ success: boolean; output: string } | null>(null);
@@ -305,6 +306,7 @@ export default function Devices() {
   const [refreshing, setRefreshing] = useState(false);
   const [addModalOpen, setAddModalOpen] = useState(false);
   const [wifiModalOpen, setWifiModalOpen] = useState(false);
+  const [wifiInitialIp, setWifiInitialIp] = useState("");
   const [addInitial, setAddInitial] = useState<{ serial?: string; name?: string; ip?: string }>({});
 
   // ADB detect state
@@ -361,7 +363,17 @@ export default function Devices() {
     const baseUrl = settings.publicServerUrl?.trim() || settings.serverUrl?.trim() || undefined;
     try {
       await prepareTcpip(device.serial, baseUrl);
-      toast.success(`${device.name} prêt — débranchez le câble puis cliquez Wi-Fi ADB`);
+      toast.success(`${device.name} prêt en Wi-Fi — détection de l'IP…`);
+      // Auto-detect IP and open Wi-Fi modal pre-filled
+      try {
+        const { ip } = await fetchDeviceIp(device.serial, baseUrl);
+        setWifiInitialIp(ip);
+        toast.success(`IP détectée : ${ip} — débranchez le câble`);
+      } catch {
+        setWifiInitialIp("");
+        toast.info("IP non détectée — entrez-la manuellement");
+      }
+      setWifiModalOpen(true);
     } catch {
       toast.error(`Impossible de préparer ${device.name} en Wi-Fi`);
     }
@@ -585,7 +597,7 @@ export default function Devices() {
         />
       )}
       {wifiModalOpen && (
-        <WifiConnectModal onClose={() => setWifiModalOpen(false)} />
+        <WifiConnectModal onClose={() => setWifiModalOpen(false)} initialIp={wifiInitialIp} />
       )}
       {adbPanelOpen && (
         <AdbDetectPanel
