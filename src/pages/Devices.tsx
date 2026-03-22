@@ -363,7 +363,17 @@ export default function Devices() {
     const baseUrl = settings.publicServerUrl?.trim() || settings.serverUrl?.trim() || undefined;
     try {
       await prepareTcpip(device.serial, baseUrl);
-      toast.success(`${device.name} prêt — débranchez le câble puis cliquez Wi-Fi ADB`);
+      toast.success(`${device.name} prêt en Wi-Fi — détection de l'IP…`);
+      // Auto-detect IP and open Wi-Fi modal pre-filled
+      try {
+        const { ip } = await fetchDeviceIp(device.serial, baseUrl);
+        setWifiInitialIp(ip);
+        toast.success(`IP détectée : ${ip} — débranchez le câble`);
+      } catch {
+        setWifiInitialIp("");
+        toast.info("IP non détectée — entrez-la manuellement");
+      }
+      setWifiModalOpen(true);
     } catch {
       toast.error(`Impossible de préparer ${device.name} en Wi-Fi`);
     }
