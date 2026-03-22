@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, Suspense } from "react";
-import { X, Film, Calendar, Clock, HardDrive, Eye, Play, Pause, Monitor, Copy, Check, Loader2, WifiOff, Globe, LayoutTemplate } from "lucide-react";
+import { X, Film, Calendar, Clock, HardDrive, Eye, Play, Pause, Monitor, Copy, Check, Loader2, WifiOff, Globe, LayoutTemplate, Smartphone } from "lucide-react";
 import { Video } from "@/store/vrStore";
 import { useVRStore } from "@/store/vrStore";
 import { cn } from "@/lib/utils";
@@ -8,62 +8,44 @@ import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import * as THREE from "three";
 
-interface VideoPreviewModalProps {
-  video: Video;
-  onClose: () => void;
+// ─── Gyroscope controls (inside Canvas, uses useThree) ────────────────────────
+function GyroControls({ enabled }: { enabled: boolean }) {
+  const { camera } = useThree();
+
+  useEffect(() => {
+    if (!enabled) return;
+
+    const handler = (e: DeviceOrientationEvent) => {
+      if (e.alpha == null || e.beta == null || e.gamma == null) return;
+
+      const screenAngle = (window.screen?.orientation?.angle ?? 0) * (Math.PI / 180);
+
+      const alpha = THREE.MathUtils.degToRad(e.alpha);
+      const beta  = THREE.MathUtils.degToRad(e.beta);
+      const gamma = THREE.MathUtils.degToRad(e.gamma);
+
+      // Device orientation → camera quaternion (ZXY convention)
+      const euler = new THREE.Euler(beta, alpha, -gamma, "YXZ");
+      const q = new THREE.Quaternion().setFromEuler(euler);
+
+      // Correct for screen rotation (portrait vs landscape)
+      const screenQ = new THREE.Quaternion().setFromAxisAngle(
+        new THREE.Vector3(0, 0, 1),
+        -screenAngle
+      );
+      camera.quaternion.multiplyQuaternions(q, screenQ);
+    };
+
+    window.addEventListener("deviceorientation", handler, true);
+    return () => window.removeEventListener("deviceorientation", handler, true);
+  }, [enabled, camera]);
+
+  return null;
 }
-
-const formatBadge: Record<string, string> = {
-  "360": "bg-[hsl(var(--vr-violet)_/_0.18)] text-[hsl(var(--vr-violet))] border-[hsl(var(--vr-violet)_/_0.35)]",
-  "180": "bg-[hsl(var(--vr-cyan)_/_0.18)] text-[hsl(var(--vr-cyan))] border-[hsl(var(--vr-cyan)_/_0.35)]",
-};
-
-const stereoBadge: Record<string, string> = {
-  mono: "bg-muted text-muted-foreground border-border",
-  sbs: "bg-[hsl(50_80%_50%_/_0.15)] text-[hsl(50_80%_60%)] border-[hsl(50_80%_50%_/_0.3)]",
-  ou: "bg-[hsl(200_80%_50%_/_0.15)] text-[hsl(200_80%_65%)] border-[hsl(200_80%_50%_/_0.3)]",
-};
-
-const stereoLabel: Record<string, string> = {
-  mono: "Monoscopic",
-  sbs: "Side-by-Side (3D)",
-  ou: "Over-Under (3D)",
-};
-
-function parseDuration(dur: string): number {
-  if (!dur || dur === "—") return 0;
-  const parts = dur.split(":").map(Number);
-  if (parts.length === 2) return parts[0] * 60 + parts[1];
-  if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
-  return 0;
-}
-
-function formatSeconds(secs: number): string {
-  const m = Math.floor(secs / 60);
-  const s = Math.floor(secs % 60);
-  return `${m}:${s.toString().padStart(2, "0")}`;
-}
-
-const resolutionInfo: Record<string, { label: string; detail: string; colorClass: string; iconClass: string }> = {
-  "360": {
-    label: "4K",
-    detail: "3840 × 2160",
-    colorClass: "text-[hsl(var(--vr-cyan))]",
-    iconClass: "bg-[hsl(var(--vr-cyan)_/_0.1)] border-[hsl(var(--vr-cyan)_/_0.25)]",
-  },
-  "180": {
-    label: "8K",
-    detail: "7680 × 4320",
-    colorClass: "text-[hsl(var(--vr-violet))]",
-    iconClass: "bg-[hsl(var(--vr-violet)_/_0.1)] border-[hsl(var(--vr-violet)_/_0.25)]",
-  },
-};
 
 // ─── 360° sphere component ────────────────────────────────────────────────────
 function VideoSphere({ videoEl }: { videoEl: HTMLVideoElement }) {
   const meshRef = useRef<THREE.Mesh>(null);
-  const { gl } = useThree();
-
   const texture = useRef<THREE.VideoTexture | null>(null);
 
   useEffect(() => {
@@ -77,9 +59,9 @@ function VideoSphere({ videoEl }: { videoEl: HTMLVideoElement }) {
     };
   }, [videoEl]);
 
+  // Only update the texture flag — R3F handles the render loop automatically
   useFrame(() => {
     if (texture.current) texture.current.needsUpdate = true;
-    gl.render(gl.domElement as unknown as THREE.Scene, gl.domElement as unknown as THREE.Camera);
   });
 
   if (!texture.current) return null;
@@ -92,7 +74,12 @@ function VideoSphere({ videoEl }: { videoEl: HTMLVideoElement }) {
   );
 }
 
-function VR360Canvas({ videoEl }: { videoEl: HTMLVideoElement }) {
+interface VR360CanvasProps {
+  videoEl: HTMLVideoElement;
+  gyroEnabled: boolean;
+}
+
+function VR360Canvas({ videoEl, gyroEnabled }: VR360CanvasProps) {
   return (
     <Canvas
       style={{ width: "100%", height: "100%" }}
@@ -102,13 +89,17 @@ function VR360Canvas({ videoEl }: { videoEl: HTMLVideoElement }) {
       <Suspense fallback={null}>
         <VideoSphere videoEl={videoEl} />
       </Suspense>
-      <OrbitControls
-        enableZoom={false}
-        enablePan={false}
-        rotateSpeed={-0.4}
-        autoRotate={false}
-        reverseOrbit={false}
-      />
+      {/* Gyro controls replace orbit on mobile when enabled */}
+      <GyroControls enabled={gyroEnabled} />
+      {!gyroEnabled && (
+        <OrbitControls
+          enableZoom={false}
+          enablePan={false}
+          rotateSpeed={-0.4}
+          autoRotate={false}
+          reverseOrbit={false}
+        />
+      )}
     </Canvas>
   );
 }
