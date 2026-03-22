@@ -597,7 +597,7 @@ export default function Devices() {
         />
       )}
       {wifiModalOpen && (
-        <WifiConnectModal onClose={() => setWifiModalOpen(false)} />
+        <WifiConnectModal onClose={() => setWifiModalOpen(false)} initialIp={wifiInitialIp} />
       )}
       {adbPanelOpen && (
         <AdbDetectPanel
