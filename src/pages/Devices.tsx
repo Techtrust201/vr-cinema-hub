@@ -141,10 +141,11 @@ function AddDeviceModal({ onClose, initialSerial = "", initialName = "", initial
 
 interface WifiConnectModalProps {
   onClose: () => void;
+  initialIp?: string;
 }
 
-function WifiConnectModal({ onClose }: WifiConnectModalProps) {
-  const [ip, setIp] = useState("");
+function WifiConnectModal({ onClose, initialIp = "" }: WifiConnectModalProps) {
+  const [ip, setIp] = useState(initialIp);
   const [port, setPort] = useState("5555");
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<{ success: boolean; output: string } | null>(null);
