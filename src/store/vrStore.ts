@@ -326,12 +326,33 @@ export const DEMO_SYNC_LOGS: SyncLog[] = [
   },
 ];
 
+// ─── Notifications ───────────────────────────────────────────────────────────
+
+export type NotificationType = "sync_done" | "sync_error" | "info";
+
+export interface AppNotification {
+  id: string;
+  at: string;
+  title: string;
+  body: string;
+  type: NotificationType;
+  read: boolean;
+}
+
+// ─── Empty libraries skeleton (Mode Réel — pas de fake data) ─────────────────
+
+export const EMPTY_LIBRARIES: Library[] = [
+  { id: "location", name: "Location", playlists: [] },
+  { id: "animations", name: "Animations", playlists: [] },
+];
+
 // ─── Store ───────────────────────────────────────────────────────────────────
 
 interface VRStore {
   libraries: Library[];
   devices: Device[];
   syncLogs: SyncLog[];
+  notifications: AppNotification[];
   settings: VRSettings;
   // Playlist actions
   addPlaylist: (libraryId: LibraryType, name: string) => void;
@@ -350,10 +371,16 @@ interface VRStore {
   addSyncLog: (log: SyncLog) => void;
   updateSyncLog: (id: string, updates: Partial<SyncLog>) => void;
   clearSyncLogs: () => void;
+  // Notification actions
+  pushNotification: (n: Omit<AppNotification, "id" | "at" | "read">) => void;
+  markAllNotificationsRead: () => void;
+  clearNotifications: () => void;
   // Settings actions
   updateSettings: (updates: Partial<VRSettings>) => void;
   resetStore: () => void;
   loadDemoData: () => void;
+  /** Vide toutes les données fictives — appelé au passage en Mode Réel */
+  setRealModeData: () => void;
 }
 
 export const useVRStore = create<VRStore>()(
@@ -362,6 +389,7 @@ export const useVRStore = create<VRStore>()(
       libraries: DEMO_LIBRARIES,
       devices: DEMO_DEVICES,
       syncLogs: DEMO_SYNC_LOGS,
+      notifications: [],
       settings: DEFAULT_SETTINGS,
 
       addPlaylist: (libraryId, name) =>
