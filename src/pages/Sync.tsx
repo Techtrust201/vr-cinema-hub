@@ -36,7 +36,7 @@ function generateSyncLines(
 }
 
 export default function Sync() {
-  const { libraries, devices, syncLogs, settings, addSyncLog, updateSyncLog, updateDevice, clearSyncLogs } = useVRStore();
+  const { libraries, devices, syncLogs, settings, addSyncLog, updateSyncLog, updateDevice, clearSyncLogs, pushNotification } = useVRStore();
   const [selectedLib, setSelectedLib] = useState<LibraryType>("location");
   const [selectedDevice, setSelectedDevice] = useState<"all" | string>("all");
   const [running, setRunning] = useState(false);
