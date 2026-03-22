@@ -36,7 +36,7 @@ function generateSyncLines(
 }
 
 export default function Sync() {
-  const { libraries, devices, syncLogs, settings, addSyncLog, updateSyncLog, updateDevice, clearSyncLogs } = useVRStore();
+  const { libraries, devices, syncLogs, settings, addSyncLog, updateSyncLog, updateDevice, clearSyncLogs, pushNotification } = useVRStore();
   const [selectedLib, setSelectedLib] = useState<LibraryType>("location");
   const [selectedDevice, setSelectedDevice] = useState<"all" | string>("all");
   const [running, setRunning] = useState(false);
@@ -155,8 +155,18 @@ export default function Sync() {
 
       if (totalErrors > 0) {
         toast.warning(`Sync terminée avec ${totalErrors} erreur(s)`);
+        pushNotification({
+          title: "Sync ADB terminée avec erreurs",
+          body: `${totalPushed} fichier(s) envoyé(s), ${totalErrors} erreur(s)`,
+          type: "sync_error",
+        });
       } else {
         toast.success(`Sync ADB terminée — ${totalPushed} fichier(s) envoyé(s)`);
+        pushNotification({
+          title: "Sync ADB réussie",
+          body: `${totalPushed} fichier(s) envoyé(s), ${totalSkipped} ignoré(s)`,
+          type: "sync_done",
+        });
       }
     } catch (err) {
       const errLine = `[${new Date().toLocaleTimeString()}] ✗ Erreur : ${err instanceof Error ? err.message : "Erreur inconnue"}`;
@@ -227,6 +237,11 @@ export default function Sync() {
         setRunning(false);
         setActiveLogId(null);
         toast.success(`Sync simulée — ${pushed} fichier(s) envoyé(s)`);
+        pushNotification({
+          title: "Sync simulée réussie",
+          body: `${pushed} fichier(s) envoyé(s), ${skipped} ignoré(s)`,
+          type: "sync_done",
+        });
       } else {
         const progressLine = `[${new Date().toLocaleTimeString()}] Traitement en cours… ${pct}%`;
         linesRef.current = [...linesRef.current, progressLine];
