@@ -1,49 +1,84 @@
 
-## 3 fonctionnalités à implémenter
+## Analyse du vrai problème
 
-### A. Mode Démo / Mode Réel — toggle dans Paramètres
+### Pourquoi les fake datas restent en Mode Réel
 
-**Store (`vrStore.ts`)** : ajouter `demoMode: boolean` dans `VRSettings` avec valeur par défaut `true`. Ajouter `demoMode` dans `isDirty` dans Settings.
+Le store `vrStore.ts` initialise TOUJOURS avec `DEMO_LIBRARIES`, `DEMO_DEVICES`, `DEMO_SYNC_LOGS` (ligne 362-364). Quand on passe en Mode Réel, `demoMode` change dans `settings` mais les listes `devices`, `libraries`, `syncLogs` contiennent encore les données de démo — elles ne sont jamais vidées.
 
-**Settings.tsx** : ajouter une section "Mode de fonctionnement" avec un Switch Radix UI (déjà installé) + label explicatif :
-- **Mode Démo** (ON) → données fictives, pas de serveur requis, simulation partout
-- **Mode Réel** (OFF) → ADB live, serveur requis, toutes les données viennent du casque réel
+Le `demoMode` actuel contrôle uniquement si les _actions_ (ADB, serveur) sont simulées ou réelles. Il ne vide pas les données fictives du store.
 
-**Impact dans le reste de l'app** : le `demoMode` est déjà partiellement géré (les pages vérifient `serverStatus === "connected"`). Avec ce toggle, on court-circuite : si `demoMode = true` → on n'essaie jamais de contacter le serveur, on reste en simulation. Si `demoMode = false` → comportement actuel (serveur requis).
-
-Modifier `Devices.tsx` et `Sync.tsx` pour lire `settings.demoMode` directement depuis le store pour décider du mode (au lieu de checker `serverStatus` uniquement).
+### Ce qu'il faut faire (3 points)
 
 ---
 
-### B. Middleware Auth Token — serveur Express
+**A. Mode Réel = vider les données fictives**
 
-**`server/sync-server.js`** :
-1. Lire le token attendu depuis `process.env.VR_AUTH_TOKEN`
-2. Middleware Express sur les routes sensibles : `/api/sync/*`, `/api/connect`, `/api/tcpip/*`, `/api/device-ip/*`, `/api/device-status/*`
-3. Si `VR_AUTH_TOKEN` est vide/absent → middleware désactivé (rétrocompatibilité)
-4. Si présent → vérifie `req.headers['x-auth-token'] === process.env.VR_AUTH_TOKEN`, sinon `401`
+Dans `Settings.tsx` : quand on bascule vers Mode Réel (`demoMode = false`), appeler immédiatement un `setRealModeData()` dans le store qui vide `devices`, `syncLogs`, et laisse `libraries` vide aussi (ou avec la structure vide sans vidéos).
 
-**`src/lib/serverApi.ts`** : modifier `apiBase()` pour accepter un token en option et ajouter un header `X-Auth-Token` dans toutes les requêtes `fetch`. Créer une fonction helper `apiFetch(url, opts, token?)` qui injecte le header si le token est fourni.
+Dans `vrStore.ts` : ajouter une action `setRealModeData()` qui remplace les données par des tableaux vides :
+```ts
+setRealModeData: () => set({
+  devices: [],
+  syncLogs: [],
+  libraries: EMPTY_LIBRARIES, // même structure mais playlists vides
+})
+```
 
-**Impact** : toutes les fonctions (`checkServer`, `fetchServerDevices`, `pushSync`, etc.) acceptent un `token?` en paramètre. Dans les pages qui appellent ces fonctions, passer `settings.authToken` quand disponible.
+Et `loadDemoData()` (déjà dans le store) qui remet les DEMO_* — appelée quand on repasse en Mode Démo.
+
+Côté `Settings.tsx`, le switch `onCheckedChange` doit appeler ces actions directement (sans attendre le Save) :
+- Passage en Réel → `setRealModeData()` + `updateSettings({ demoMode: false })`
+- Retour en Démo → `loadDemoData()` + `updateSettings({ demoMode: true })`
+
+Effet immédiat : pas besoin de cliquer "Sauvegarder". L'utilisateur voit les casques disparaître instantanément quand il passe en Mode Réel — il sait qu'il doit en ajouter/détecter via ADB.
 
 ---
 
-### C. Notifications système (node-notifier)
+**B. Badge Mode dans le header DashboardLayout**
 
-**`package.json`** : ajouter `"node-notifier": "^10.0.1"` dans `dependencies`.
+Dans `DashboardLayout.tsx`, ajouter un `DemoModeBadge` dans le header (entre `ServerModeBadge` et `NotificationBell`) :
+- Lit `settings.demoMode` depuis `useVRStore`
+- Mode Démo → badge orange `FlaskConical` + texte "Mode Démo"
+- Mode Réel → badge vert `Zap` + texte "Mode Réel"
+- Cliquable → navigue vers `/settings`
 
-**`server/sync-server.js`** :
-- `require('node-notifier')` avec `try/catch` (silencieux si non dispo)
-- Dans `jobDone()` : envoyer une notification système après chaque sync terminée
-  ```js
-  notifier.notify({
-    title: "VR Ultimate — Sync terminée",
-    message: `${summary.pushed} fichier(s) envoyé(s), ${summary.errors} erreur(s)`,
-    icon: path.join(__dirname, "../public/placeholder.svg"),
-  });
-  ```
-- Fallback silencieux si `node-notifier` n'est pas installé (try/catch autour du require)
+```tsx
+function DemoModeBadge() {
+  const { settings } = useVRStore();
+  return (
+    <Link to="/settings" className={cn(
+      "hidden sm:flex items-center gap-1.5 text-[10px] font-semibold px-2.5 py-1 rounded-full border uppercase tracking-wider transition-colors",
+      settings.demoMode
+        ? "text-[hsl(35_90%_55%)] bg-[hsl(35_90%_55%_/_0.08)] border-[hsl(35_90%_55%_/_0.25)]"
+        : "text-[hsl(140_70%_55%)] bg-[hsl(140_70%_40%_/_0.08)] border-[hsl(140_70%_40%_/_0.25)]"
+    )}>
+      {settings.demoMode ? <FlaskConical size={10}/> : <Zap size={10}/>}
+      {settings.demoMode ? "Mode Démo" : "Mode Réel"}
+    </Link>
+  );
+}
+```
+
+---
+
+**C. Notifications in-app (toast) + historique dans la navbar**
+
+**Dans le store** : ajouter un tableau `notifications: AppNotification[]` avec type :
+```ts
+interface AppNotification {
+  id: string;
+  at: string;
+  title: string;
+  body: string;
+  type: "sync_done" | "sync_error" | "info";
+  read: boolean;
+}
+```
+Actions : `pushNotification(n)`, `markAllRead()`, `clearNotifications()`.
+
+**Dans `Sync.tsx`** : après une sync terminée (réelle ou simulée), appeler `pushNotification` en plus du toast existant. Ça se fait déjà après `handleRealSync` et `handleSimulatedSync`.
+
+**Dans `DashboardLayout.tsx`** : remplacer `NotificationBell` par une version qui lire aussi `notifications` du store — le badge count inclut les notifications non lues en plus des overdueDevices. Le dropdown affiche deux sections : "Alertes casques" (comme avant) + "Syncs récentes" (dernières notifications).
 
 ---
 
@@ -51,10 +86,14 @@ Modifier `Devices.tsx` et `Sync.tsx` pour lire `settings.demoMode` directement d
 
 | Fichier | Changement |
 |---|---|
-| `src/store/vrStore.ts` | + `demoMode: boolean` dans `VRSettings` (défaut `true`) |
-| `src/pages/Settings.tsx` | + section "Mode" avec Switch démo/réel + `demoMode` dans isDirty |
-| `src/lib/serverApi.ts` | + `apiFetch` helper qui injecte `X-Auth-Token` dans tous les appels |
-| `server/sync-server.js` | + middleware auth token + require node-notifier + notification dans jobDone |
-| `package.json` | + `node-notifier` |
-| `src/pages/Devices.tsx` | + lecture `settings.demoMode` pour forcer le mode démo sans contacter le serveur |
-| `src/pages/Sync.tsx` | + lecture `settings.demoMode` pour forcer le mode démo |
+| `src/store/vrStore.ts` | + `setRealModeData()` + `AppNotification` type + `notifications[]` + `pushNotification` + `markAllRead` + `clearNotifications` |
+| `src/pages/Settings.tsx` | Switch bascule immédiatement sans "Save" + appelle `setRealModeData` / `loadDemoData` |
+| `src/components/dashboard/DashboardLayout.tsx` | + `DemoModeBadge` dans le header + `NotificationBell` étendu avec historique syncs |
+| `src/pages/Sync.tsx` | + `pushNotification` après chaque sync terminée (réelle + simulée) |
+
+### Comportement attendu
+
+1. Aller dans Paramètres → basculer sur Mode Réel → les casques/logs disparaissent immédiatement
+2. Le badge "Mode Réel" vert apparaît dans le header, cliquable pour revenir aux paramètres
+3. Quand une sync se termine → toast Sonner + notification dans la cloche avec horodatage
+4. Revenir en Mode Démo → les DEMO_* reviennent dans le store
