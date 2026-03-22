@@ -316,7 +316,10 @@ export default function VideoPreviewModal({ video, onClose }: VideoPreviewModalP
             {/* 360° / Flat toggle — only visible when video is ready */}
             {canToggle360 && (
               <button
-                onClick={() => setMode360((v) => !v)}
+                onClick={() => {
+                  setMode360((v) => !v);
+                  if (mode360) setGyroEnabled(false); // reset gyro when leaving 360
+                }}
                 title={mode360 ? "Passer en mode plat" : "Passer en mode 360° immersif"}
                 className={cn(
                   "flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-all duration-200 active:scale-95",
@@ -327,6 +330,36 @@ export default function VideoPreviewModal({ video, onClose }: VideoPreviewModalP
               >
                 {mode360 ? <LayoutTemplate size={12} /> : <Globe size={12} />}
                 {mode360 ? "Plat" : "360°"}
+              </button>
+            )}
+
+            {/* Gyroscope toggle — only in 360° mode on devices with gyro */}
+            {canToggle360 && mode360 && hasGyro && (
+              <button
+                onClick={async () => {
+                  if (gyroEnabled) {
+                    setGyroEnabled(false);
+                    return;
+                  }
+                  // iOS 13+ requires permission request
+                  const DOE = DeviceOrientationEvent as unknown as { requestPermission?: () => Promise<string> };
+                  if (typeof DOE.requestPermission === "function") {
+                    const perm = await DOE.requestPermission();
+                    if (perm === "granted") setGyroEnabled(true);
+                  } else {
+                    setGyroEnabled(true);
+                  }
+                }}
+                title={gyroEnabled ? "Désactiver le gyroscope" : "Activer le gyroscope (orienter le téléphone)"}
+                className={cn(
+                  "flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-all duration-200 active:scale-95",
+                  gyroEnabled
+                    ? "bg-[hsl(var(--vr-cyan)_/_0.2)] text-[hsl(var(--vr-cyan))] border-[hsl(var(--vr-cyan)_/_0.45)]"
+                    : "bg-muted/50 text-muted-foreground border-border/50 hover:text-foreground hover:bg-muted/80"
+                )}
+              >
+                <Smartphone size={12} />
+                {gyroEnabled ? "Gyro ON" : "Gyro"}
               </button>
             )}
 
