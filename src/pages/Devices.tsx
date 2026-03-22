@@ -306,6 +306,7 @@ export default function Devices() {
   const [refreshing, setRefreshing] = useState(false);
   const [addModalOpen, setAddModalOpen] = useState(false);
   const [wifiModalOpen, setWifiModalOpen] = useState(false);
+  const [wifiInitialIp, setWifiInitialIp] = useState("");
   const [addInitial, setAddInitial] = useState<{ serial?: string; name?: string; ip?: string }>({});
 
   // ADB detect state
