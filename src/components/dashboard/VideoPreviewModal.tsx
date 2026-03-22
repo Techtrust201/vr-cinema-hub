@@ -1,9 +1,12 @@
-import { useState, useEffect, useRef, useCallback } from "react";
-import { X, Film, Calendar, Clock, HardDrive, Eye, Play, Pause, Monitor, Copy, Check, Loader2, WifiOff } from "lucide-react";
+import { useState, useEffect, useRef, useCallback, Suspense } from "react";
+import { X, Film, Calendar, Clock, HardDrive, Eye, Play, Pause, Monitor, Copy, Check, Loader2, WifiOff, Globe, LayoutTemplate } from "lucide-react";
 import { Video } from "@/store/vrStore";
 import { useVRStore } from "@/store/vrStore";
 import { cn } from "@/lib/utils";
 import { checkServer, getVideoUrl, ServerStatus } from "@/lib/serverApi";
+import { Canvas, useFrame, useThree } from "@react-three/fiber";
+import { OrbitControls } from "@react-three/drei";
+import * as THREE from "three";
 
 interface VideoPreviewModalProps {
   video: Video;
@@ -27,7 +30,6 @@ const stereoLabel: Record<string, string> = {
   ou: "Over-Under (3D)",
 };
 
-// Parse "MM:SS" or "H:MM:SS" duration string to total seconds
 function parseDuration(dur: string): number {
   if (!dur || dur === "—") return 0;
   const parts = dur.split(":").map(Number);
@@ -57,14 +59,68 @@ const resolutionInfo: Record<string, { label: string; detail: string; colorClass
   },
 };
 
+// ─── 360° sphere component ────────────────────────────────────────────────────
+function VideoSphere({ videoEl }: { videoEl: HTMLVideoElement }) {
+  const meshRef = useRef<THREE.Mesh>(null);
+  const { gl } = useThree();
+
+  const texture = useRef<THREE.VideoTexture | null>(null);
+
+  useEffect(() => {
+    const tex = new THREE.VideoTexture(videoEl);
+    tex.minFilter = THREE.LinearFilter;
+    tex.magFilter = THREE.LinearFilter;
+    tex.format = THREE.RGBAFormat;
+    texture.current = tex;
+    return () => {
+      tex.dispose();
+    };
+  }, [videoEl]);
+
+  useFrame(() => {
+    if (texture.current) texture.current.needsUpdate = true;
+    gl.render(gl.domElement as unknown as THREE.Scene, gl.domElement as unknown as THREE.Camera);
+  });
+
+  if (!texture.current) return null;
+
+  return (
+    <mesh ref={meshRef}>
+      <sphereGeometry args={[5, 64, 40]} />
+      <meshBasicMaterial map={texture.current} side={THREE.BackSide} />
+    </mesh>
+  );
+}
+
+function VR360Canvas({ videoEl }: { videoEl: HTMLVideoElement }) {
+  return (
+    <Canvas
+      style={{ width: "100%", height: "100%" }}
+      camera={{ fov: 75, near: 0.1, far: 20, position: [0, 0, 0.01] }}
+      gl={{ antialias: true }}
+    >
+      <Suspense fallback={null}>
+        <VideoSphere videoEl={videoEl} />
+      </Suspense>
+      <OrbitControls
+        enableZoom={false}
+        enablePan={false}
+        rotateSpeed={-0.4}
+        autoRotate={false}
+        reverseOrbit={false}
+      />
+    </Canvas>
+  );
+}
+
 export default function VideoPreviewModal({ video, onClose }: VideoPreviewModalProps) {
   const { settings } = useVRStore();
   const totalSecs = parseDuration(video.duration);
 
-  // Server connection state
   const [serverStatus, setServerStatus] = useState<ServerStatus>("checking");
+  const [mode360, setMode360] = useState(false);
 
-  // HTML5 video state (real mode)
+  // HTML5 video state
   const videoRef = useRef<HTMLVideoElement>(null);
   const [videoState, setVideoState] = useState<"loading" | "ready" | "error">("loading");
   const [realPlaying, setRealPlaying] = useState(false);
@@ -72,20 +128,22 @@ export default function VideoPreviewModal({ video, onClose }: VideoPreviewModalP
   const [realCurrentSecs, setRealCurrentSecs] = useState(0);
   const [realDuration, setRealDuration] = useState(0);
 
-  // Simulated playback state (demo mode)
+  // Simulated playback state
   const [playing, setPlaying] = useState(false);
   const [progress, setProgress] = useState(0);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Copy state
   const [copied, setCopied] = useState(false);
 
-  // Check server on mount
   useEffect(() => {
     checkServer(settings.serverUrl).then(setServerStatus);
   }, [settings.serverUrl]);
 
-  // Simulated playback logic (demo mode only)
+  // Reset 360 mode when disconnected
+  useEffect(() => {
+    if (serverStatus !== "connected") setMode360(false);
+  }, [serverStatus]);
+
   const clearTick = useCallback(() => {
     if (intervalRef.current) {
       clearInterval(intervalRef.current);
@@ -94,7 +152,7 @@ export default function VideoPreviewModal({ video, onClose }: VideoPreviewModalP
   }, []);
 
   useEffect(() => {
-    if (serverStatus === "connected") return; // Use real video in connected mode
+    if (serverStatus === "connected") return;
     if (playing) {
       const totalMs = Math.max(totalSecs * 1000, 1000);
       const step = (300 / totalMs) * 100;
@@ -112,7 +170,6 @@ export default function VideoPreviewModal({ video, onClose }: VideoPreviewModalP
 
   useEffect(() => () => clearTick(), [clearTick]);
 
-  // Real video: sync progress bar from timeupdate
   const handleTimeUpdate = () => {
     const v = videoRef.current;
     if (!v) return;
@@ -164,7 +221,6 @@ export default function VideoPreviewModal({ video, onClose }: VideoPreviewModalP
   const isConnected = serverStatus === "connected";
   const isChecking = serverStatus === "checking";
 
-  // Determine what to show in the preview area
   const displayProgress = isConnected ? realProgress : progress;
   const displayCurrentSecs = isConnected ? realCurrentSecs : simCurrentSecs;
   const displayPlaying = isConnected ? realPlaying : playing;
@@ -172,13 +228,18 @@ export default function VideoPreviewModal({ video, onClose }: VideoPreviewModalP
     ? formatSeconds(realDuration)
     : video.duration === "—" ? "—" : video.duration;
 
+  const canToggle360 = isConnected && videoState === "ready";
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-background/75 backdrop-blur-sm"
       onClick={onClose}
     >
       <div
-        className="w-full max-w-lg mx-4 rounded-2xl border border-[hsl(var(--vr-violet)_/_0.25)] bg-[hsl(var(--vr-surface))] shadow-[0_0_60px_hsl(var(--vr-violet)_/_0.18)] overflow-hidden animate-fade-in-up"
+        className={cn(
+          "w-full mx-4 rounded-2xl border border-[hsl(var(--vr-violet)_/_0.25)] bg-[hsl(var(--vr-surface))] shadow-[0_0_60px_hsl(var(--vr-violet)_/_0.18)] overflow-hidden animate-fade-in-up transition-all duration-300",
+          mode360 ? "max-w-3xl" : "max-w-lg"
+        )}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -203,6 +264,24 @@ export default function VideoPreviewModal({ video, onClose }: VideoPreviewModalP
                 )}
               </span>
             )}
+
+            {/* 360° / Flat toggle — only visible when video is ready */}
+            {canToggle360 && (
+              <button
+                onClick={() => setMode360((v) => !v)}
+                title={mode360 ? "Passer en mode plat" : "Passer en mode 360° immersif"}
+                className={cn(
+                  "flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-all duration-200 active:scale-95",
+                  mode360
+                    ? "bg-[hsl(var(--vr-violet)_/_0.2)] text-[hsl(var(--vr-violet))] border-[hsl(var(--vr-violet)_/_0.45)]"
+                    : "bg-muted/50 text-muted-foreground border-border/50 hover:text-foreground hover:bg-muted/80"
+                )}
+              >
+                {mode360 ? <LayoutTemplate size={12} /> : <Globe size={12} />}
+                {mode360 ? "Plat" : "360°"}
+              </button>
+            )}
+
             {/* Copy path button */}
             <button
               onClick={handleCopy}
@@ -215,7 +294,7 @@ export default function VideoPreviewModal({ video, onClose }: VideoPreviewModalP
               )}
             >
               {copied ? <Check size={12} /> : <Copy size={12} />}
-              {copied ? "Copié !" : "Copier le chemin"}
+              {copied ? "Copié !" : "Chemin"}
             </button>
             <button
               onClick={onClose}
@@ -229,17 +308,19 @@ export default function VideoPreviewModal({ video, onClose }: VideoPreviewModalP
         {/* Preview area */}
         <div className="relative bg-background/60 border-b border-border/40">
           <div className="aspect-video flex flex-col items-center justify-center gap-3 relative overflow-hidden">
-            {/* Decorative grid */}
-            <div
-              className="absolute inset-0 opacity-[0.04]"
-              style={{
-                backgroundImage:
-                  "linear-gradient(hsl(var(--vr-violet)) 1px, transparent 1px), linear-gradient(90deg, hsl(var(--vr-violet)) 1px, transparent 1px)",
-                backgroundSize: "32px 32px",
-              }}
-            />
+            {/* Decorative grid (hidden in 360 mode) */}
+            {!mode360 && (
+              <div
+                className="absolute inset-0 opacity-[0.04]"
+                style={{
+                  backgroundImage:
+                    "linear-gradient(hsl(var(--vr-violet)) 1px, transparent 1px), linear-gradient(90deg, hsl(var(--vr-violet)) 1px, transparent 1px)",
+                  backgroundSize: "32px 32px",
+                }}
+              />
+            )}
 
-            {/* ── REAL VIDEO (server connected) ── */}
+            {/* Checking overlay */}
             {isChecking && (
               <div className="relative z-10 flex flex-col items-center gap-3">
                 <Loader2 size={28} className="text-[hsl(var(--vr-violet)_/_0.5)] animate-spin" />
@@ -247,22 +328,34 @@ export default function VideoPreviewModal({ video, onClose }: VideoPreviewModalP
               </div>
             )}
 
+            {/* ── REAL VIDEO (server connected) ── */}
             {isConnected && (
               <>
-                {/* Hidden video element — always mounted so we can bind events */}
+                {/* Hidden video element — always mounted so texture & controls work */}
                 <video
                   ref={videoRef}
                   src={getVideoUrl(settings.serverUrl, video.name)}
                   className={cn(
                     "absolute inset-0 w-full h-full object-contain transition-opacity duration-300",
-                    videoState === "ready" ? "opacity-100" : "opacity-0"
+                    videoState === "ready" && !mode360 ? "opacity-100" : "opacity-0 pointer-events-none"
                   )}
                   onLoadedData={() => setVideoState("ready")}
                   onError={() => setVideoState("error")}
                   onTimeUpdate={handleTimeUpdate}
                   onEnded={handleVideoEnded}
                   preload="metadata"
+                  crossOrigin="anonymous"
                 />
+
+                {/* 360° Three.js canvas */}
+                {mode360 && videoState === "ready" && videoRef.current && (
+                  <div className="absolute inset-0 z-10">
+                    <VR360Canvas videoEl={videoRef.current} />
+                    <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-20 px-3 py-1.5 rounded-full bg-black/50 text-white text-[10px] font-medium backdrop-blur-sm border border-white/10">
+                      🖱 Glissez pour regarder autour
+                    </div>
+                  </div>
+                )}
 
                 {/* Loading overlay */}
                 {videoState === "loading" && (
@@ -287,7 +380,7 @@ export default function VideoPreviewModal({ video, onClose }: VideoPreviewModalP
               </>
             )}
 
-            {/* ── DEMO PLACEHOLDER (server disconnected) ── */}
+            {/* ── DEMO PLACEHOLDER ── */}
             {!isChecking && !isConnected && (
               <>
                 <div className="relative z-10 w-20 h-20 rounded-2xl bg-[hsl(var(--vr-violet)_/_0.1)] border border-[hsl(var(--vr-violet)_/_0.2)] flex items-center justify-center">
@@ -302,7 +395,7 @@ export default function VideoPreviewModal({ video, onClose }: VideoPreviewModalP
               </>
             )}
 
-            {/* Format pill — always visible */}
+            {/* Format pill */}
             <div className="absolute top-3 right-3 flex items-center gap-1.5 z-20">
               <span className={cn("px-2 py-0.5 rounded-full text-[10px] font-bold border", formatBadge[video.format])}>
                 {video.format}°
@@ -313,10 +406,9 @@ export default function VideoPreviewModal({ video, onClose }: VideoPreviewModalP
             </div>
           </div>
 
-          {/* Timeline controls — always shown (simulated in demo, real in connected) */}
-          {!isChecking && (
+          {/* Timeline controls */}
+          {!isChecking && !mode360 && (
             <div className="px-5 pb-4 pt-2 space-y-2">
-              {/* Progress bar */}
               <div
                 className="relative h-1.5 rounded-full bg-border/50 cursor-pointer overflow-hidden group"
                 onClick={handleProgressClick}
@@ -329,7 +421,6 @@ export default function VideoPreviewModal({ video, onClose }: VideoPreviewModalP
                   }}
                 />
               </div>
-              {/* Controls row */}
               <div className="flex items-center gap-3">
                 <button
                   onClick={isConnected ? toggleRealPlay : () => setPlaying((p) => !p)}
@@ -354,6 +445,26 @@ export default function VideoPreviewModal({ video, onClose }: VideoPreviewModalP
                   </span>
                 )}
               </div>
+            </div>
+          )}
+
+          {/* Controls in 360° mode */}
+          {mode360 && isConnected && videoState === "ready" && (
+            <div className="px-5 pb-3 pt-2 flex items-center gap-3">
+              <button
+                onClick={toggleRealPlay}
+                className="flex items-center justify-center w-7 h-7 rounded-lg bg-[hsl(var(--vr-violet)_/_0.15)] border border-[hsl(var(--vr-violet)_/_0.35)] hover:bg-[hsl(var(--vr-violet)_/_0.25)] transition-colors text-[hsl(var(--vr-violet))]"
+              >
+                {realPlaying ? <Pause size={12} fill="currentColor" /> : <Play size={12} fill="currentColor" />}
+              </button>
+              <span className="text-[11px] font-mono text-muted-foreground tabular-nums">
+                {formatSeconds(realCurrentSecs)} / {displayDuration}
+              </span>
+              {realPlaying && (
+                <span className="ml-auto text-[10px] font-medium text-[hsl(var(--vr-violet)_/_0.7)] animate-pulse">
+                  ● EN COURS
+                </span>
+              )}
             </div>
           )}
         </div>
@@ -382,12 +493,7 @@ export default function VideoPreviewModal({ video, onClose }: VideoPreviewModalP
               value: `${video.sizeGB.toFixed(2)} GB`,
             },
             {
-              icon: (
-                <Monitor
-                  size={13}
-                  className={res.colorClass}
-                />
-              ),
+              icon: <Monitor size={13} className={res.colorClass} />,
               label: "Résolution estimée",
               value: `${res.label} — ${res.detail}`,
               valueClass: res.colorClass,
