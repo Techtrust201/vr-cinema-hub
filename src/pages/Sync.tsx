@@ -49,8 +49,15 @@ export default function Sync() {
   const [serverStatus, setServerStatus] = useState<ServerStatus>("checking");
 
   useEffect(() => {
-    checkServer(settings.serverUrl).then(setServerStatus);
-  }, [settings.serverUrl]);
+    const isDemo = settings.demoMode;
+    if (isDemo) {
+      setServerStatus("disconnected");
+      return;
+    }
+    checkServer(settings.serverUrl, settings.authToken).then(setServerStatus);
+  }, [settings.serverUrl, settings.authToken, settings.demoMode]);
+
+  const isRealMode = !settings.demoMode && serverStatus === "connected";
 
   const connectedDevices = devices.filter((d) => d.status === "connected");
   const library = libraries.find((l) => l.id === selectedLib);
@@ -95,11 +102,11 @@ export default function Sync() {
           deviceSerial: device.serial,
           videoStoragePath: settings.videoStoragePath,
           videos: allVideos.map((v) => ({ name: v.name, sizeGB: v.sizeGB })),
-        });
+        }, settings.authToken);
 
         // Stream SSE lines
         await new Promise<void>((resolve, reject) => {
-          const es = createSyncStream(jobId, settings.serverUrl);
+          const es = createSyncStream(jobId, settings.serverUrl, settings.authToken);
           const accLines: string[] = [startLine, deviceLine];
 
           es.onmessage = (ev) => {
@@ -240,7 +247,7 @@ export default function Sync() {
 
     const logId = `log-${Date.now()}`;
 
-    if (!forceSimulation && serverStatus === "connected") {
+    if (!forceSimulation && !settings.demoMode && serverStatus === "connected") {
       handleRealSync(logId);
     } else {
       handleSimulatedSync(logId);
@@ -248,7 +255,7 @@ export default function Sync() {
   };
 
   const canSync = !running && targetDevices.length > 0 && allVideos.length > 0;
-  const isRealMode = serverStatus === "connected";
+
 
   return (
     <div className="p-6 md:p-8 space-y-8 animate-fade-in-up">

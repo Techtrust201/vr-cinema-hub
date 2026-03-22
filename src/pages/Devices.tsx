@@ -315,9 +315,15 @@ export default function Devices() {
   const [adbDevices, setAdbDevices] = useState<ServerDevice[]>([]);
   const [adbPanelOpen, setAdbPanelOpen] = useState(false);
 
+  const isDemo = settings.demoMode;
+
   useEffect(() => {
-    checkServer(settings.serverUrl).then(setServerStatus);
-  }, [settings.serverUrl]);
+    if (isDemo) {
+      setServerStatus("disconnected");
+      return;
+    }
+    checkServer(settings.serverUrl, settings.authToken).then(setServerStatus);
+  }, [settings.serverUrl, settings.authToken, isDemo]);
 
   const connected = devices.filter((d) => d.status === "connected");
   const disconnected = devices.filter((d) => d.status === "disconnected");
@@ -325,12 +331,12 @@ export default function Devices() {
   /** Refresh real ADB status (battery + storage) for all connected devices */
   const handleRefresh = async () => {
     setRefreshing(true);
-    if (serverStatus === "connected") {
+    if (!isDemo && serverStatus === "connected") {
       // Real mode: fetch live data from ADB for each device
       const results = await Promise.allSettled(
         devices.map(async (d) => {
           try {
-            const status = await fetchDeviceStatus(d.serial);
+            const status = await fetchDeviceStatus(d.serial, settings.serverUrl, settings.authToken);
             updateDevice(d.id, {
               battery: status.battery,
               storageUsedGB: status.storageUsedGB > 0 ? status.storageUsedGB : d.storageUsedGB,
@@ -360,13 +366,17 @@ export default function Devices() {
   };
 
   const handlePrepareWifi = async (device: Device) => {
+    if (isDemo) {
+      toast.info("Mode démo — activez le Mode Réel dans Paramètres pour utiliser cette fonction");
+      return;
+    }
     const baseUrl = settings.publicServerUrl?.trim() || settings.serverUrl?.trim() || undefined;
     try {
-      await prepareTcpip(device.serial, baseUrl);
+      await prepareTcpip(device.serial, baseUrl, settings.authToken);
       toast.success(`${device.name} prêt en Wi-Fi — détection de l'IP…`);
       // Auto-detect IP and open Wi-Fi modal pre-filled
       try {
-        const { ip } = await fetchDeviceIp(device.serial, baseUrl);
+        const { ip } = await fetchDeviceIp(device.serial, baseUrl, settings.authToken);
         setWifiInitialIp(ip);
         toast.success(`IP détectée : ${ip} — débranchez le câble`);
       } catch {
@@ -380,9 +390,13 @@ export default function Devices() {
   };
 
   const handleAdbDetect = async () => {
+    if (isDemo) {
+      toast.info("Mode démo — activez le Mode Réel dans Paramètres pour détecter des casques réels");
+      return;
+    }
     setAdbDetecting(true);
     try {
-      const found = await fetchServerDevices(settings.serverUrl);
+      const found = await fetchServerDevices(settings.serverUrl, settings.authToken);
       setAdbDevices(found);
       setAdbPanelOpen(true);
     } catch {

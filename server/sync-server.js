@@ -21,14 +21,40 @@ const path = require("path");
 const fs = require("fs");
 const crypto = require("crypto");
 
+// ─── node-notifier (optional — silently disabled if not installed) ─────────────
+let notifier = null;
+try {
+  notifier = require("node-notifier");
+} catch {}
+
 const app = express();
 const PORT = process.env.PORT || 3001;
 
 // ─── Config ──────────────────────────────────────────────────────────────────
 const VIDEO_STORAGE_PATH = process.env.VIDEO_STORAGE_PATH || "/videos/vr-ultimate";
+const AUTH_TOKEN = process.env.VR_AUTH_TOKEN?.trim() || null;
 
 app.use(cors({ origin: "*" }));
 app.use(express.json());
+
+// ─── Auth middleware ──────────────────────────────────────────────────────────
+// Only enabled when VR_AUTH_TOKEN env var is set.
+// EventSource (SSE) can't send headers → accept token via ?token= query param as fallback.
+function requireAuth(req, res, next) {
+  if (!AUTH_TOKEN) return next(); // auth disabled
+  const headerToken = req.headers["x-auth-token"];
+  const queryToken = req.query?.token;
+  if (headerToken === AUTH_TOKEN || queryToken === AUTH_TOKEN) return next();
+  res.status(401).json({ error: "Unauthorized — invalid or missing X-Auth-Token" });
+}
+
+// Apply auth to all sensitive routes
+const PROTECTED = ["/api/sync", "/api/connect", "/api/tcpip", "/api/device-ip", "/api/device-status", "/api/devices"];
+app.use((req, res, next) => {
+  const isProtected = PROTECTED.some((p) => req.path.startsWith(p.replace("/api", "")));
+  if (isProtected) return requireAuth(req, res, next);
+  next();
+});
 
 // ─── SSE job store ────────────────────────────────────────────────────────────
 // jobId → { lines: string[], done: boolean, clients: Set<res> }
@@ -55,6 +81,18 @@ function jobDone(jobId, summary) {
   job.clients.clear();
   // Auto-cleanup after 10 min
   setTimeout(() => jobs.delete(jobId), 10 * 60 * 1000);
+
+  // ─── Notification système (node-notifier) ─────────────────────────────────
+  if (notifier) {
+    try {
+      const status = summary.errors > 0 ? "⚠ avec erreurs" : "✅ succès";
+      notifier.notify({
+        title: `VR Ultimate — Sync terminée (${status})`,
+        message: `${summary.pushed} fichier(s) envoyé(s), ${summary.skipped} ignoré(s), ${summary.errors} erreur(s).`,
+        sound: false,
+      });
+    } catch {}
+  }
 }
 
 // ─── Helper: check if ADB is in PATH ─────────────────────────────────────────
