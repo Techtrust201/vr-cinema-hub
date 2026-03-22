@@ -81,6 +81,18 @@ function jobDone(jobId, summary) {
   job.clients.clear();
   // Auto-cleanup after 10 min
   setTimeout(() => jobs.delete(jobId), 10 * 60 * 1000);
+
+  // ─── Notification système (node-notifier) ─────────────────────────────────
+  if (notifier) {
+    try {
+      const status = summary.errors > 0 ? "⚠ avec erreurs" : "✅ succès";
+      notifier.notify({
+        title: `VR Ultimate — Sync terminée (${status})`,
+        message: `${summary.pushed} fichier(s) envoyé(s), ${summary.skipped} ignoré(s), ${summary.errors} erreur(s).`,
+        sound: false,
+      });
+    } catch {}
+  }
 }
 
 // ─── Helper: check if ADB is in PATH ─────────────────────────────────────────
