@@ -20,6 +20,8 @@ import {
   FlaskConical,
   Globe,
   ExternalLink,
+  MonitorPlay,
+  Zap,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -41,7 +43,8 @@ export default function Settings() {
     form.maxUploadGB !== settings.maxUploadGB ||
     form.authToken !== settings.authToken ||
     form.serverUrl !== settings.serverUrl ||
-    form.publicServerUrl !== settings.publicServerUrl;
+    form.publicServerUrl !== settings.publicServerUrl ||
+    form.demoMode !== settings.demoMode;
 
   // Auto-check server status on mount — skip in Lovable preview (no local proxy available)
   useEffect(() => {
@@ -66,7 +69,7 @@ export default function Settings() {
       return;
     }
     resetStore();
-    setForm({ videoStoragePath: "/videos/vr-ultimate", maxUploadGB: 10, authToken: "", serverUrl: "http://localhost:3001", publicServerUrl: "" });
+    setForm({ videoStoragePath: "/videos/vr-ultimate", maxUploadGB: 10, authToken: "", serverUrl: "http://localhost:3001", publicServerUrl: "", demoMode: true });
     setConfirmReset(false);
     toast.success("Données réinitialisées");
   };
@@ -99,6 +102,95 @@ export default function Settings() {
           Configuration du dashboard VR Ultimate
         </p>
       </div>
+
+      {/* ── MODE DE FONCTIONNEMENT ── */}
+      <section className="rounded-xl border border-border/60 bg-[hsl(var(--vr-surface))] overflow-hidden">
+        <div className="px-5 py-4 border-b border-border/50 flex items-center gap-2">
+          <MonitorPlay size={15} className="text-[hsl(var(--vr-violet))]" />
+          <h2 className="text-sm font-semibold">Mode de fonctionnement</h2>
+        </div>
+        <div className="p-5 space-y-4">
+          {/* Toggle démo / réel */}
+          <div className={cn(
+            "rounded-xl border-2 p-4 transition-all duration-300",
+            form.demoMode
+              ? "border-[hsl(var(--vr-violet)_/_0.4)] bg-[hsl(var(--vr-violet)_/_0.06)]"
+              : "border-[hsl(140_70%_40%_/_0.4)] bg-[hsl(140_70%_40%_/_0.05)]"
+          )}>
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <div className={cn(
+                  "w-10 h-10 rounded-lg flex items-center justify-center shrink-0",
+                  form.demoMode
+                    ? "bg-[hsl(var(--vr-violet)_/_0.15)]"
+                    : "bg-[hsl(140_70%_40%_/_0.12)]"
+                )}>
+                  {form.demoMode
+                    ? <FlaskConical size={18} className="text-[hsl(var(--vr-violet))]" />
+                    : <Zap size={18} className="text-[hsl(140_70%_55%)]" />
+                  }
+                </div>
+                <div>
+                  <p className={cn(
+                    "text-sm font-semibold",
+                    form.demoMode ? "text-[hsl(var(--vr-violet))]" : "text-[hsl(140_70%_55%)]"
+                  )}>
+                    {form.demoMode ? "Mode Démo" : "Mode Réel"}
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    {form.demoMode
+                      ? "Données fictives — aucun serveur requis"
+                      : "ADB live — serveur local requis"}
+                  </p>
+                </div>
+              </div>
+              <Switch
+                checked={!form.demoMode}
+                onCheckedChange={(checked) => {
+                  setForm({ ...form, demoMode: !checked });
+                  toast.info(checked ? "Mode Réel activé — démarrez npm run dev:all" : "Mode Démo activé");
+                }}
+              />
+            </div>
+          </div>
+
+          {/* Explication des deux modes */}
+          <div className="grid grid-cols-2 gap-3">
+            <div className={cn(
+              "rounded-lg p-3 border text-xs space-y-1 transition-all",
+              form.demoMode
+                ? "border-[hsl(var(--vr-violet)_/_0.35)] bg-[hsl(var(--vr-violet)_/_0.06)]"
+                : "border-border/40 bg-background/40 opacity-50"
+            )}>
+              <p className="font-semibold text-[hsl(var(--vr-violet))] flex items-center gap-1.5">
+                <FlaskConical size={11} /> Mode Démo (OFF)
+              </p>
+              <ul className="space-y-0.5 text-muted-foreground/80">
+                <li>• Données fictives intégrées</li>
+                <li>• Simulation ADB sans casque</li>
+                <li>• Aucun serveur à démarrer</li>
+                <li>• Idéal pour découverte</li>
+              </ul>
+            </div>
+            <div className={cn(
+              "rounded-lg p-3 border text-xs space-y-1 transition-all",
+              !form.demoMode
+                ? "border-[hsl(140_70%_40%_/_0.35)] bg-[hsl(140_70%_40%_/_0.05)]"
+                : "border-border/40 bg-background/40 opacity-50"
+            )}>
+              <p className="font-semibold text-[hsl(140_70%_55%)] flex items-center gap-1.5">
+                <Zap size={11} /> Mode Réel (ON)
+              </p>
+              <ul className="space-y-0.5 text-muted-foreground/80">
+                <li>• Casques ADB détectés en live</li>
+                <li>• Push vidéos réel avec spawn</li>
+                <li>• Logs SSE en temps réel</li>
+                <li>• Requiert <code className="font-mono">npm run dev:all</code></li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </section>
 
       {/* Storage settings */}
       <section className="rounded-xl border border-border/60 bg-[hsl(var(--vr-surface))] overflow-hidden">
@@ -270,7 +362,7 @@ export default function Settings() {
         <div className="p-5 space-y-2">
           <label className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
             <KeyRound size={12} />
-            Token d'accès
+            Token d'accès serveur (X-Auth-Token)
           </label>
           <div className="relative">
             <input
@@ -289,7 +381,7 @@ export default function Settings() {
             </button>
           </div>
           <p className="text-[11px] text-muted-foreground/60">
-            Token transmis dans les headers des requêtes au serveur local. Laissez vide pour désactiver.
+            Envoyé dans le header <code className="font-mono bg-background px-1 rounded">X-Auth-Token</code> à chaque requête. Côté serveur, définissez <code className="font-mono bg-background px-1 rounded">VR_AUTH_TOKEN=votre-token</code> dans votre environnement. Laissez vide pour désactiver.
           </p>
         </div>
       </section>
