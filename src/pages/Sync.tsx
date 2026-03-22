@@ -237,6 +237,11 @@ export default function Sync() {
         setRunning(false);
         setActiveLogId(null);
         toast.success(`Sync simulée — ${pushed} fichier(s) envoyé(s)`);
+        pushNotification({
+          title: "Sync simulée réussie",
+          body: `${pushed} fichier(s) envoyé(s), ${skipped} ignoré(s)`,
+          type: "sync_done",
+        });
       } else {
         const progressLine = `[${new Date().toLocaleTimeString()}] Traitement en cours… ${pct}%`;
         linesRef.current = [...linesRef.current, progressLine];
