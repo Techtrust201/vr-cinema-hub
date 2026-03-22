@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, Suspense } from "react";
-import { X, Film, Calendar, Clock, HardDrive, Eye, Play, Pause, Monitor, Copy, Check, Loader2, WifiOff, Globe, LayoutTemplate } from "lucide-react";
+import { X, Film, Calendar, Clock, HardDrive, Eye, Play, Pause, Monitor, Copy, Check, Loader2, WifiOff, Globe, LayoutTemplate, Smartphone } from "lucide-react";
 import { Video } from "@/store/vrStore";
 import { useVRStore } from "@/store/vrStore";
 import { cn } from "@/lib/utils";
@@ -7,6 +7,104 @@ import { checkServer, getVideoUrl, ServerStatus } from "@/lib/serverApi";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import * as THREE from "three";
+
+// ─── Gyroscope controls (inside Canvas, uses useThree) ────────────────────────
+function GyroControls({ enabled }: { enabled: boolean }) {
+  const { camera } = useThree();
+
+  useEffect(() => {
+    if (!enabled) return;
+
+    const handler = (e: DeviceOrientationEvent) => {
+      if (e.alpha == null || e.beta == null || e.gamma == null) return;
+
+      const screenAngle = (window.screen?.orientation?.angle ?? 0) * (Math.PI / 180);
+
+      const alpha = THREE.MathUtils.degToRad(e.alpha);
+      const beta  = THREE.MathUtils.degToRad(e.beta);
+      const gamma = THREE.MathUtils.degToRad(e.gamma);
+
+      // Device orientation → camera quaternion (ZXY convention)
+      const euler = new THREE.Euler(beta, alpha, -gamma, "YXZ");
+      const q = new THREE.Quaternion().setFromEuler(euler);
+
+      // Correct for screen rotation (portrait vs landscape)
+      const screenQ = new THREE.Quaternion().setFromAxisAngle(
+        new THREE.Vector3(0, 0, 1),
+        -screenAngle
+      );
+      camera.quaternion.multiplyQuaternions(q, screenQ);
+    };
+
+    window.addEventListener("deviceorientation", handler, true);
+    return () => window.removeEventListener("deviceorientation", handler, true);
+  }, [enabled, camera]);
+
+  return null;
+}
+
+// ─── 360° sphere component ────────────────────────────────────────────────────
+function VideoSphere({ videoEl }: { videoEl: HTMLVideoElement }) {
+  const meshRef = useRef<THREE.Mesh>(null);
+  const texture = useRef<THREE.VideoTexture | null>(null);
+
+  useEffect(() => {
+    const tex = new THREE.VideoTexture(videoEl);
+    tex.minFilter = THREE.LinearFilter;
+    tex.magFilter = THREE.LinearFilter;
+    tex.format = THREE.RGBAFormat;
+    texture.current = tex;
+    return () => {
+      tex.dispose();
+    };
+  }, [videoEl]);
+
+  // Only update the texture flag — R3F handles the render loop automatically
+  useFrame(() => {
+    if (texture.current) texture.current.needsUpdate = true;
+  });
+
+  if (!texture.current) return null;
+
+  return (
+    <mesh ref={meshRef}>
+      <sphereGeometry args={[5, 64, 40]} />
+      <meshBasicMaterial map={texture.current} side={THREE.BackSide} />
+    </mesh>
+  );
+}
+
+interface VR360CanvasProps {
+  videoEl: HTMLVideoElement;
+  gyroEnabled: boolean;
+}
+
+function VR360Canvas({ videoEl, gyroEnabled }: VR360CanvasProps) {
+  return (
+    <Canvas
+      style={{ width: "100%", height: "100%" }}
+      camera={{ fov: 75, near: 0.1, far: 20, position: [0, 0, 0.01] }}
+      gl={{ antialias: true }}
+    >
+      <Suspense fallback={null}>
+        <VideoSphere videoEl={videoEl} />
+      </Suspense>
+      {/* Gyro controls replace orbit on mobile when enabled */}
+      <GyroControls enabled={gyroEnabled} />
+      {!gyroEnabled && (
+        <OrbitControls
+          enableZoom={false}
+          enablePan={false}
+          rotateSpeed={-0.4}
+          autoRotate={false}
+          reverseOrbit={false}
+        />
+      )}
+    </Canvas>
+  );
+}
+
+// ─── Helpers & constants ──────────────────────────────────────────────────────
 
 interface VideoPreviewModalProps {
   video: Video;
@@ -59,59 +157,8 @@ const resolutionInfo: Record<string, { label: string; detail: string; colorClass
   },
 };
 
-// ─── 360° sphere component ────────────────────────────────────────────────────
-function VideoSphere({ videoEl }: { videoEl: HTMLVideoElement }) {
-  const meshRef = useRef<THREE.Mesh>(null);
-  const { gl } = useThree();
-
-  const texture = useRef<THREE.VideoTexture | null>(null);
-
-  useEffect(() => {
-    const tex = new THREE.VideoTexture(videoEl);
-    tex.minFilter = THREE.LinearFilter;
-    tex.magFilter = THREE.LinearFilter;
-    tex.format = THREE.RGBAFormat;
-    texture.current = tex;
-    return () => {
-      tex.dispose();
-    };
-  }, [videoEl]);
-
-  useFrame(() => {
-    if (texture.current) texture.current.needsUpdate = true;
-    gl.render(gl.domElement as unknown as THREE.Scene, gl.domElement as unknown as THREE.Camera);
-  });
-
-  if (!texture.current) return null;
-
-  return (
-    <mesh ref={meshRef}>
-      <sphereGeometry args={[5, 64, 40]} />
-      <meshBasicMaterial map={texture.current} side={THREE.BackSide} />
-    </mesh>
-  );
-}
-
-function VR360Canvas({ videoEl }: { videoEl: HTMLVideoElement }) {
-  return (
-    <Canvas
-      style={{ width: "100%", height: "100%" }}
-      camera={{ fov: 75, near: 0.1, far: 20, position: [0, 0, 0.01] }}
-      gl={{ antialias: true }}
-    >
-      <Suspense fallback={null}>
-        <VideoSphere videoEl={videoEl} />
-      </Suspense>
-      <OrbitControls
-        enableZoom={false}
-        enablePan={false}
-        rotateSpeed={-0.4}
-        autoRotate={false}
-        reverseOrbit={false}
-      />
-    </Canvas>
-  );
-}
+// Detect if device has a gyroscope
+const hasGyro = typeof window !== "undefined" && "DeviceOrientationEvent" in window;
 
 export default function VideoPreviewModal({ video, onClose }: VideoPreviewModalProps) {
   const { settings } = useVRStore();
@@ -119,6 +166,7 @@ export default function VideoPreviewModal({ video, onClose }: VideoPreviewModalP
 
   const [serverStatus, setServerStatus] = useState<ServerStatus>("checking");
   const [mode360, setMode360] = useState(false);
+  const [gyroEnabled, setGyroEnabled] = useState(false);
 
   // HTML5 video state
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -268,7 +316,10 @@ export default function VideoPreviewModal({ video, onClose }: VideoPreviewModalP
             {/* 360° / Flat toggle — only visible when video is ready */}
             {canToggle360 && (
               <button
-                onClick={() => setMode360((v) => !v)}
+                onClick={() => {
+                  setMode360((v) => !v);
+                  if (mode360) setGyroEnabled(false); // reset gyro when leaving 360
+                }}
                 title={mode360 ? "Passer en mode plat" : "Passer en mode 360° immersif"}
                 className={cn(
                   "flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-all duration-200 active:scale-95",
@@ -279,6 +330,36 @@ export default function VideoPreviewModal({ video, onClose }: VideoPreviewModalP
               >
                 {mode360 ? <LayoutTemplate size={12} /> : <Globe size={12} />}
                 {mode360 ? "Plat" : "360°"}
+              </button>
+            )}
+
+            {/* Gyroscope toggle — only in 360° mode on devices with gyro */}
+            {canToggle360 && mode360 && hasGyro && (
+              <button
+                onClick={async () => {
+                  if (gyroEnabled) {
+                    setGyroEnabled(false);
+                    return;
+                  }
+                  // iOS 13+ requires permission request
+                  const DOE = DeviceOrientationEvent as unknown as { requestPermission?: () => Promise<string> };
+                  if (typeof DOE.requestPermission === "function") {
+                    const perm = await DOE.requestPermission();
+                    if (perm === "granted") setGyroEnabled(true);
+                  } else {
+                    setGyroEnabled(true);
+                  }
+                }}
+                title={gyroEnabled ? "Désactiver le gyroscope" : "Activer le gyroscope (orienter le téléphone)"}
+                className={cn(
+                  "flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-all duration-200 active:scale-95",
+                  gyroEnabled
+                    ? "bg-[hsl(var(--vr-cyan)_/_0.2)] text-[hsl(var(--vr-cyan))] border-[hsl(var(--vr-cyan)_/_0.45)]"
+                    : "bg-muted/50 text-muted-foreground border-border/50 hover:text-foreground hover:bg-muted/80"
+                )}
+              >
+                <Smartphone size={12} />
+                {gyroEnabled ? "Gyro ON" : "Gyro"}
               </button>
             )}
 
@@ -350,9 +431,9 @@ export default function VideoPreviewModal({ video, onClose }: VideoPreviewModalP
                 {/* 360° Three.js canvas */}
                 {mode360 && videoState === "ready" && videoRef.current && (
                   <div className="absolute inset-0 z-10">
-                    <VR360Canvas videoEl={videoRef.current} />
+                    <VR360Canvas videoEl={videoRef.current} gyroEnabled={gyroEnabled} />
                     <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-20 px-3 py-1.5 rounded-full bg-black/50 text-white text-[10px] font-medium backdrop-blur-sm border border-white/10">
-                      🖱 Glissez pour regarder autour
+                      {gyroEnabled ? "📱 Orientez votre appareil" : "🖱 Glissez pour regarder autour"}
                     </div>
                   </div>
                 )}
