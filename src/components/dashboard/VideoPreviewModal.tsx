@@ -104,12 +104,69 @@ function VR360Canvas({ videoEl, gyroEnabled }: VR360CanvasProps) {
   );
 }
 
+// ─── Helpers & constants ──────────────────────────────────────────────────────
+
+interface VideoPreviewModalProps {
+  video: Video;
+  onClose: () => void;
+}
+
+const formatBadge: Record<string, string> = {
+  "360": "bg-[hsl(var(--vr-violet)_/_0.18)] text-[hsl(var(--vr-violet))] border-[hsl(var(--vr-violet)_/_0.35)]",
+  "180": "bg-[hsl(var(--vr-cyan)_/_0.18)] text-[hsl(var(--vr-cyan))] border-[hsl(var(--vr-cyan)_/_0.35)]",
+};
+
+const stereoBadge: Record<string, string> = {
+  mono: "bg-muted text-muted-foreground border-border",
+  sbs: "bg-[hsl(50_80%_50%_/_0.15)] text-[hsl(50_80%_60%)] border-[hsl(50_80%_50%_/_0.3)]",
+  ou: "bg-[hsl(200_80%_50%_/_0.15)] text-[hsl(200_80%_65%)] border-[hsl(200_80%_50%_/_0.3)]",
+};
+
+const stereoLabel: Record<string, string> = {
+  mono: "Monoscopic",
+  sbs: "Side-by-Side (3D)",
+  ou: "Over-Under (3D)",
+};
+
+function parseDuration(dur: string): number {
+  if (!dur || dur === "—") return 0;
+  const parts = dur.split(":").map(Number);
+  if (parts.length === 2) return parts[0] * 60 + parts[1];
+  if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
+  return 0;
+}
+
+function formatSeconds(secs: number): string {
+  const m = Math.floor(secs / 60);
+  const s = Math.floor(secs % 60);
+  return `${m}:${s.toString().padStart(2, "0")}`;
+}
+
+const resolutionInfo: Record<string, { label: string; detail: string; colorClass: string; iconClass: string }> = {
+  "360": {
+    label: "4K",
+    detail: "3840 × 2160",
+    colorClass: "text-[hsl(var(--vr-cyan))]",
+    iconClass: "bg-[hsl(var(--vr-cyan)_/_0.1)] border-[hsl(var(--vr-cyan)_/_0.25)]",
+  },
+  "180": {
+    label: "8K",
+    detail: "7680 × 4320",
+    colorClass: "text-[hsl(var(--vr-violet))]",
+    iconClass: "bg-[hsl(var(--vr-violet)_/_0.1)] border-[hsl(var(--vr-violet)_/_0.25)]",
+  },
+};
+
+// Detect if device has a gyroscope
+const hasGyro = typeof window !== "undefined" && "DeviceOrientationEvent" in window;
+
 export default function VideoPreviewModal({ video, onClose }: VideoPreviewModalProps) {
   const { settings } = useVRStore();
   const totalSecs = parseDuration(video.duration);
 
   const [serverStatus, setServerStatus] = useState<ServerStatus>("checking");
   const [mode360, setMode360] = useState(false);
+  const [gyroEnabled, setGyroEnabled] = useState(false);
 
   // HTML5 video state
   const videoRef = useRef<HTMLVideoElement>(null);
