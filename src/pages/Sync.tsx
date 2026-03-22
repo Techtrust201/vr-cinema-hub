@@ -49,8 +49,15 @@ export default function Sync() {
   const [serverStatus, setServerStatus] = useState<ServerStatus>("checking");
 
   useEffect(() => {
-    checkServer(settings.serverUrl).then(setServerStatus);
-  }, [settings.serverUrl]);
+    const isDemo = settings.demoMode;
+    if (isDemo) {
+      setServerStatus("disconnected");
+      return;
+    }
+    checkServer(settings.serverUrl, settings.authToken).then(setServerStatus);
+  }, [settings.serverUrl, settings.authToken, settings.demoMode]);
+
+  const isRealMode = !settings.demoMode && serverStatus === "connected";
 
   const connectedDevices = devices.filter((d) => d.status === "connected");
   const library = libraries.find((l) => l.id === selectedLib);
