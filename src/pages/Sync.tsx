@@ -61,10 +61,9 @@ export default function Sync() {
     if (activeLogId) logsEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [activeLogId, syncLogs]);
 
-  // ── REAL ADB SYNC ──
+  // ── REAL ADB SYNC (SSE streaming) ──
   const handleRealSync = async (logId: string) => {
-    const startLine = `[${new Date().toLocaleTimeString()}] Démarrage de la synchronisation ADB réelle…`;
-    linesRef.current = [startLine];
+    const startLine = `[${new Date().toLocaleTimeString()}] Démarrage de la synchronisation ADB…`;
 
     const newLog: SyncLog = {
       id: logId,
@@ -80,48 +79,71 @@ export default function Sync() {
     addSyncLog(newLog);
     setActiveLogId(logId);
     setRunning(true);
-    setProgress(10);
-
-    // Simulated progress while waiting for the server response
-    const progressInterval = setInterval(() => {
-      setProgress((p) => Math.min(p + 4, 88));
-    }, 500);
+    setProgress(5);
 
     let totalPushed = 0;
     let totalSkipped = 0;
     let totalErrors = 0;
-    const allLines: string[] = [startLine];
 
     try {
       for (const device of targetDevices) {
         const deviceLine = `[${new Date().toLocaleTimeString()}] → Casque : ${device.name} (${device.serial})`;
-        allLines.push(deviceLine);
-        updateSyncLog(logId, { lines: [...allLines] });
+        updateSyncLog(logId, { lines: [startLine, deviceLine] });
 
-        const result = await pushSync(settings.serverUrl, {
+        // Start the job, get jobId
+        const { jobId } = await startSync(settings.serverUrl, {
           deviceSerial: device.serial,
           videoStoragePath: settings.videoStoragePath,
           videos: allVideos.map((v) => ({ name: v.name, sizeGB: v.sizeGB })),
         });
 
-        totalPushed += result.pushed;
-        totalSkipped += result.skipped;
-        totalErrors += result.errors;
-        allLines.push(...result.lines);
-        updateSyncLog(logId, { lines: [...allLines] });
+        // Stream SSE lines
+        await new Promise<void>((resolve, reject) => {
+          const es = createSyncStream(jobId, settings.serverUrl);
+          const accLines: string[] = [startLine, deviceLine];
+
+          es.onmessage = (ev) => {
+            try {
+              const data = JSON.parse(ev.data);
+              if (data.line) {
+                accLines.push(data.line);
+                updateSyncLog(logId, { lines: [...accLines] });
+                // Estimate progress from percentage mentions in lines
+                const pctMatch = data.line.match(/(\d+)%/);
+                if (pctMatch) {
+                  const pct = Math.min(parseInt(pctMatch[1], 10), 95);
+                  setProgress(pct);
+                } else {
+                  setProgress((p) => Math.min(p + 2, 92));
+                }
+              }
+              if (data.done) {
+                es.close();
+                if (data.summary) {
+                  totalPushed += data.summary.pushed ?? 0;
+                  totalSkipped += data.summary.skipped ?? 0;
+                  totalErrors += data.summary.errors ?? 0;
+                }
+                resolve();
+              }
+            } catch {}
+          };
+
+          es.onerror = () => {
+            es.close();
+            reject(new Error("SSE stream error"));
+          };
+        });
 
         const now = new Date().toISOString();
         updateDevice(device.id, { lastSyncAt: now });
       }
 
-      clearInterval(progressInterval);
       setProgress(100);
-
       updateSyncLog(logId, {
         status: totalErrors > 0 ? "error" : "success",
         videosPushed: totalPushed,
         videosSkipped: totalSkipped,
-        lines: allLines,
       });
 
       if (totalErrors > 0) {
@@ -130,10 +152,8 @@ export default function Sync() {
         toast.success(`Sync ADB terminée — ${totalPushed} fichier(s) envoyé(s)`);
       }
     } catch (err) {
-      clearInterval(progressInterval);
       const errLine = `[${new Date().toLocaleTimeString()}] ✗ Erreur : ${err instanceof Error ? err.message : "Erreur inconnue"}`;
-      allLines.push(errLine);
-      updateSyncLog(logId, { status: "error", lines: allLines });
+      updateSyncLog(logId, { status: "error", lines: [startLine, errLine] });
       toast.error("La synchronisation ADB a échoué");
     } finally {
       setRunning(false);
