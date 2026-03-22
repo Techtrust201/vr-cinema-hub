@@ -117,7 +117,7 @@ function ServerModeBadge() {
 function NotificationBell() {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
-  const { devices, syncLogs } = useVRStore();
+  const { devices, syncLogs, notifications, markAllNotificationsRead, clearNotifications } = useVRStore();
 
   const connectedCount = devices.filter((d) => d.status === "connected").length;
   const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
@@ -137,7 +137,9 @@ function NotificationBell() {
       })
     : null;
 
-  const badgeCount = overdueDevices.length;
+  const unreadCount = notifications.filter((n) => !n.read).length;
+  const badgeCount = overdueDevices.length + unreadCount;
+  const recentNotifs = notifications.slice(0, 5);
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -147,27 +149,48 @@ function NotificationBell() {
     return () => document.removeEventListener("mousedown", handler);
   }, []);
 
+  const handleOpen = () => {
+    setOpen((o) => !o);
+    if (!open && unreadCount > 0) {
+      setTimeout(() => markAllNotificationsRead(), 800);
+    }
+  };
+
   return (
     <div ref={ref} className="relative">
       <button
-        onClick={() => setOpen((o) => !o)}
+        onClick={handleOpen}
         className="relative p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-all"
       >
         <Bell size={16} />
         {badgeCount > 0 && (
           <span className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-[hsl(35_90%_55%)] text-background text-[9px] font-bold flex items-center justify-center">
-            {badgeCount}
+            {badgeCount > 9 ? "9+" : badgeCount}
           </span>
         )}
       </button>
 
       {open && (
-        <div className="absolute right-0 top-full mt-2 w-72 rounded-xl border border-border/70 bg-[hsl(var(--vr-surface))] shadow-2xl z-50 overflow-hidden animate-fade-in-up">
-          <div className="px-4 py-3 border-b border-border/50">
+        <div className="absolute right-0 top-full mt-2 w-80 rounded-xl border border-border/70 bg-[hsl(var(--vr-surface))] shadow-2xl z-50 overflow-hidden animate-fade-in-up">
+          {/* Header */}
+          <div className="px-4 py-3 border-b border-border/50 flex items-center justify-between">
             <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Notifications</p>
+            {notifications.length > 0 && (
+              <button
+                onClick={() => clearNotifications()}
+                className="text-[10px] text-muted-foreground/60 hover:text-destructive flex items-center gap-1 transition-colors"
+              >
+                <Trash2 size={10} /> Tout effacer
+              </button>
+            )}
           </div>
 
-          <div className="p-2 space-y-1">
+          <div className="p-2 space-y-1 max-h-[420px] overflow-y-auto">
+            {/* ── Section : État casques ── */}
+            <div className="px-3 py-1.5">
+              <p className="text-[10px] font-semibold text-muted-foreground/60 uppercase tracking-wider">Casques</p>
+            </div>
+
             {/* Connected count */}
             <div className="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-[hsl(140_70%_40%_/_0.08)] border border-[hsl(140_70%_40%_/_0.2)]">
               <Wifi size={13} className="text-[hsl(140_70%_55%)] shrink-0" />
@@ -222,7 +245,46 @@ function NotificationBell() {
               </div>
             )}
 
-            {badgeCount === 0 && !lastSyncDate && connectedCount === 0 && (
+            {/* ── Section : Historique syncs ── */}
+            {recentNotifs.length > 0 && (
+              <div className="pt-1">
+                <div className="px-3 py-1.5 flex items-center justify-between">
+                  <p className="text-[10px] font-semibold text-muted-foreground/60 uppercase tracking-wider">Syncs récentes</p>
+                  {unreadCount > 0 && (
+                    <span className="flex items-center gap-1 text-[10px] text-[hsl(var(--vr-violet))]">
+                      <CheckCheck size={10} /> {unreadCount} nouv.
+                    </span>
+                  )}
+                </div>
+                {recentNotifs.map((n) => (
+                  <div
+                    key={n.id}
+                    className={cn(
+                      "flex items-start gap-3 px-3 py-2.5 rounded-lg border transition-colors",
+                      n.read
+                        ? "border-border/30 bg-transparent"
+                        : n.type === "sync_done"
+                          ? "border-[hsl(140_70%_40%_/_0.3)] bg-[hsl(140_70%_40%_/_0.06)]"
+                          : "border-[hsl(0_70%_50%_/_0.3)] bg-[hsl(0_70%_50%_/_0.06)]"
+                    )}
+                  >
+                    <span className={cn(
+                      "w-1.5 h-1.5 rounded-full mt-1 shrink-0",
+                      n.type === "sync_done" ? "bg-[hsl(140_70%_55%)]" : "bg-destructive"
+                    )} />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs font-medium text-foreground">{n.title}</p>
+                      <p className="text-[10px] text-muted-foreground/70 mt-0.5">{n.body}</p>
+                      <p className="text-[10px] text-muted-foreground/40 font-mono mt-0.5">
+                        {new Date(n.at).toLocaleString("fr-FR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {badgeCount === 0 && !lastSyncDate && connectedCount === 0 && recentNotifs.length === 0 && (
               <p className="text-xs text-muted-foreground/60 text-center py-3">Aucune notification</p>
             )}
           </div>
