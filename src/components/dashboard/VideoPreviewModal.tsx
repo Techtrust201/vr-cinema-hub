@@ -431,9 +431,9 @@ export default function VideoPreviewModal({ video, onClose }: VideoPreviewModalP
                 {/* 360° Three.js canvas */}
                 {mode360 && videoState === "ready" && videoRef.current && (
                   <div className="absolute inset-0 z-10">
-                    <VR360Canvas videoEl={videoRef.current} />
+                    <VR360Canvas videoEl={videoRef.current} gyroEnabled={gyroEnabled} />
                     <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-20 px-3 py-1.5 rounded-full bg-black/50 text-white text-[10px] font-medium backdrop-blur-sm border border-white/10">
-                      🖱 Glissez pour regarder autour
+                      {gyroEnabled ? "📱 Orientez votre appareil" : "🖱 Glissez pour regarder autour"}
                     </div>
                   </div>
                 )}
