@@ -4,7 +4,7 @@ import DeviceCard from "@/components/dashboard/DeviceCard";
 import { RefreshCw, Usb, Wifi, Info, Plus, X, Scan, ChevronRight, Loader2, Signal } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
-import { checkServer, fetchServerDevices, fetchDeviceStatus, connectDevice, prepareTcpip, ServerDevice, ServerStatus } from "@/lib/serverApi";
+import { checkServer, fetchServerDevices, fetchDeviceStatus, connectDevice, prepareTcpip, fetchDeviceIp, ServerDevice, ServerStatus } from "@/lib/serverApi";
 
 interface AddDeviceModalProps {
   onClose: () => void;

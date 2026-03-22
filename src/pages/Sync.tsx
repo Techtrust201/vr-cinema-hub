@@ -4,7 +4,7 @@ import SyncLogItem from "@/components/dashboard/SyncLogItem";
 import { cn } from "@/lib/utils";
 import { Play, RefreshCw, Headset, Library, Trash2, Zap, Radio } from "lucide-react";
 import { toast } from "sonner";
-import { checkServer, pushSync, ServerStatus } from "@/lib/serverApi";
+import { checkServer, startSync, createSyncStream, ServerStatus } from "@/lib/serverApi";
 
 function generateSyncLines(
   library: LibraryType,
