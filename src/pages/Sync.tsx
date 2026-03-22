@@ -255,7 +255,7 @@ export default function Sync() {
   };
 
   const canSync = !running && targetDevices.length > 0 && allVideos.length > 0;
-  const isRealMode = serverStatus === "connected";
+
 
   return (
     <div className="p-6 md:p-8 space-y-8 animate-fade-in-up">
