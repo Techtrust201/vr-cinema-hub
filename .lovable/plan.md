@@ -1,64 +1,35 @@
 
-## Bouton "Préparer Wi-Fi" dans DeviceCard
+## Plan : Rédiger le README complet A→Z
 
-### Ce qui existe déjà
-- `POST /api/connect` dans `sync-server.js` — pour `adb connect IP:PORT`
-- `connectDevice()` dans `serverApi.ts`
-- DeviceCard reçoit `onUpdate` et `onRemove` mais aucun callback pour des actions contextuelles
+### Ce que je vais créer
+Un seul fichier `README.md` qui remplace le placeholder actuel (`# Welcome to your Lovable project\nTODO`).
 
-### Ce qui manque
-1. `POST /api/tcpip/:serial` dans `server/sync-server.js` — exécute `adb -s SERIAL tcpip 5555`
-2. `prepareTcpip(serial, baseUrl?)` dans `src/lib/serverApi.ts`
-3. Bouton "Préparer Wi-Fi" dans `DeviceCard` — visible au hover, uniquement si `onPrepareWifi` prop est fourni
-4. Wiring dans `Devices.tsx` — passer `onPrepareWifi` à chaque `DeviceCard`
+Il contiendra :
+1. Vue d'ensemble — ce qu'est l'app, ce qu'elle fait
+2. Architecture complète — frontend, backend, store, API, flux de données
+3. Structure des fichiers commentée
+4. Installation et démarrage (3 modes : dev local, preview Lovable + ngrok, production)
+5. Guide pas-à-pas pour connecter un vrai casque Meta Quest
+6. Ce qui est en mode démo vs mode réel (tableau)
+7. Toutes les fonctionnalités page par page
+8. Ce qui reste à faire pour que tout marche à 100 %
+9. FAQ technique (questions courantes)
 
-### Design du bouton
+### Fichier à modifier
+- `README.md` — réécriture complète (actuellement 3 lignes)
 
-Dans le footer de `DeviceCard`, à côté de la batterie, ajouter un bouton compact qui apparaît au hover sur les casques connectés (état USB, c'est-à-dire `status === "connected"` et pas d'`ipAddress`). Il est visible mais grisé sur les casques déconnectés (pas de serial ADB disponible).
+### Contenu résumé du README
 
-Logique :
-- Clic → appelle `prepareTcpip(device.serial)` via la prop `onPrepareWifi`
-- Affiche un loader pendant l'appel
-- Toast succès : "Casque prêt en Wi-Fi — débranchez le câble puis cliquez Wi-Fi ADB"
-- Toast erreur si l'appel échoue
-
-### Fichiers à modifier
-
-1. **`server/sync-server.js`** — ajouter `POST /api/tcpip/:serial` :
-```js
-app.post("/api/tcpip/:serial", (req, res) => {
-  const { serial } = req.params;
-  if (!checkAdb()) return res.status(503).json({ error: "ADB not found" });
-  try {
-    const output = execSync(`adb -s ${serial} tcpip 5555`, { encoding: "utf8", timeout: 8000 });
-    res.json({ success: true, output: output.trim() });
-  } catch (err) {
-    res.status(500).json({ error: "adb tcpip failed", detail: err.message });
-  }
-});
-```
-
-2. **`src/lib/serverApi.ts`** — ajouter `prepareTcpip(serial, baseUrl?)` :
-```ts
-export async function prepareTcpip(serial: string, baseUrl?: string): Promise<{ success: boolean; output: string }> {
-  const res = await fetch(`${apiBase(baseUrl)}/tcpip/${encodeURIComponent(serial)}`, { method: "POST" });
-  if (!res.ok) throw new Error("adb tcpip failed");
-  return res.json();
-}
-```
-
-3. **`src/components/dashboard/DeviceCard.tsx`** — ajouter prop `onPrepareWifi?: () => Promise<void>` et bouton dans le footer :
-- Import `Signal`, `Loader2` depuis lucide-react
-- État local `preparingWifi: boolean`
-- Bouton dans le footer : icône `Signal`, texte "Préparer Wi-Fi", visible si `onPrepareWifi` est défini
-- Style compact cyan, apparaît au hover de la card (comme le bouton Trash2)
-
-4. **`src/pages/Devices.tsx`** — ajouter `handlePrepareWifi(device)` et passer la prop :
-```ts
-const handlePrepareWifi = async (device: Device) => {
-  const baseUrl = settings.publicServerUrl?.trim() || undefined;
-  await prepareTcpip(device.serial, baseUrl);
-  toast.success(`${device.name} prêt — débranchez le câble puis cliquez Wi-Fi ADB`);
-};
-```
-Passer `onPrepareWifi={() => handlePrepareWifi(d)}` à chaque `<DeviceCard>`.
+**Sections :**
+- Introduction / screenshot mental de l'app
+- Stack technique (React + Vite + Zustand + Express + ADB)
+- Architecture (diagramme ASCII)
+- Structure des fichiers
+- Prérequis physiques (ADB, Quest, câble)
+- Installation (`npm install` → `npm run dev:all`)
+- 3 modes de fonctionnement (démo / local / ngrok)
+- Guide complet connexion Quest USB → Wi-Fi
+- Toutes les pages expliquées
+- Ce qui fonctionne réellement vs simulation
+- Ce qui reste à faire (streaming SSE, auth token serveur, player 360° immersif)
+- Troubleshooting
