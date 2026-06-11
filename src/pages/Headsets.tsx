@@ -17,6 +17,9 @@ interface HeadsetRow {
   battery_percent: number | null;
   app_version: string | null;
   paired_at: string | null;
+  desired_manifest_version?: number;
+  applied_manifest_version?: number;
+  last_sync_status?: string | null;
 }
 
 function formatRelative(iso: string | null): string {
@@ -140,6 +143,7 @@ export default function Headsets() {
                   </p>
                   <p className="text-xs text-muted-foreground/70 mt-0.5">Vu {formatRelative(h.last_seen_at)}</p>
                 </div>
+                <SyncBadge h={h} />
                 <div className="hidden md:flex items-center gap-4 text-xs text-muted-foreground">
                   {h.battery_percent != null && (
                     <span className="flex items-center gap-1"><Battery size={12} /> {h.battery_percent}%</span>
@@ -167,6 +171,22 @@ export default function Headsets() {
       {pairOpen && <PairModal onClose={() => setPairOpen(false)} onDone={fetchList} />}
     </div>
   );
+}
+
+function SyncBadge({ h }: { h: HeadsetRow }) {
+  const desired = h.desired_manifest_version ?? 0;
+  const applied = h.applied_manifest_version ?? 0;
+  if (h.status !== "active") return null;
+  if (desired === 0 && applied === 0) {
+    return <span className="hidden md:inline-flex text-[10px] px-2 py-0.5 rounded bg-muted/60 text-muted-foreground">jamais sync</span>;
+  }
+  if (h.last_sync_status === "failed") {
+    return <span className="hidden md:inline-flex text-[10px] px-2 py-0.5 rounded bg-destructive/15 text-destructive">erreur</span>;
+  }
+  if (applied < desired) {
+    return <span className="hidden md:inline-flex text-[10px] px-2 py-0.5 rounded bg-[hsl(35_90%_55%_/_0.15)] text-[hsl(35_90%_55%)]">en attente v{desired}</span>;
+  }
+  return <span className="hidden md:inline-flex text-[10px] px-2 py-0.5 rounded bg-[hsl(140_70%_40%_/_0.15)] text-[hsl(140_70%_55%)]">à jour v{applied}</span>;
 }
 
 function PairModal({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {

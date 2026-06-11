@@ -62,7 +62,18 @@ Deno.serve(async (req) => {
     });
   }
 
-  return new Response(JSON.stringify({ ok: true }), {
+  const { data: h } = await supabase
+    .from("headsets")
+    .select("desired_manifest_version, applied_manifest_version")
+    .eq("id", claims.sub)
+    .maybeSingle();
+
+  return new Response(JSON.stringify({
+    ok: true,
+    desired_manifest_version: h?.desired_manifest_version ?? 0,
+    applied_manifest_version: h?.applied_manifest_version ?? 0,
+    needs_sync: (h?.desired_manifest_version ?? 0) > (h?.applied_manifest_version ?? 0),
+  }), {
     headers: { ...corsHeaders, "Content-Type": "application/json" },
   });
 });

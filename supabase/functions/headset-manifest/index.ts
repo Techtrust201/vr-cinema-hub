@@ -1,8 +1,10 @@
 import { createClient } from "npm:@supabase/supabase-js@2.45.4";
 import { corsHeaders, extractBearer, verifyDeviceToken } from "../_shared/device-jwt.ts";
 
-// Called by the Quest app on every sync cycle. Returns the list of videos
-// this headset should have locally, with short-lived signed download URLs.
+// Called by the Quest app on every sync cycle.
+// v3: returns a versioned manifest. The headset MUST echo back the
+// `manifest_version` in headset-report-sync once it has fully applied it
+// (downloaded all files and refreshed its library).
 
 const SIGNED_URL_TTL_SECONDS = 15 * 60;
 
@@ -32,7 +34,7 @@ Deno.serve(async (req) => {
   // Make sure the headset still exists and is active.
   const { data: headset, error: hErr } = await supabase
     .from("headsets")
-    .select("id, status")
+    .select("id, status, desired_manifest_version, applied_manifest_version")
     .eq("id", claims.sub)
     .maybeSingle();
   if (hErr || !headset) {
@@ -48,11 +50,33 @@ Deno.serve(async (req) => {
     });
   }
 
-  // Update last_seen
+  // Update last_seen + last_manifest_at
+  const nowIso = new Date().toISOString();
   await supabase
     .from("headsets")
-    .update({ last_seen_at: new Date().toISOString() })
+    .update({ last_seen_at: nowIso, last_manifest_at: nowIso })
     .eq("id", headset.id);
+
+  const desiredVersion: number = headset.desired_manifest_version ?? 0;
+
+  // Optional short-circuit: if the headset tells us the version it already
+  // has and it matches what we'd serve, return 304 to skip URL signing.
+  const url = new URL(req.url);
+  const knownVersion = Number(
+    req.headers.get("If-None-Match") ?? url.searchParams.get("known_version") ?? "",
+  );
+  if (Number.isFinite(knownVersion) && knownVersion > 0 && knownVersion === desiredVersion) {
+    console.log(JSON.stringify({
+      fn: "headset-manifest",
+      headset_id: headset.id,
+      served: "304",
+      manifest_version: desiredVersion,
+    }));
+    return new Response(null, {
+      status: 304,
+      headers: { ...corsHeaders, "ETag": String(desiredVersion) },
+    });
+  }
 
   // Collect group IDs this headset belongs to.
   const { data: groups } = await supabase
@@ -90,14 +114,17 @@ Deno.serve(async (req) => {
     groups: groupIds.length,
     assignments: assignments?.length ?? 0,
     playlists: playlistIds.length,
+    desired_version: desiredVersion,
+    applied_version: headset.applied_manifest_version ?? 0,
   }));
 
   let videoRows: any[] = [];
   if (playlistIds.length > 0) {
     const { data: pvideos } = await supabase
       .from("playlist_videos")
-      .select("video_id, position, videos(id, name, storage_path, size_bytes, duration_seconds, format, projection, stereo_mode)")
-      .in("playlist_id", playlistIds);
+      .select("playlist_id, video_id, position, videos(id, name, storage_path, size_bytes, duration_seconds, format, projection, stereo_mode, updated_at)")
+      .in("playlist_id", playlistIds)
+      .order("position", { ascending: true });
     videoRows = pvideos ?? [];
   }
 
@@ -134,21 +161,24 @@ Deno.serve(async (req) => {
     videos.push({
       id: v.id,
       name: v.name,
+      url: download_url,
+      download_url,
+      order: row.position ?? 0,
+      updated_at: v.updated_at ?? null,
       file_extension,
       projection: v.projection,
       stereo_mode: v.stereo_mode,
       legacy_format: v.format,
-      // kept for backward compat with Unity v1 clients
       format: v.format,
       size_bytes: v.size_bytes,
       duration_seconds: v.duration_seconds,
-      download_url,
     });
   }
 
   console.log(JSON.stringify({
     fn: "headset-manifest",
     headset_id: headset.id,
+    served_version: desiredVersion,
     final_videos: videos.length,
     breakdown: videos.map((v) => ({
       id: v.id,
@@ -159,14 +189,31 @@ Deno.serve(async (req) => {
     })),
   }));
 
-  return new Response(
-    JSON.stringify({
-      manifest_version: 2,
-      headset_id: headset.id,
-      generated_at: new Date().toISOString(),
-      url_expires_in: SIGNED_URL_TTL_SECONDS,
-      videos,
-    }),
-    { headers: { ...corsHeaders, "Content-Type": "application/json" } },
-  );
+  const playlistId = playlistIds[0] ?? null;
+  const payload = {
+    manifest_version: desiredVersion,
+    schema_version: 3,
+    headset_id: headset.id,
+    playlist_id: playlistId,
+    generated_at: nowIso,
+    updated_at: nowIso,
+    url_expires_in: SIGNED_URL_TTL_SECONDS,
+    videos,
+  };
+
+  // Snapshot for audit. Ignore conflicts (same version already stored).
+  if (desiredVersion > 0) {
+    await supabase
+      .from("manifest_versions")
+      .upsert({
+        headset_id: headset.id,
+        version: desiredVersion,
+        playlist_id: playlistId,
+        payload: { ...payload, videos: videos.map((v) => ({ ...v, url: undefined, download_url: undefined })) },
+      }, { onConflict: "headset_id,version" });
+  }
+
+  return new Response(JSON.stringify(payload), {
+    headers: { ...corsHeaders, "Content-Type": "application/json", "ETag": String(desiredVersion) },
+  });
 });
