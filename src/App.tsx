@@ -9,7 +9,9 @@ import ProtectedRoute from "@/components/ProtectedRoute";
 import Auth from "./pages/Auth";
 import Index from "./pages/Index";
 import Libraries from "./pages/Libraries";
-import Devices from "./pages/Devices";
+import Headsets from "./pages/Headsets";
+import Groups from "./pages/Groups";
+import Playlists from "./pages/Playlists";
 import Sync from "./pages/Sync";
 import Settings from "./pages/Settings";
 import Stats from "./pages/Stats";
@@ -31,7 +33,10 @@ const App = () => (
               <Route element={<DashboardLayout />}>
                 <Route path="/" element={<Index />} />
                 <Route path="/libraries" element={<Libraries />} />
-                <Route path="/devices" element={<Devices />} />
+                <Route path="/headsets" element={<Headsets />} />
+                <Route path="/devices" element={<Headsets />} />
+                <Route path="/groups" element={<Groups />} />
+                <Route path="/playlists" element={<Playlists />} />
                 <Route path="/sync" element={<Sync />} />
                 <Route path="/settings" element={<Settings />} />
                 <Route path="/stats" element={<Stats />} />
