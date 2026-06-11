@@ -347,7 +347,17 @@ export default function Devices() {
   const [addModalOpen, setAddModalOpen] = useState(false);
   const [wifiModalOpen, setWifiModalOpen] = useState(false);
   const [wifiInitialIp, setWifiInitialIp] = useState("");
-  const [addInitial, setAddInitial] = useState<{ serial?: string; name?: string; ip?: string }>({});
+  const [addInitial, setAddInitial] = useState<{
+    serial?: string;
+    name?: string;
+    ip?: string;
+    storageTotalGB?: number;
+    storageUsedGB?: number;
+    battery?: number;
+    connected?: boolean;
+    fromAdb?: boolean;
+  }>({});
+  const [prefillingSerial, setPrefillingSerial] = useState<string | null>(null);
 
   // ADB detect state
   const [serverStatus, setServerStatus] = useState<ServerStatus>("checking");
@@ -446,13 +456,34 @@ export default function Devices() {
     }
   };
 
-  const handleAddFromAdb = (d: ServerDevice) => {
+  const handleAddFromAdb = async (d: ServerDevice) => {
+    if (devices.some((dev) => dev.serial.toUpperCase() === d.serial.toUpperCase())) {
+      toast.error(`Casque ${d.serial} déjà ajouté`);
+      return;
+    }
+    setPrefillingSerial(d.serial);
+    const baseUrl = settings.publicServerUrl?.trim() || settings.serverUrl?.trim() || undefined;
+    const [statusRes, ipRes] = await Promise.allSettled([
+      fetchDeviceStatus(d.serial, baseUrl, settings.authToken),
+      d.ipAddress ? Promise.resolve({ ip: d.ipAddress }) : fetchDeviceIp(d.serial, baseUrl, settings.authToken),
+    ]);
+    const status = statusRes.status === "fulfilled" ? statusRes.value : null;
+    const ip = ipRes.status === "fulfilled" ? ipRes.value.ip : (d.ipAddress ?? "");
+    if (!status || ipRes.status === "rejected") {
+      toast.info("Certaines infos n'ont pas pu être lues — vérifiez avant d'ajouter");
+    }
     setAdbPanelOpen(false);
     setAddInitial({
       serial: d.serial,
       name: d.model ? `Meta ${d.model}` : "Meta Quest",
-      ip: d.ipAddress ?? "",
+      ip,
+      storageTotalGB: status?.storageTotalGB && status.storageTotalGB > 0 ? Math.round(status.storageTotalGB) : undefined,
+      storageUsedGB: status?.storageUsedGB ?? 0,
+      battery: status?.battery ?? 0,
+      connected: d.status === "device",
+      fromAdb: true,
     });
+    setPrefillingSerial(null);
     setAddModalOpen(true);
   };
 
@@ -648,6 +679,11 @@ export default function Devices() {
           initialSerial={addInitial.serial}
           initialName={addInitial.name}
           initialIp={addInitial.ip}
+          initialStorageTotalGB={addInitial.storageTotalGB}
+          initialStorageUsedGB={addInitial.storageUsedGB}
+          initialBattery={addInitial.battery}
+          initialConnected={addInitial.connected}
+          detectedFromAdb={addInitial.fromAdb}
         />
       )}
       {wifiModalOpen && (
@@ -657,6 +693,7 @@ export default function Devices() {
         <AdbDetectPanel
           adbDevices={adbDevices}
           onAdd={handleAddFromAdb}
+          prefillingSerial={prefillingSerial}
           onClose={() => setAdbPanelOpen(false)}
         />
       )}
