@@ -286,6 +286,75 @@ export default function Libraries() {
         </div>
       )}
 
+      {/* Pending uploads — confirm projection / stereo */}
+      {pending.length > 0 && (
+        <div className="space-y-3">
+          <p className="text-xs font-medium text-muted-foreground">
+            Confirmez le format VR avant upload ({pending.length})
+          </p>
+          {pending.map((it) => {
+            const isFlat = it.projection === "flat";
+            const stereoUnknown = !isFlat && it.stereo_mode === "unknown";
+            return (
+              <div key={it.tempId} className="rounded-lg border border-[hsl(var(--vr-violet)_/_0.4)] bg-[hsl(var(--vr-surface)_/_0.5)] p-3 space-y-3">
+                <div className="flex items-center gap-2">
+                  <FileVideo size={14} className="text-[hsl(var(--vr-violet))]" />
+                  <span className="text-xs font-medium truncate flex-1">{it.file.name}</span>
+                  <span className="text-[10px] text-muted-foreground">{fmtSize(it.file.size)}</span>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <label className="text-[10px] text-muted-foreground space-y-1">
+                    <span>Projection</span>
+                    <select
+                      value={it.projection}
+                      onChange={(e) => updatePending(it.tempId, { projection: e.target.value as Projection })}
+                      className="w-full rounded bg-background border border-border/60 px-2 py-1.5 text-xs text-foreground"
+                    >
+                      {(["360", "180", "flat"] as Projection[]).map((p) => (
+                        <option key={p} value={p}>{PROJECTION_LABELS[p]}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="text-[10px] text-muted-foreground space-y-1">
+                    <span>Stéréo</span>
+                    <select
+                      value={it.stereo_mode}
+                      disabled={isFlat}
+                      onChange={(e) => updatePending(it.tempId, { stereo_mode: e.target.value as StereoMode })}
+                      className="w-full rounded bg-background border border-border/60 px-2 py-1.5 text-xs text-foreground disabled:opacity-50"
+                    >
+                      {(["mono", "top_bottom", "side_by_side", "unknown"] as StereoMode[]).map((s) => (
+                        <option key={s} value={s}>{STEREO_LABELS[s]}</option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+                {stereoUnknown && (
+                  <p className="text-[10px] text-amber-500">
+                    Précisez le mode stéréo (top/bottom ou side-by-side) avant d'uploader.
+                  </p>
+                )}
+                <div className="flex justify-end gap-2">
+                  <button
+                    onClick={() => removePending(it.tempId)}
+                    className="text-[11px] px-2.5 py-1.5 rounded text-muted-foreground hover:text-foreground"
+                  >
+                    Annuler
+                  </button>
+                  <button
+                    onClick={() => confirmUpload(it)}
+                    disabled={stereoUnknown}
+                    className="text-[11px] px-3 py-1.5 rounded bg-[hsl(var(--vr-violet))] text-white font-medium hover:bg-[hsl(var(--vr-violet)_/_0.85)] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    Uploader
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
       {/* Drop zone (admin only) */}
       {isAdmin && (
         <div
@@ -329,7 +398,7 @@ export default function Libraries() {
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-medium truncate">{v.name}</p>
                 <p className="text-[10px] text-muted-foreground mt-0.5">
-                  {FORMAT_LABELS[v.format]} • {fmtSize(v.size_bytes)} • ajoutée le {new Date(v.created_at).toLocaleDateString("fr-FR")}
+                  {PROJECTION_LABELS[v.projection] ?? v.projection} • {STEREO_LABELS[v.stereo_mode] ?? v.stereo_mode} • {fmtSize(v.size_bytes)} • ajoutée le {new Date(v.created_at).toLocaleDateString("fr-FR")}
                 </p>
               </div>
               <button
