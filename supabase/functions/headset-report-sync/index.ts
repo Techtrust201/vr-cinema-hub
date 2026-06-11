@@ -33,13 +33,19 @@ Deno.serve(async (req) => {
   let body: {
     phase?: "started" | "finished";
     report_id?: string;
-    status?: "success" | "partial" | "failed";
+    status?: "success" | "partial" | "failed" | "no_change";
     downloaded_count?: number;
     failed_count?: number;
     deleted_count?: number;
     total_bytes?: number;
     error_message?: string;
     details?: unknown;
+    applied_manifest_version?: number;
+    playlist_id?: string | null;
+    remote_video_count?: number;
+    local_video_count?: number;
+    visible_video_count?: number;
+    cause?: string;
   };
   try {
     body = await req.json();
@@ -58,9 +64,17 @@ Deno.serve(async (req) => {
   if (!body.phase || body.phase === "started") {
     const { data, error } = await supabase
       .from("sync_reports")
-      .insert({ headset_id: claims.sub, status: "started" })
+      .insert({
+        headset_id: claims.sub,
+        status: "started",
+        cause: body.cause ?? null,
+      })
       .select("id")
       .single();
+    await supabase
+      .from("headsets")
+      .update({ last_sync_status: "started", last_sync_at: new Date().toISOString() })
+      .eq("id", claims.sub);
     if (error || !data) {
       console.error("sync_reports insert error", error);
       return new Response(JSON.stringify({ error: "Internal error" }), {
@@ -80,17 +94,23 @@ Deno.serve(async (req) => {
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
       );
     }
+    const nowIso = new Date().toISOString();
     const { error } = await supabase
       .from("sync_reports")
       .update({
         status: body.status,
-        finished_at: new Date().toISOString(),
+        finished_at: nowIso,
         downloaded_count: body.downloaded_count ?? 0,
         failed_count: body.failed_count ?? 0,
         deleted_count: body.deleted_count ?? 0,
         total_bytes: body.total_bytes ?? 0,
         error_message: body.error_message ?? null,
         details: (body.details ?? null) as any,
+        applied_manifest_version: body.applied_manifest_version ?? null,
+        playlist_id: body.playlist_id ?? null,
+        remote_video_count: body.remote_video_count ?? null,
+        local_video_count: body.local_video_count ?? null,
+        visible_video_count: body.visible_video_count ?? null,
       })
       .eq("id", body.report_id)
       .eq("headset_id", claims.sub);
@@ -101,6 +121,35 @@ Deno.serve(async (req) => {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
+
+    // Update headset.applied_manifest_version ONLY on success / no_change
+    // AND when the reported version is at least the current applied one.
+    const headsetUpdate: Record<string, unknown> = {
+      last_sync_status: body.status,
+      last_sync_at: nowIso,
+    };
+    if ((body.status === "success" || body.status === "no_change") &&
+        typeof body.applied_manifest_version === "number" &&
+        body.applied_manifest_version > 0) {
+      // Fetch current to compare (avoid going backwards).
+      const { data: cur } = await supabase
+        .from("headsets")
+        .select("applied_manifest_version")
+        .eq("id", claims.sub)
+        .maybeSingle();
+      if (!cur || body.applied_manifest_version >= (cur.applied_manifest_version ?? 0)) {
+        headsetUpdate.applied_manifest_version = body.applied_manifest_version;
+      }
+    }
+    await supabase.from("headsets").update(headsetUpdate).eq("id", claims.sub);
+
+    console.log(JSON.stringify({
+      fn: "headset-report-sync",
+      headset_id: claims.sub,
+      status: body.status,
+      applied_version: body.applied_manifest_version,
+    }));
+
     return new Response(JSON.stringify({ ok: true }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
