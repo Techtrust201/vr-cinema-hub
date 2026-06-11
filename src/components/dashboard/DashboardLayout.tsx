@@ -23,6 +23,7 @@ import {
 import { useState, useEffect, useRef } from "react";
 import { useVRStore } from "@/store/vrStore";
 import { checkServer, isLovablePreview } from "@/lib/serverApi";
+import UserMenu from "@/components/UserMenu";
 
 const NAV_ITEMS = [
   { to: "/", label: "Accueil", icon: LayoutDashboard, exact: true },
@@ -392,6 +393,7 @@ export default function DashboardLayout() {
           <DemoModeBadge />
           <ServerModeBadge />
           <NotificationBell />
+          <UserMenu />
         </header>
 
         <main className="flex-1 overflow-auto">
