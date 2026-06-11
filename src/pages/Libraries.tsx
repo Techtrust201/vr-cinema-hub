@@ -10,12 +10,16 @@ import { toast } from "sonner";
 
 type LibraryType = "location" | "animation";
 type VrFormat = "360_mono" | "180_mono" | "360_stereo" | "180_stereo" | "flat";
+type Projection = "360" | "180" | "flat";
+type StereoMode = "mono" | "top_bottom" | "side_by_side" | "unknown";
 
 interface VideoRow {
   id: string;
   name: string;
   library: LibraryType;
   format: VrFormat;
+  projection: Projection;
+  stereo_mode: StereoMode;
   size_bytes: number;
   storage_path: string;
   created_at: string;
@@ -40,6 +44,21 @@ function detectFormat(name: string): VrFormat {
   return "360_mono";
 }
 
+function suggestProjection(name: string): Projection {
+  const n = name.toLowerCase();
+  if (n.includes("180")) return "180";
+  if (n.includes("flat") || n.includes("2d")) return "flat";
+  return "360";
+}
+
+function suggestStereo(name: string): StereoMode {
+  const n = name.toLowerCase();
+  if (n.includes("sbs") || n.includes("side_by_side") || n.includes("side-by-side")) return "side_by_side";
+  if (n.includes("tb") || n.includes("top_bottom") || n.includes("top-bottom") || n.includes("_ou")) return "top_bottom";
+  if (n.includes("stereo") || n.includes("3d")) return "unknown";
+  return "mono";
+}
+
 function fmtSize(bytes: number) {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
@@ -55,6 +74,25 @@ const FORMAT_LABELS: Record<VrFormat, string> = {
   "flat": "2D plat",
 };
 
+const PROJECTION_LABELS: Record<Projection, string> = {
+  "360": "360°",
+  "180": "180°",
+  "flat": "Plat (2D)",
+};
+const STEREO_LABELS: Record<StereoMode, string> = {
+  mono: "Mono",
+  top_bottom: "Top / Bottom",
+  side_by_side: "Side by Side",
+  unknown: "Stéréo (inconnu)",
+};
+
+interface PendingUpload {
+  tempId: string;
+  file: File;
+  projection: Projection;
+  stereo_mode: StereoMode;
+}
+
 export default function Libraries() {
   const { role } = useAuth();
   const isAdmin = role === "admin";
@@ -63,6 +101,7 @@ export default function Libraries() {
   const [loading, setLoading] = useState(true);
   const [uploads, setUploads] = useState<Record<string, UploadProgress>>({});
   const [dragging, setDragging] = useState(false);
+  const [pending, setPending] = useState<PendingUpload[]>([]);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const fetchVideos = useCallback(async () => {
@@ -78,48 +117,77 @@ export default function Libraries() {
 
   useEffect(() => { fetchVideos(); }, [fetchVideos]);
 
-  const handleFiles = async (files: FileList | null) => {
+  const handleFiles = (files: FileList | null) => {
     if (!files || !isAdmin) return;
-    for (const file of Array.from(files)) {
-      const tempId = `up-${Date.now()}-${Math.random()}`;
-      setUploads((u) => ({ ...u, [tempId]: { id: tempId, name: file.name, progress: 0, status: "uploading" } }));
+    const next: PendingUpload[] = Array.from(files).map((file) => ({
+      tempId: `up-${Date.now()}-${Math.random()}`,
+      file,
+      projection: suggestProjection(file.name),
+      stereo_mode: suggestStereo(file.name),
+    }));
+    setPending((p) => [...p, ...next]);
+  };
 
-      try {
-        // Path: library/uuid-filename to avoid collisions
-        const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
-        const path = `${activeLib}/${crypto.randomUUID()}-${safeName}`;
+  const updatePending = (tempId: string, patch: Partial<PendingUpload>) => {
+    setPending((p) =>
+      p.map((it) => {
+        if (it.tempId !== tempId) return it;
+        const merged = { ...it, ...patch };
+        // Enforce: flat ⇒ mono
+        if (merged.projection === "flat") merged.stereo_mode = "mono";
+        return merged;
+      }),
+    );
+  };
 
-        const { error: upErr } = await supabase.storage
-          .from("videos")
-          .upload(path, file, { cacheControl: "3600", upsert: false });
+  const removePending = (tempId: string) =>
+    setPending((p) => p.filter((it) => it.tempId !== tempId));
 
-        if (upErr) throw upErr;
+  const legacyFormatFor = (projection: Projection, stereo: StereoMode): VrFormat => {
+    if (projection === "flat") return "flat";
+    const isStereo = stereo !== "mono";
+    if (projection === "180") return isStereo ? "180_stereo" : "180_mono";
+    return isStereo ? "360_stereo" : "360_mono";
+  };
 
-        setUploads((u) => ({ ...u, [tempId]: { ...u[tempId], progress: 95 } }));
-
-        const { error: dbErr } = await supabase.from("videos").insert({
-          name: file.name,
-          library: activeLib,
-          format: detectFormat(file.name),
-          size_bytes: file.size,
-          storage_path: path,
-        });
-
-        if (dbErr) {
-          // Roll back storage
-          await supabase.storage.from("videos").remove([path]);
-          throw dbErr;
-        }
-
-        setUploads((u) => ({ ...u, [tempId]: { ...u[tempId], progress: 100, status: "done" } }));
-        toast.success(`${file.name} uploadée`);
-        setTimeout(() => setUploads((u) => { const { [tempId]: _, ...rest } = u; return rest; }), 2500);
-      } catch (err: any) {
-        setUploads((u) => ({ ...u, [tempId]: { ...u[tempId], status: "error", error: err.message } }));
-        toast.error(`${file.name}: ${err.message}`);
-      }
+  const confirmUpload = async (item: PendingUpload) => {
+    // Block inconsistent uploads: stereo projection without known layout
+    if (item.projection !== "flat" && item.stereo_mode === "unknown") {
+      toast.error("Précisez le mode stéréo (mono / top_bottom / side_by_side) avant d'uploader.");
+      return;
     }
-    fetchVideos();
+    const { tempId, file, projection, stereo_mode } = item;
+    removePending(tempId);
+    setUploads((u) => ({ ...u, [tempId]: { id: tempId, name: file.name, progress: 0, status: "uploading" } }));
+    try {
+      const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+      const path = `${activeLib}/${crypto.randomUUID()}-${safeName}`;
+      const { error: upErr } = await supabase.storage
+        .from("videos")
+        .upload(path, file, { cacheControl: "3600", upsert: false });
+      if (upErr) throw upErr;
+      setUploads((u) => ({ ...u, [tempId]: { ...u[tempId], progress: 95 } }));
+      const { error: dbErr } = await supabase.from("videos").insert({
+        name: file.name,
+        library: activeLib,
+        format: legacyFormatFor(projection, stereo_mode),
+        projection,
+        stereo_mode,
+        size_bytes: file.size,
+        storage_path: path,
+      });
+      if (dbErr) {
+        await supabase.storage.from("videos").remove([path]);
+        throw dbErr;
+      }
+      setUploads((u) => ({ ...u, [tempId]: { ...u[tempId], progress: 100, status: "done" } }));
+      toast.success(`${file.name} uploadée`);
+      setTimeout(() => setUploads((u) => { const { [tempId]: _, ...rest } = u; return rest; }), 2500);
+      fetchVideos();
+    } catch (err: any) {
+      setUploads((u) => ({ ...u, [tempId]: { ...u[tempId], status: "error", error: err.message } }));
+      toast.error(`${file.name}: ${err.message}`);
+    }
   };
 
   const handleDelete = async (v: VideoRow) => {
@@ -218,6 +286,75 @@ export default function Libraries() {
         </div>
       )}
 
+      {/* Pending uploads — confirm projection / stereo */}
+      {pending.length > 0 && (
+        <div className="space-y-3">
+          <p className="text-xs font-medium text-muted-foreground">
+            Confirmez le format VR avant upload ({pending.length})
+          </p>
+          {pending.map((it) => {
+            const isFlat = it.projection === "flat";
+            const stereoUnknown = !isFlat && it.stereo_mode === "unknown";
+            return (
+              <div key={it.tempId} className="rounded-lg border border-[hsl(var(--vr-violet)_/_0.4)] bg-[hsl(var(--vr-surface)_/_0.5)] p-3 space-y-3">
+                <div className="flex items-center gap-2">
+                  <FileVideo size={14} className="text-[hsl(var(--vr-violet))]" />
+                  <span className="text-xs font-medium truncate flex-1">{it.file.name}</span>
+                  <span className="text-[10px] text-muted-foreground">{fmtSize(it.file.size)}</span>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <label className="text-[10px] text-muted-foreground space-y-1">
+                    <span>Projection</span>
+                    <select
+                      value={it.projection}
+                      onChange={(e) => updatePending(it.tempId, { projection: e.target.value as Projection })}
+                      className="w-full rounded bg-background border border-border/60 px-2 py-1.5 text-xs text-foreground"
+                    >
+                      {(["360", "180", "flat"] as Projection[]).map((p) => (
+                        <option key={p} value={p}>{PROJECTION_LABELS[p]}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="text-[10px] text-muted-foreground space-y-1">
+                    <span>Stéréo</span>
+                    <select
+                      value={it.stereo_mode}
+                      disabled={isFlat}
+                      onChange={(e) => updatePending(it.tempId, { stereo_mode: e.target.value as StereoMode })}
+                      className="w-full rounded bg-background border border-border/60 px-2 py-1.5 text-xs text-foreground disabled:opacity-50"
+                    >
+                      {(["mono", "top_bottom", "side_by_side", "unknown"] as StereoMode[]).map((s) => (
+                        <option key={s} value={s}>{STEREO_LABELS[s]}</option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+                {stereoUnknown && (
+                  <p className="text-[10px] text-amber-500">
+                    Précisez le mode stéréo (top/bottom ou side-by-side) avant d'uploader.
+                  </p>
+                )}
+                <div className="flex justify-end gap-2">
+                  <button
+                    onClick={() => removePending(it.tempId)}
+                    className="text-[11px] px-2.5 py-1.5 rounded text-muted-foreground hover:text-foreground"
+                  >
+                    Annuler
+                  </button>
+                  <button
+                    onClick={() => confirmUpload(it)}
+                    disabled={stereoUnknown}
+                    className="text-[11px] px-3 py-1.5 rounded bg-[hsl(var(--vr-violet))] text-white font-medium hover:bg-[hsl(var(--vr-violet)_/_0.85)] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    Uploader
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
       {/* Drop zone (admin only) */}
       {isAdmin && (
         <div
@@ -261,7 +398,7 @@ export default function Libraries() {
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-medium truncate">{v.name}</p>
                 <p className="text-[10px] text-muted-foreground mt-0.5">
-                  {FORMAT_LABELS[v.format]} • {fmtSize(v.size_bytes)} • ajoutée le {new Date(v.created_at).toLocaleDateString("fr-FR")}
+                  {PROJECTION_LABELS[v.projection] ?? v.projection} • {STEREO_LABELS[v.stereo_mode] ?? v.stereo_mode} • {fmtSize(v.size_bytes)} • ajoutée le {new Date(v.created_at).toLocaleDateString("fr-FR")}
                 </p>
               </div>
               <button

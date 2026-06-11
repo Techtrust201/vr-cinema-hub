@@ -96,7 +96,7 @@ Deno.serve(async (req) => {
   if (playlistIds.length > 0) {
     const { data: pvideos } = await supabase
       .from("playlist_videos")
-      .select("video_id, position, videos(id, name, storage_path, size_bytes, duration_seconds, format)")
+      .select("video_id, position, videos(id, name, storage_path, size_bytes, duration_seconds, format, projection, stereo_mode)")
       .in("playlist_id", playlistIds);
     videoRows = pvideos ?? [];
   }
@@ -124,18 +124,44 @@ Deno.serve(async (req) => {
       download_url = signed?.signedUrl ?? null;
     }
 
+    // Real container extension from storage_path (NOT from format).
+    const pathLower = (v.storage_path ?? "").toLowerCase();
+    const dot = pathLower.lastIndexOf(".");
+    const ext = dot >= 0 ? pathLower.slice(dot + 1) : "";
+    const allowed = new Set(["mp4", "mov", "m4v", "webm", "mkv"]);
+    const file_extension = allowed.has(ext) ? ext : "mp4";
+
     videos.push({
       id: v.id,
       name: v.name,
+      file_extension,
+      projection: v.projection,
+      stereo_mode: v.stereo_mode,
+      legacy_format: v.format,
+      // kept for backward compat with Unity v1 clients
+      format: v.format,
       size_bytes: v.size_bytes,
       duration_seconds: v.duration_seconds,
-      format: v.format,
       download_url,
     });
   }
 
+  console.log(JSON.stringify({
+    fn: "headset-manifest",
+    headset_id: headset.id,
+    final_videos: videos.length,
+    breakdown: videos.map((v) => ({
+      id: v.id,
+      projection: v.projection,
+      stereo_mode: v.stereo_mode,
+      file_extension: v.file_extension,
+      legacy_format: v.legacy_format,
+    })),
+  }));
+
   return new Response(
     JSON.stringify({
+      manifest_version: 2,
       headset_id: headset.id,
       generated_at: new Date().toISOString(),
       url_expires_in: SIGNED_URL_TTL_SECONDS,
