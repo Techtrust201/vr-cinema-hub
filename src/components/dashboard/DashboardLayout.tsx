@@ -132,9 +132,6 @@ export default function DashboardLayout() {
           </div>
 
           {/* Right: demo badge + server badge + notification bell */}
-          <DemoModeBadge />
-          <ServerModeBadge />
-          <NotificationBell />
           <UserMenu />
         </header>
 
