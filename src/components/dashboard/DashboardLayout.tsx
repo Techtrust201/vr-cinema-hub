@@ -1,4 +1,4 @@
-import { Outlet, NavLink, useLocation, Link } from "react-router-dom";
+import { Outlet, NavLink, useLocation } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import {
   LayoutDashboard,
@@ -9,22 +9,10 @@ import {
   ListVideo,
   Menu,
   X,
-  Bell,
-  Wifi,
-  WifiOff,
-  AlertTriangle,
   Settings,
-  Clock,
   BarChart2,
-  FileDown,
-  FlaskConical,
-  Zap,
-  CheckCheck,
-  Trash2,
 } from "lucide-react";
-import { useState, useEffect, useRef } from "react";
-import { useVRStore } from "@/store/vrStore";
-import { checkServer, isLovablePreview } from "@/lib/serverApi";
+import { useState } from "react";
 import UserMenu from "@/components/UserMenu";
 
 const NAV_ITEMS = [
@@ -35,7 +23,6 @@ const NAV_ITEMS = [
   { to: "/playlists", label: "Playlists", icon: ListVideo },
   { to: "/sync", label: "Suivi sync", icon: RefreshCw },
   { to: "/stats", label: "Statistiques", icon: BarChart2 },
-  { to: "/export", label: "Export", icon: FileDown },
   { to: "/settings", label: "Paramètres", icon: Settings },
 ];
 
@@ -43,12 +30,10 @@ const PAGE_TITLES: Record<string, string> = {
   "/": "Accueil",
   "/libraries": "Bibliothèques",
   "/headsets": "Casques",
-  "/devices": "Casques",
   "/groups": "Groupes",
   "/playlists": "Playlists",
   "/sync": "Suivi des synchronisations",
   "/stats": "Statistiques",
-  "/export": "Export / Manifest",
   "/settings": "Paramètres",
 };
 
