@@ -4,7 +4,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { cn } from "@/lib/utils";
 import {
   Upload, MapPin, Clapperboard, FolderOpen, Trash2, Loader2,
-  FileVideo, Download, CheckCircle2, XCircle,
+  FileVideo, Download, CheckCircle2, XCircle, Play, X,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -103,6 +103,8 @@ export default function Libraries() {
   const [dragging, setDragging] = useState(false);
   const [pending, setPending] = useState<PendingUpload[]>([]);
   const fileRef = useRef<HTMLInputElement>(null);
+  const [preview, setPreview] = useState<{ video: VideoRow; url: string } | null>(null);
+  const [previewLoading, setPreviewLoading] = useState<string | null>(null);
 
   const fetchVideos = useCallback(async () => {
     setLoading(true);
@@ -209,6 +211,16 @@ export default function Libraries() {
       .createSignedUrl(v.storage_path, 3600);
     if (error) { toast.error(error.message); return; }
     window.open(data.signedUrl, "_blank");
+  };
+
+  const handlePreview = async (v: VideoRow) => {
+    setPreviewLoading(v.id);
+    const { data, error } = await supabase.storage
+      .from("videos")
+      .createSignedUrl(v.storage_path, 3600);
+    setPreviewLoading(null);
+    if (error || !data) { toast.error(error?.message ?? "URL indisponible"); return; }
+    setPreview({ video: v, url: data.signedUrl });
   };
 
   const filtered = videos.filter((v) => v.library === activeLib);
@@ -408,6 +420,14 @@ export default function Libraries() {
               >
                 <Download size={13} />
               </button>
+              <button
+                onClick={() => handlePreview(v)}
+                disabled={previewLoading === v.id}
+                className="p-2 rounded text-muted-foreground hover:text-[hsl(var(--vr-violet))] hover:bg-[hsl(var(--vr-violet)_/_0.1)] transition-colors disabled:opacity-50"
+                title="Prévisualiser"
+              >
+                {previewLoading === v.id ? <Loader2 size={13} className="animate-spin" /> : <Play size={13} />}
+              </button>
               {isAdmin && (
                 <button
                   onClick={() => handleDelete(v)}
@@ -419,6 +439,45 @@ export default function Libraries() {
               )}
             </div>
           ))}
+        </div>
+      )}
+
+      {preview && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4"
+          onClick={() => setPreview(null)}
+        >
+          <div
+            className="relative w-full max-w-4xl rounded-xl border border-[hsl(var(--vr-violet)_/_0.4)] bg-[hsl(var(--vr-surface))] p-4 space-y-3"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-3">
+              <FileVideo size={16} className="text-[hsl(var(--vr-violet))]" />
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-medium truncate">{preview.video.name}</p>
+                <p className="text-[10px] text-muted-foreground">
+                  {PROJECTION_LABELS[preview.video.projection] ?? preview.video.projection} • {STEREO_LABELS[preview.video.stereo_mode] ?? preview.video.stereo_mode} • {fmtSize(preview.video.size_bytes)}
+                </p>
+              </div>
+              <button
+                onClick={() => setPreview(null)}
+                className="p-2 rounded text-muted-foreground hover:text-foreground hover:bg-background"
+                title="Fermer"
+              >
+                <X size={16} />
+              </button>
+            </div>
+            <video
+              src={preview.url}
+              controls
+              autoPlay
+              className="w-full max-h-[70vh] rounded-lg bg-black"
+              onError={() => toast.error("Lecture impossible — vidéo corrompue ou format non supporté par le navigateur")}
+            />
+            <p className="text-[10px] text-muted-foreground">
+              Aperçu équirectangulaire 2D (le rendu VR immersif se fait dans le casque). Si la vidéo ne se lit pas ici, le navigateur ne supporte pas son codec — mais elle peut quand même fonctionner sur le Quest.
+            </p>
+          </div>
         </div>
       )}
     </div>
