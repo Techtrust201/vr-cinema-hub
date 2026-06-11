@@ -1,105 +1,51 @@
-# Plan — Synchronisation OTA des casques (sans PC branché)
+## Diagnostic confirmé
 
-## Objectif
-Tes casques Quest, déployés chez les clients finaux partout en France, doivent récupérer automatiquement les nouvelles vidéos via leur propre WiFi, sans ADB, sans PC, sans intervention humaine. Toi et ton client uploadez depuis le dashboard web → tous les casques concernés se mettent à jour seuls.
+L'edge function `headset-manifest` fonctionne correctement. Le device token identifie bien le casque `test emulate casque unity` (id `b67e0e14-9b71-4f1b-9a34-0ff099526f98`), trouve bien son groupe `Float Region PACA`, trouve bien l'assignment vers la playlist `video de la mer`… mais la table de liaison `playlist_videos` est **vide** : la vidéo `test-360-location.mp4` n'a jamais été liée à la playlist côté dashboard.
 
-## Architecture cible
+C'est donc **un bug de données ET un bug d'UX** dans la page Playlists (elle laisse créer/assigner une playlist sans avoir réellement persisté les vidéos sélectionnées).
 
-```text
-┌───────────────────┐         ┌──────────────────────┐         ┌────────────────────┐
-│  Dashboard web    │  upload │   Lovable Cloud      │  pull   │  App Unity VR      │
-│  (toi + client)   ├────────►│  (DB + Storage +     │◄────────┤  sur chaque Quest  │
-│                   │         │   Edge Functions)    │         │  (chez clients)    │
-└───────────────────┘         └──────────────────────┘         └────────────────────┘
-                                       ▲                                │
-                                       └────── heartbeat + statut ──────┘
+## Étapes
+
+### 1. Fix immédiat (data)
+Insérer la ligne manquante via l'outil insert :
+
+```sql
+INSERT INTO playlist_videos (playlist_id, video_id, position)
+VALUES ('93bb2ea3-8dfc-4dda-83e6-14f22379071d',
+        'e18d3426-acbd-4cc7-a4e5-b1ac58e4c7b3',
+        0);
 ```
 
-- **Le casque pilote sa sync**, pas l'inverse. Au boot et toutes les X minutes : il appelle l'API, voit ce qu'il doit avoir, télécharge ce qui manque, supprime ce qui n'est plus assigné, remonte son statut.
-- **Pairing par code à 6 chiffres** : à la 1ʳᵉ ouverture de l'app Unity, le casque affiche un code, le client (ou toi) le tape dans le dashboard → casque enrôlé, plus jamais à refaire.
-- **Tolérance offline** : si pas de WiFi, le casque réessaie en backoff. Le dashboard affiche "vu il y a 2h / 3 jours / hors-ligne" pour que tu repères les casques en panne.
+Effet attendu : au prochain cycle de sync Unity, `headset-manifest` renverra 1 vidéo avec son `download_url` signée 15 min, et la log Unity passera à `Manifest reçu : 1 vidéo(s)`.
 
-## Concepts métier introduits
+### 2. Inspection de `src/pages/Playlists.tsx`
+Lire la page pour comprendre pourquoi l'utilisateur a vu la vidéo "dans" la playlist alors qu'aucune ligne n'a été insérée en base. Hypothèses à valider :
+- la sélection de vidéos est gardée en state local mais l'insert dans `playlist_videos` n'est jamais déclenché ;
+- ou un insert échoue silencieusement (RLS, erreur réseau non remontée) ;
+- ou le drag-and-drop de réordonnancement écrase les positions au lieu d'insérer.
 
-| Concept | Rôle |
-|---|---|
-| **Headset** | Un casque enrôlé (1 ligne par Quest physique). Remplace l'ancienne table `devices` orientée ADB. |
-| **Pairing code** | Code temporaire 6 chiffres généré par le casque, consommé par le dashboard pour lier le casque à ton workspace. |
-| **Playlist** | Groupe de vidéos. Tu peux assigner une playlist à 1 casque, à un groupe de casques, ou à tous. |
-| **Assignment** | Lien playlist ↔ casque (ou groupe). Le casque calcule "ce que je dois avoir" à partir de ses assignments. |
-| **Sync report** | Ce que le casque remonte : vidéos présentes, espace dispo, version app, batterie, dernière sync OK/KO. |
+### 3. Correction UI Playlists
+Selon ce que révèle l'étape 2 :
+- garantir que l'ajout d'une vidéo déclenche bien un `insert into playlist_videos` et remonte une erreur visible (toast) en cas d'échec ;
+- afficher dans la liste des playlists un compteur `X vidéos` lu réellement depuis `playlist_videos` (pas depuis un state local) pour qu'on détecte immédiatement une playlist vide ;
+- en option : avertir l'utilisateur si une playlist sans vidéos est diffusée à un groupe ("cette playlist est vide, aucun casque ne recevra rien").
 
-## Phase 2 — Backend OTA (cette étape)
+### 4. Hardening edge function (optionnel mais utile)
+Dans `supabase/functions/headset-manifest/index.ts`, ajouter quelques `console.log` structurés pour faciliter le debug futur :
+- `headset_id` extrait du token
+- nombre de groupes trouvés
+- nombre d'assignments matchés (par type : all / group / headset)
+- nombre de lignes `playlist_videos` matchées
+- nombre final de vidéos renvoyées
 
-### Schéma DB ajouté
-- `headsets` (id, workspace, name, serial, model, pairing_status, last_seen_at, storage_free_bytes, battery, app_version)
-- `headset_groups` + `headset_group_members`
-- `playlists` + `playlist_videos`
-- `assignments` (playlist_id, target_type 'headset'|'group'|'all', target_id)
-- `pairing_codes` (code 6 chiffres, expires_at 10 min, claimed_by_headset_id)
-- `sync_reports` (headset_id, started_at, finished_at, downloaded_count, failed_count, error_message)
+Aucune modification de logique, juste de l'observabilité. Lisible ensuite via les logs de la fonction.
 
-### Edge Functions (API publique consommée par le casque)
-1. `headset-pair-init` → casque demande un code, reçoit `{code, expires_at}`
-2. `headset-pair-claim` → dashboard appelle avec le code + nom du casque → crée la ligne `headsets`, renvoie un **device token** longue durée
-3. `headset-manifest` → casque envoie son device token → reçoit la liste des vidéos qu'il doit avoir + URLs signées de téléchargement (15 min)
-4. `headset-heartbeat` → casque ping toutes les 5 min avec son état (batterie, stockage, app version)
-5. `headset-report-sync` → casque pousse le résultat de sa dernière sync
+### 5. Vérification
+- Relancer le script `scripts/test-headset-flow.sh` ou simplement attendre le prochain cycle de sync côté Unity.
+- Logs Unity attendus : `Manifest reçu : 1 vidéo(s)` puis `Téléchargement OK`.
 
-Toutes ces functions valident le **device token** (JWT custom signé par une clé Cloud), pas l'auth user. Comme ça le casque n'a pas besoin de compte email.
-
-### Stockage Phase 2
-On reste sur le bucket `videos` de Lovable Cloud. Les URLs signées suffisent — pas de blocage CORS côté Quest car Unity utilise UnityWebRequest, pas un navigateur. Migration vers Backblaze prévue Phase 3 quand le volume grossit (le code des edge functions sera la seule chose à changer).
-
-## Phase 2 — Dashboard web (UI ajoutée)
-
-- **Page "Casques"** (remplace l'ancienne `Devices`)
-  - Liste avec : nom, dernière sync, statut (en ligne / hors-ligne / sync en cours / erreur), stockage restant, batterie, version app
-  - Action "Appairer un nouveau casque" → modal qui demande le code 6 chiffres + nom à donner
-  - Action sur chaque casque : renommer, voir historique sync, retirer (révoque le token)
-- **Page "Groupes"** (nouvelle)
-  - Créer un groupe, glisser-déposer casques dedans
-- **Page "Playlists"** (nouvelle)
-  - Créer playlist, ajouter vidéos depuis la bibliothèque, drag-and-drop pour ordonner
-  - Assigner à : un casque / un groupe / tout le monde
-- **Page "Suivi sync"** (remplace l'ancienne `Sync`)
-  - Vue temps réel (Supabase Realtime) des rapports : qui a fini, qui est en cours, qui a échoué et pourquoi
-  - Alertes : casques pas vus depuis > 24h surlignés rouge
-
-## Phase 3 — App Unity VR (livrable séparé)
-
-Tu as déjà un player Unity (Skybox-clone). On lui ajoute un **module SyncManager** :
-
-1. Au boot : si pas de device token stocké → afficher écran de pairing avec code
-2. Si token présent : appeler `headset-manifest`, comparer avec vidéos locales, télécharger ce qui manque dans `/sdcard/Android/data/<package>/files/videos/`, supprimer ce qui n'est plus assigné
-3. Toutes les 5 min en background : heartbeat
-4. Retry exponentiel si offline (1 min → 5 → 30 → 2h)
-5. UI minimaliste : badge "sync en cours" dans le menu, écran erreur si problème
-
-Je ne peux pas écrire du C# Unity ici (ce sandbox est web). Je te livrerai :
-- Le **contrat API complet documenté** (curl examples, JSON schemas)
-- Un **script C# de référence** (`SyncManager.cs`) prêt à coller dans ton projet Unity, que tu adapteras à ton UI existante
-- Les instructions de packaging APK signé
-
-## Sécurité
-- Device tokens = JWT signés HS256 avec un secret stocké dans Lovable Cloud, durée 1 an, révocables
-- Rate limiting basique côté edge functions (60 req/min/casque)
-- Pairing codes : 10 min de validité, 1 seule utilisation, brute-force-proof (lockout après 5 essais)
-- RLS strict : un casque ne voit que son manifest, jamais ceux des autres
-
-## Ce qu'on garde, ce qu'on jette
-
-**Gardé** : tables `videos`, `profiles`, `user_roles`, bucket `videos`, page Bibliothèques, auth.
-
-**Refactoré** : `devices` → `headsets`, `sync_jobs` → `sync_reports`. L'ancien code Electron/ADB devient optionnel (mode "local debug" pour quand un casque est physiquement à côté de toi).
-
-**Abandonné** : tunnels ngrok, port unifié 3001, X-Auth-Token middleware — plus pertinents avec une archi cloud.
-
-## Découpage de livraison
-
-1. **Migration DB** : nouveau schéma headsets/playlists/assignments/pairing/reports (1 migration)
-2. **Edge functions** : les 5 endpoints listés
-3. **UI dashboard** : Casques + Groupes + Playlists + Suivi sync (Realtime)
-4. **Doc API + SyncManager.cs Unity** : livré en fin de phase pour intégration côté Unity
-
-Tu valides ce plan et je commence par la migration DB ?
+## Ce qui **n'est pas** le bug (pour info)
+- ❌ Pas un problème de device token : le casque est bien identifié.
+- ❌ Pas un problème de jointure groupe→playlist : l'assignment existe et est correctement matché.
+- ❌ Pas un problème de RLS sur la fonction : elle tourne en service role.
+- ✅ C'est `playlist_videos` qui est vide, plus un bug UX dans la page Playlists qui a laissé croire que l'ajout était fait.
