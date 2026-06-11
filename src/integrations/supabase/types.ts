@@ -56,6 +56,41 @@ export type Database = {
         }
         Relationships: []
       }
+      assignments: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          id: string
+          playlist_id: string
+          target_id: string | null
+          target_type: Database["public"]["Enums"]["assignment_target"]
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          playlist_id: string
+          target_id?: string | null
+          target_type: Database["public"]["Enums"]["assignment_target"]
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          playlist_id?: string
+          target_id?: string | null
+          target_type?: Database["public"]["Enums"]["assignment_target"]
+        }
+        Relationships: [
+          {
+            foreignKeyName: "assignments_playlist_id_fkey"
+            columns: ["playlist_id"]
+            isOneToOne: false
+            referencedRelation: "playlists"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       devices: {
         Row: {
           agent_id: string
@@ -105,6 +140,221 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      headset_group_members: {
+        Row: {
+          added_at: string
+          group_id: string
+          headset_id: string
+        }
+        Insert: {
+          added_at?: string
+          group_id: string
+          headset_id: string
+        }
+        Update: {
+          added_at?: string
+          group_id?: string
+          headset_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "headset_group_members_group_id_fkey"
+            columns: ["group_id"]
+            isOneToOne: false
+            referencedRelation: "headset_groups"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "headset_group_members_headset_id_fkey"
+            columns: ["headset_id"]
+            isOneToOne: false
+            referencedRelation: "headsets"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      headset_groups: {
+        Row: {
+          created_at: string
+          description: string | null
+          id: string
+          name: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          id?: string
+          name: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          id?: string
+          name?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      headsets: {
+        Row: {
+          app_version: string | null
+          battery_percent: number | null
+          created_at: string
+          id: string
+          last_seen_at: string | null
+          model: string | null
+          name: string
+          paired_at: string | null
+          paired_by: string | null
+          serial: string | null
+          status: Database["public"]["Enums"]["headset_status"]
+          storage_free_bytes: number | null
+          storage_total_bytes: number | null
+          updated_at: string
+        }
+        Insert: {
+          app_version?: string | null
+          battery_percent?: number | null
+          created_at?: string
+          id?: string
+          last_seen_at?: string | null
+          model?: string | null
+          name: string
+          paired_at?: string | null
+          paired_by?: string | null
+          serial?: string | null
+          status?: Database["public"]["Enums"]["headset_status"]
+          storage_free_bytes?: number | null
+          storage_total_bytes?: number | null
+          updated_at?: string
+        }
+        Update: {
+          app_version?: string | null
+          battery_percent?: number | null
+          created_at?: string
+          id?: string
+          last_seen_at?: string | null
+          model?: string | null
+          name?: string
+          paired_at?: string | null
+          paired_by?: string | null
+          serial?: string | null
+          status?: Database["public"]["Enums"]["headset_status"]
+          storage_free_bytes?: number | null
+          storage_total_bytes?: number | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      pairing_codes: {
+        Row: {
+          claimed_at: string | null
+          claimed_by_headset_id: string | null
+          code: string
+          created_at: string
+          expires_at: string
+          failed_attempts: number
+          id: string
+          pending_model: string | null
+          pending_serial: string | null
+        }
+        Insert: {
+          claimed_at?: string | null
+          claimed_by_headset_id?: string | null
+          code: string
+          created_at?: string
+          expires_at: string
+          failed_attempts?: number
+          id?: string
+          pending_model?: string | null
+          pending_serial?: string | null
+        }
+        Update: {
+          claimed_at?: string | null
+          claimed_by_headset_id?: string | null
+          code?: string
+          created_at?: string
+          expires_at?: string
+          failed_attempts?: number
+          id?: string
+          pending_model?: string | null
+          pending_serial?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pairing_codes_claimed_by_headset_id_fkey"
+            columns: ["claimed_by_headset_id"]
+            isOneToOne: false
+            referencedRelation: "headsets"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      playlist_videos: {
+        Row: {
+          added_at: string
+          playlist_id: string
+          position: number
+          video_id: string
+        }
+        Insert: {
+          added_at?: string
+          playlist_id: string
+          position?: number
+          video_id: string
+        }
+        Update: {
+          added_at?: string
+          playlist_id?: string
+          position?: number
+          video_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "playlist_videos_playlist_id_fkey"
+            columns: ["playlist_id"]
+            isOneToOne: false
+            referencedRelation: "playlists"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "playlist_videos_video_id_fkey"
+            columns: ["video_id"]
+            isOneToOne: false
+            referencedRelation: "videos"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      playlists: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          description: string | null
+          id: string
+          name: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          id?: string
+          name: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          id?: string
+          name?: string
+          updated_at?: string
+        }
+        Relationships: []
       }
       profiles: {
         Row: {
@@ -199,6 +449,56 @@ export type Database = {
           },
         ]
       }
+      sync_reports: {
+        Row: {
+          deleted_count: number
+          details: Json | null
+          downloaded_count: number
+          error_message: string | null
+          failed_count: number
+          finished_at: string | null
+          headset_id: string
+          id: string
+          started_at: string
+          status: Database["public"]["Enums"]["sync_status"]
+          total_bytes: number
+        }
+        Insert: {
+          deleted_count?: number
+          details?: Json | null
+          downloaded_count?: number
+          error_message?: string | null
+          failed_count?: number
+          finished_at?: string | null
+          headset_id: string
+          id?: string
+          started_at?: string
+          status?: Database["public"]["Enums"]["sync_status"]
+          total_bytes?: number
+        }
+        Update: {
+          deleted_count?: number
+          details?: Json | null
+          downloaded_count?: number
+          error_message?: string | null
+          failed_count?: number
+          finished_at?: string | null
+          headset_id?: string
+          id?: string
+          started_at?: string
+          status?: Database["public"]["Enums"]["sync_status"]
+          total_bytes?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sync_reports_headset_id_fkey"
+            columns: ["headset_id"]
+            isOneToOne: false
+            referencedRelation: "headsets"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       user_roles: {
         Row: {
           created_at: string
@@ -281,6 +581,8 @@ export type Database = {
     Enums: {
       agent_platform: "windows" | "macos" | "linux"
       app_role: "admin" | "operator"
+      assignment_target: "headset" | "group" | "all"
+      headset_status: "pending" | "active" | "revoked"
       library_type: "location" | "animation"
       sync_job_status:
         | "pending"
@@ -288,6 +590,7 @@ export type Database = {
         | "completed"
         | "failed"
         | "cancelled"
+      sync_status: "started" | "success" | "partial" | "failed"
       vr_format: "360_mono" | "180_mono" | "360_stereo" | "180_stereo" | "flat"
     }
     CompositeTypes: {
@@ -418,6 +721,8 @@ export const Constants = {
     Enums: {
       agent_platform: ["windows", "macos", "linux"],
       app_role: ["admin", "operator"],
+      assignment_target: ["headset", "group", "all"],
+      headset_status: ["pending", "active", "revoked"],
       library_type: ["location", "animation"],
       sync_job_status: [
         "pending",
@@ -426,6 +731,7 @@ export const Constants = {
         "failed",
         "cancelled",
       ],
+      sync_status: ["started", "success", "partial", "failed"],
       vr_format: ["360_mono", "180_mono", "360_stereo", "180_stereo", "flat"],
     },
   },
