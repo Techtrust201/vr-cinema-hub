@@ -201,10 +201,15 @@ export type Database = {
       headsets: {
         Row: {
           app_version: string | null
+          applied_manifest_version: number
           battery_percent: number | null
           created_at: string
+          desired_manifest_version: number
           id: string
+          last_manifest_at: string | null
           last_seen_at: string | null
+          last_sync_at: string | null
+          last_sync_status: Database["public"]["Enums"]["sync_status"] | null
           model: string | null
           name: string
           paired_at: string | null
@@ -217,10 +222,15 @@ export type Database = {
         }
         Insert: {
           app_version?: string | null
+          applied_manifest_version?: number
           battery_percent?: number | null
           created_at?: string
+          desired_manifest_version?: number
           id?: string
+          last_manifest_at?: string | null
           last_seen_at?: string | null
+          last_sync_at?: string | null
+          last_sync_status?: Database["public"]["Enums"]["sync_status"] | null
           model?: string | null
           name: string
           paired_at?: string | null
@@ -233,10 +243,15 @@ export type Database = {
         }
         Update: {
           app_version?: string | null
+          applied_manifest_version?: number
           battery_percent?: number | null
           created_at?: string
+          desired_manifest_version?: number
           id?: string
+          last_manifest_at?: string | null
           last_seen_at?: string | null
+          last_sync_at?: string | null
+          last_sync_status?: Database["public"]["Enums"]["sync_status"] | null
           model?: string | null
           name?: string
           paired_at?: string | null
@@ -248,6 +263,41 @@ export type Database = {
           updated_at?: string
         }
         Relationships: []
+      }
+      manifest_versions: {
+        Row: {
+          cause: string | null
+          created_at: string
+          headset_id: string
+          payload: Json
+          playlist_id: string | null
+          version: number
+        }
+        Insert: {
+          cause?: string | null
+          created_at?: string
+          headset_id: string
+          payload: Json
+          playlist_id?: string | null
+          version: number
+        }
+        Update: {
+          cause?: string | null
+          created_at?: string
+          headset_id?: string
+          payload?: Json
+          playlist_id?: string | null
+          version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "manifest_versions_headset_id_fkey"
+            columns: ["headset_id"]
+            isOneToOne: false
+            referencedRelation: "headsets"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       pairing_codes: {
         Row: {
@@ -457,6 +507,8 @@ export type Database = {
       }
       sync_reports: {
         Row: {
+          applied_manifest_version: number | null
+          cause: string | null
           deleted_count: number
           details: Json | null
           downloaded_count: number
@@ -465,11 +517,17 @@ export type Database = {
           finished_at: string | null
           headset_id: string
           id: string
+          local_video_count: number | null
+          playlist_id: string | null
+          remote_video_count: number | null
           started_at: string
           status: Database["public"]["Enums"]["sync_status"]
           total_bytes: number
+          visible_video_count: number | null
         }
         Insert: {
+          applied_manifest_version?: number | null
+          cause?: string | null
           deleted_count?: number
           details?: Json | null
           downloaded_count?: number
@@ -478,11 +536,17 @@ export type Database = {
           finished_at?: string | null
           headset_id: string
           id?: string
+          local_video_count?: number | null
+          playlist_id?: string | null
+          remote_video_count?: number | null
           started_at?: string
           status?: Database["public"]["Enums"]["sync_status"]
           total_bytes?: number
+          visible_video_count?: number | null
         }
         Update: {
+          applied_manifest_version?: number | null
+          cause?: string | null
           deleted_count?: number
           details?: Json | null
           downloaded_count?: number
@@ -491,9 +555,13 @@ export type Database = {
           finished_at?: string | null
           headset_id?: string
           id?: string
+          local_video_count?: number | null
+          playlist_id?: string | null
+          remote_video_count?: number | null
           started_at?: string
           status?: Database["public"]["Enums"]["sync_status"]
           total_bytes?: number
+          visible_video_count?: number | null
         }
         Relationships: [
           {
@@ -582,12 +650,22 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      bump_headset_versions: {
+        Args: { _cause: string; _headset_ids: string[] }
+        Returns: undefined
+      }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
           _user_id: string
         }
         Returns: boolean
+      }
+      headsets_for_playlist: {
+        Args: { _playlist_id: string }
+        Returns: {
+          headset_id: string
+        }[]
       }
     }
     Enums: {
@@ -602,7 +680,13 @@ export type Database = {
         | "completed"
         | "failed"
         | "cancelled"
-      sync_status: "started" | "success" | "partial" | "failed"
+      sync_status:
+        | "started"
+        | "success"
+        | "partial"
+        | "failed"
+        | "no_change"
+        | "pending"
       video_projection: "360" | "180" | "flat"
       video_stereo_mode: "mono" | "top_bottom" | "side_by_side" | "unknown"
       vr_format: "360_mono" | "180_mono" | "360_stereo" | "180_stereo" | "flat"
@@ -745,7 +829,14 @@ export const Constants = {
         "failed",
         "cancelled",
       ],
-      sync_status: ["started", "success", "partial", "failed"],
+      sync_status: [
+        "started",
+        "success",
+        "partial",
+        "failed",
+        "no_change",
+        "pending",
+      ],
       video_projection: ["360", "180", "flat"],
       video_stereo_mode: ["mono", "top_bottom", "side_by_side", "unknown"],
       vr_format: ["360_mono", "180_mono", "360_stereo", "180_stereo", "flat"],
