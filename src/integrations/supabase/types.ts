@@ -255,9 +255,11 @@ export type Database = {
           claimed_by_headset_id: string | null
           code: string
           created_at: string
+          device_token: string | null
           expires_at: string
           failed_attempts: number
           id: string
+          pairing_secret: string
           pending_model: string | null
           pending_serial: string | null
         }
@@ -266,9 +268,11 @@ export type Database = {
           claimed_by_headset_id?: string | null
           code: string
           created_at?: string
+          device_token?: string | null
           expires_at: string
           failed_attempts?: number
           id?: string
+          pairing_secret: string
           pending_model?: string | null
           pending_serial?: string | null
         }
@@ -277,9 +281,11 @@ export type Database = {
           claimed_by_headset_id?: string | null
           code?: string
           created_at?: string
+          device_token?: string | null
           expires_at?: string
           failed_attempts?: number
           id?: string
+          pairing_secret?: string
           pending_model?: string | null
           pending_serial?: string | null
         }
