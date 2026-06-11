@@ -22,3 +22,7 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Secrets / Supabase CLI temp
+secret_key.png
+supabase/.temp/
