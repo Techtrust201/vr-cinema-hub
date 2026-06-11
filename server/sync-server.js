@@ -176,25 +176,25 @@ app.get(["/api/device-ip/:serial", "/device-ip/:serial"], (req, res) => {
   const { serial } = req.params;
   if (!checkAdb()) return res.status(503).json({ error: "ADB not found in PATH" });
   try {
-    // Try wlan0 first (Meta Quest standard), fall back to full ip route
     let ip = null;
+    // Try `ip route` first — works reliably on Meta Quest (proven via shell)
     try {
-      const out = execSync(`adb -s ${serial} shell ip addr show wlan0`, {
+      const out = execSync(`adb -s ${serial} shell ip route`, {
         encoding: "utf8",
         timeout: 5000,
       });
-      const match = out.match(/inet\s+([\d.]+)\//);
+      const match = out.match(/src\s+([\d.]+)/);
       if (match) ip = match[1];
     } catch {}
 
     if (!ip) {
-      // Fallback: parse ip route
+      // Fallback: ip addr show wlan0
       try {
-        const out = execSync(`adb -s ${serial} shell ip route`, {
+        const out = execSync(`adb -s ${serial} shell ip addr show wlan0`, {
           encoding: "utf8",
           timeout: 5000,
         });
-        const match = out.match(/src\s+([\d.]+)/);
+        const match = out.match(/inet\s+([\d.]+)\//);
         if (match) ip = match[1];
       } catch {}
     }
@@ -224,22 +224,30 @@ app.get(["/api/device-status/:serial", "/device-status/:serial"], (req, res) => 
     let storageUsedGB = 0;
     let storageTotalGB = 0;
     try {
-      const dfOut = execSync(`adb -s ${serial} shell df /sdcard`, { encoding: "utf8", timeout: 5000 });
-      const lines = dfOut.split("\n").filter((l) => l.includes("/sdcard") || l.match(/\d+/));
-      const dataLine = lines.find((l) => l.match(/\d{4,}/));
+      // Use -h (human readable) — proven to work on Quest, returns values like "103G 5.9G"
+      const dfOut = execSync(`adb -s ${serial} shell df -h /sdcard`, { encoding: "utf8", timeout: 5000 });
+      // Find the data line: contains a size suffix (G/M/K) and a percent
+      const lines = dfOut.split("\n");
+      const dataLine = lines.find((l) => /\d+(\.\d+)?[KMG]\s+\d+(\.\d+)?[KMG]/.test(l));
       if (dataLine) {
         const parts = dataLine.trim().split(/\s+/);
         const parseSize = (s) => {
           if (!s) return 0;
           const n = parseFloat(s);
+          if (isNaN(n)) return 0;
           if (s.endsWith("G")) return n;
           if (s.endsWith("M")) return n / 1024;
-          if (s.endsWith("K") || !isNaN(n)) return n / (1024 * 1024);
-          return 0;
+          if (s.endsWith("T")) return n * 1024;
+          if (s.endsWith("K")) return n / (1024 * 1024);
+          return n; // assume GB
         };
-        if (parts.length >= 4) {
-          storageTotalGB = parseSize(parts[1]);
-          storageUsedGB = parseSize(parts[2]);
+        // df -h columns: Filesystem Size Used Avail Use% Mounted
+        // But on Quest "/dev/fuse" may wrap — the data line might start with Size if Filesystem on previous line.
+        // Heuristic: find first part ending with G/M/K/T as Size
+        const sizeIdx = parts.findIndex((p) => /^\d+(\.\d+)?[KMGT]$/.test(p));
+        if (sizeIdx >= 0 && parts.length > sizeIdx + 1) {
+          storageTotalGB = parseSize(parts[sizeIdx]);
+          storageUsedGB = parseSize(parts[sizeIdx + 1]);
         }
       }
     } catch {}
