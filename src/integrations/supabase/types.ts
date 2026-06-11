@@ -14,16 +14,281 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      agents: {
+        Row: {
+          created_at: string
+          id: string
+          last_seen_at: string | null
+          name: string
+          paired_at: string | null
+          pairing_code: string | null
+          pairing_expires_at: string | null
+          platform: Database["public"]["Enums"]["agent_platform"] | null
+          token: string | null
+          user_id: string
+          version: string | null
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          last_seen_at?: string | null
+          name?: string
+          paired_at?: string | null
+          pairing_code?: string | null
+          pairing_expires_at?: string | null
+          platform?: Database["public"]["Enums"]["agent_platform"] | null
+          token?: string | null
+          user_id: string
+          version?: string | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          last_seen_at?: string | null
+          name?: string
+          paired_at?: string | null
+          pairing_code?: string | null
+          pairing_expires_at?: string | null
+          platform?: Database["public"]["Enums"]["agent_platform"] | null
+          token?: string | null
+          user_id?: string
+          version?: string | null
+        }
+        Relationships: []
+      }
+      devices: {
+        Row: {
+          agent_id: string
+          battery: number | null
+          created_at: string
+          id: string
+          ip_address: string | null
+          last_seen_at: string | null
+          model: string | null
+          serial: string
+          status: string | null
+          storage_total_gb: number | null
+          storage_used_gb: number | null
+        }
+        Insert: {
+          agent_id: string
+          battery?: number | null
+          created_at?: string
+          id?: string
+          ip_address?: string | null
+          last_seen_at?: string | null
+          model?: string | null
+          serial: string
+          status?: string | null
+          storage_total_gb?: number | null
+          storage_used_gb?: number | null
+        }
+        Update: {
+          agent_id?: string
+          battery?: number | null
+          created_at?: string
+          id?: string
+          ip_address?: string | null
+          last_seen_at?: string | null
+          model?: string | null
+          serial?: string
+          status?: string | null
+          storage_total_gb?: number | null
+          storage_used_gb?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "devices_agent_id_fkey"
+            columns: ["agent_id"]
+            isOneToOne: false
+            referencedRelation: "agents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      profiles: {
+        Row: {
+          created_at: string
+          display_name: string | null
+          id: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          display_name?: string | null
+          id: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          display_name?: string | null
+          id?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      sync_jobs: {
+        Row: {
+          agent_id: string
+          created_at: string
+          created_by: string
+          device_id: string | null
+          device_serial: string
+          error_message: string | null
+          errors: number
+          finished_at: string | null
+          id: string
+          log: string[]
+          progress_pct: number
+          pushed: number
+          skipped: number
+          started_at: string | null
+          status: Database["public"]["Enums"]["sync_job_status"]
+          video_ids: string[]
+        }
+        Insert: {
+          agent_id: string
+          created_at?: string
+          created_by: string
+          device_id?: string | null
+          device_serial: string
+          error_message?: string | null
+          errors?: number
+          finished_at?: string | null
+          id?: string
+          log?: string[]
+          progress_pct?: number
+          pushed?: number
+          skipped?: number
+          started_at?: string | null
+          status?: Database["public"]["Enums"]["sync_job_status"]
+          video_ids?: string[]
+        }
+        Update: {
+          agent_id?: string
+          created_at?: string
+          created_by?: string
+          device_id?: string | null
+          device_serial?: string
+          error_message?: string | null
+          errors?: number
+          finished_at?: string | null
+          id?: string
+          log?: string[]
+          progress_pct?: number
+          pushed?: number
+          skipped?: number
+          started_at?: string | null
+          status?: Database["public"]["Enums"]["sync_job_status"]
+          video_ids?: string[]
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sync_jobs_agent_id_fkey"
+            columns: ["agent_id"]
+            isOneToOne: false
+            referencedRelation: "agents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sync_jobs_device_id_fkey"
+            columns: ["device_id"]
+            isOneToOne: false
+            referencedRelation: "devices"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      user_roles: {
+        Row: {
+          created_at: string
+          id: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          user_id?: string
+        }
+        Relationships: []
+      }
+      videos: {
+        Row: {
+          created_at: string
+          description: string | null
+          duration_seconds: number | null
+          format: Database["public"]["Enums"]["vr_format"]
+          id: string
+          library: Database["public"]["Enums"]["library_type"]
+          name: string
+          size_bytes: number
+          storage_path: string
+          thumbnail_url: string | null
+          updated_at: string
+          uploaded_by: string | null
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          duration_seconds?: number | null
+          format?: Database["public"]["Enums"]["vr_format"]
+          id?: string
+          library?: Database["public"]["Enums"]["library_type"]
+          name: string
+          size_bytes?: number
+          storage_path: string
+          thumbnail_url?: string | null
+          updated_at?: string
+          uploaded_by?: string | null
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          duration_seconds?: number | null
+          format?: Database["public"]["Enums"]["vr_format"]
+          id?: string
+          library?: Database["public"]["Enums"]["library_type"]
+          name?: string
+          size_bytes?: number
+          storage_path?: string
+          thumbnail_url?: string | null
+          updated_at?: string
+          uploaded_by?: string | null
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      has_role: {
+        Args: {
+          _role: Database["public"]["Enums"]["app_role"]
+          _user_id: string
+        }
+        Returns: boolean
+      }
     }
     Enums: {
-      [_ in never]: never
+      agent_platform: "windows" | "macos" | "linux"
+      app_role: "admin" | "operator"
+      library_type: "location" | "animation"
+      sync_job_status:
+        | "pending"
+        | "running"
+        | "completed"
+        | "failed"
+        | "cancelled"
+      vr_format: "360_mono" | "180_mono" | "360_stereo" | "180_stereo" | "flat"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -150,6 +415,18 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      agent_platform: ["windows", "macos", "linux"],
+      app_role: ["admin", "operator"],
+      library_type: ["location", "animation"],
+      sync_job_status: [
+        "pending",
+        "running",
+        "completed",
+        "failed",
+        "cancelled",
+      ],
+      vr_format: ["360_mono", "180_mono", "360_stereo", "180_stereo", "flat"],
+    },
   },
 } as const
