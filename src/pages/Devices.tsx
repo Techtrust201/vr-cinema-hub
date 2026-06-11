@@ -11,30 +11,51 @@ interface AddDeviceModalProps {
   initialSerial?: string;
   initialName?: string;
   initialIp?: string;
+  initialStorageTotalGB?: number;
+  initialStorageUsedGB?: number;
+  initialBattery?: number;
+  initialConnected?: boolean;
+  detectedFromAdb?: boolean;
 }
 
-function AddDeviceModal({ onClose, initialSerial = "", initialName = "", initialIp = "" }: AddDeviceModalProps) {
+function AddDeviceModal({
+  onClose,
+  initialSerial = "",
+  initialName = "",
+  initialIp = "",
+  initialStorageTotalGB,
+  initialStorageUsedGB = 0,
+  initialBattery = 0,
+  initialConnected = false,
+  detectedFromAdb = false,
+}: AddDeviceModalProps) {
   const addDevice = useVRStore((s) => s.addDevice);
+  const existingDevices = useVRStore((s) => s.devices);
   const [form, setForm] = useState({
     name: initialName,
     serial: initialSerial,
     type: "location" as LibraryType,
     ipAddress: initialIp,
-    storageTotalGB: 128,
+    storageTotalGB: initialStorageTotalGB && initialStorageTotalGB > 0 ? initialStorageTotalGB : 128,
   });
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.name.trim() || !form.serial.trim()) return;
+    const serial = form.serial.trim().toUpperCase();
+    if (existingDevices.some((d) => d.serial === serial)) {
+      toast.error(`Casque ${serial} déjà ajouté`);
+      return;
+    }
     const device: Device = {
       id: `d-${Date.now()}`,
-      serial: form.serial.trim().toUpperCase(),
+      serial,
       name: form.name.trim(),
       type: form.type,
-      status: "disconnected",
-      storageUsedGB: 0,
+      status: initialConnected ? "connected" : "disconnected",
+      storageUsedGB: initialStorageUsedGB,
       storageTotalGB: form.storageTotalGB,
-      battery: 0,
+      battery: initialBattery,
       lastSyncAt: null,
       ipAddress: form.ipAddress.trim() || null,
     };
@@ -62,6 +83,16 @@ function AddDeviceModal({ onClose, initialSerial = "", initialName = "", initial
           <h3 className="text-base font-semibold">Ajouter un casque</h3>
           <button onClick={onClose} className="p-1 rounded text-muted-foreground hover:bg-muted/50"><X size={15} /></button>
         </div>
+        {detectedFromAdb && (
+          <div className="mb-4 px-3 py-2 rounded-lg border border-[hsl(140_70%_40%_/_0.3)] bg-[hsl(140_70%_40%_/_0.08)] text-[11px] text-[hsl(140_70%_55%)] flex items-center gap-2">
+            <Check size={12} />
+            <span>
+              Détecté via ADB
+              {initialBattery > 0 && ` — batterie ${initialBattery}%`}
+              {initialStorageTotalGB && initialStorageTotalGB > 0 && ` — stockage ${initialStorageUsedGB.toFixed(1)}/${initialStorageTotalGB} GB`}
+            </span>
+          </div>
+        )}
         <form onSubmit={handleSubmit} className="space-y-4">
           {field("Nom du casque *", (
             <input
@@ -118,7 +149,10 @@ function AddDeviceModal({ onClose, initialSerial = "", initialName = "", initial
               onChange={(e) => setForm({ ...form, storageTotalGB: Number(e.target.value) })}
               className={inputCls}
             >
-              {[64, 128, 256, 512].map((v) => <option key={v} value={v}>{v} GB</option>)}
+              {Array.from(new Set([64, 128, 256, 512, form.storageTotalGB]))
+                .filter((v) => v > 0)
+                .sort((a, b) => a - b)
+                .map((v) => <option key={v} value={v}>{v} GB</option>)}
             </select>
           ))}
           <div className="flex gap-2 pt-1">
