@@ -15,7 +15,6 @@ import Playlists from "./pages/Playlists";
 import Sync from "./pages/Sync";
 import Settings from "./pages/Settings";
 import Stats from "./pages/Stats";
-import Export from "./pages/Export";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -34,13 +33,11 @@ const App = () => (
                 <Route path="/" element={<Index />} />
                 <Route path="/libraries" element={<Libraries />} />
                 <Route path="/headsets" element={<Headsets />} />
-                <Route path="/devices" element={<Headsets />} />
                 <Route path="/groups" element={<Groups />} />
                 <Route path="/playlists" element={<Playlists />} />
                 <Route path="/sync" element={<Sync />} />
                 <Route path="/settings" element={<Settings />} />
                 <Route path="/stats" element={<Stats />} />
-                <Route path="/export" element={<Export />} />
               </Route>
             </Route>
             <Route path="*" element={<NotFound />} />
