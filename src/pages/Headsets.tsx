@@ -173,6 +173,22 @@ export default function Headsets() {
   );
 }
 
+function SyncBadge({ h }: { h: HeadsetRow }) {
+  const desired = h.desired_manifest_version ?? 0;
+  const applied = h.applied_manifest_version ?? 0;
+  if (h.status !== "active") return null;
+  if (desired === 0 && applied === 0) {
+    return <span className="hidden md:inline-flex text-[10px] px-2 py-0.5 rounded bg-muted/60 text-muted-foreground">jamais sync</span>;
+  }
+  if (h.last_sync_status === "failed") {
+    return <span className="hidden md:inline-flex text-[10px] px-2 py-0.5 rounded bg-destructive/15 text-destructive">erreur</span>;
+  }
+  if (applied < desired) {
+    return <span className="hidden md:inline-flex text-[10px] px-2 py-0.5 rounded bg-[hsl(35_90%_55%_/_0.15)] text-[hsl(35_90%_55%)]">en attente v{desired}</span>;
+  }
+  return <span className="hidden md:inline-flex text-[10px] px-2 py-0.5 rounded bg-[hsl(140_70%_40%_/_0.15)] text-[hsl(140_70%_55%)]">à jour v{applied}</span>;
+}
+
 function PairModal({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
   const [code, setCode] = useState("");
   const [name, setName] = useState("");
