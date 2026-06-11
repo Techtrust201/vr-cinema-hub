@@ -65,10 +65,19 @@ export default function Playlists() {
 
   async function toggleVideo(playlistId: string, videoId: string, present: boolean) {
     if (present) {
-      await supabase.from("playlist_videos").delete().match({ playlist_id: playlistId, video_id: videoId });
+      const { error } = await supabase
+        .from("playlist_videos")
+        .delete()
+        .match({ playlist_id: playlistId, video_id: videoId });
+      if (error) { toast.error(`Retrait impossible : ${error.message}`); return; }
+      toast.success("Vidéo retirée de la playlist");
     } else {
       const max = Math.max(0, ...pvideos.filter((x) => x.playlist_id === playlistId).map((x) => x.position));
-      await supabase.from("playlist_videos").insert({ playlist_id: playlistId, video_id: videoId, position: max + 1 });
+      const { error } = await supabase
+        .from("playlist_videos")
+        .insert({ playlist_id: playlistId, video_id: videoId, position: max + 1 });
+      if (error) { toast.error(`Ajout impossible : ${error.message}`); return; }
+      toast.success("Vidéo ajoutée à la playlist");
     }
     fetchAll();
   }
@@ -78,9 +87,18 @@ export default function Playlists() {
       a.playlist_id === playlistId && a.target_type === targetType && a.target_id === targetId,
     );
     if (existing) {
-      await supabase.from("assignments").delete().eq("id", existing.id);
+      const { error } = await supabase.from("assignments").delete().eq("id", existing.id);
+      if (error) { toast.error(`Suppression impossible : ${error.message}`); return; }
     } else {
-      await supabase.from("assignments").insert({ playlist_id: playlistId, target_type: targetType, target_id: targetId });
+      const itemsForPl = pvideos.filter((x) => x.playlist_id === playlistId);
+      if (itemsForPl.length === 0) {
+        toast.warning("Cette playlist est vide — ajoute au moins une vidéo avant de la diffuser.");
+        return;
+      }
+      const { error } = await supabase
+        .from("assignments")
+        .insert({ playlist_id: playlistId, target_type: targetType, target_id: targetId });
+      if (error) { toast.error(`Diffusion impossible : ${error.message}`); return; }
     }
     fetchAll();
   }

@@ -84,6 +84,14 @@ Deno.serve(async (req) => {
 
   const playlistIds = Array.from(new Set((assignments ?? []).map((a) => a.playlist_id)));
 
+  console.log(JSON.stringify({
+    fn: "headset-manifest",
+    headset_id: headset.id,
+    groups: groupIds.length,
+    assignments: assignments?.length ?? 0,
+    playlists: playlistIds.length,
+  }));
+
   let videoRows: any[] = [];
   if (playlistIds.length > 0) {
     const { data: pvideos } = await supabase
@@ -92,6 +100,12 @@ Deno.serve(async (req) => {
       .in("playlist_id", playlistIds);
     videoRows = pvideos ?? [];
   }
+
+  console.log(JSON.stringify({
+    fn: "headset-manifest",
+    headset_id: headset.id,
+    playlist_video_rows: videoRows.length,
+  }));
 
   // Dedup by video_id.
   const seen = new Set<string>();
