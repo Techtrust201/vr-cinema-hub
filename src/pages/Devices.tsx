@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useVRStore, Device, LibraryType } from "@/store/vrStore";
 import DeviceCard from "@/components/dashboard/DeviceCard";
-import { RefreshCw, Usb, Wifi, Info, Plus, X, Scan, ChevronRight, Loader2, Signal } from "lucide-react";
+import { RefreshCw, Usb, Wifi, Info, Plus, X, Scan, ChevronRight, Loader2, Signal, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { checkServer, fetchServerDevices, fetchDeviceStatus, connectDevice, prepareTcpip, fetchDeviceIp, ServerDevice, ServerStatus } from "@/lib/serverApi";
@@ -275,10 +275,11 @@ function WifiConnectModal({ onClose, initialIp = "" }: WifiConnectModalProps) {
 interface AdbDetectPanelProps {
   adbDevices: ServerDevice[];
   onAdd: (d: ServerDevice) => void;
+  prefillingSerial: string | null;
   onClose: () => void;
 }
 
-function AdbDetectPanel({ adbDevices, onAdd, onClose }: AdbDetectPanelProps) {
+function AdbDetectPanel({ adbDevices, onAdd, prefillingSerial, onClose }: AdbDetectPanelProps) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/70 backdrop-blur-sm" onClick={onClose}>
       <div
@@ -322,9 +323,14 @@ function AdbDetectPanel({ adbDevices, onAdd, onClose }: AdbDetectPanelProps) {
                 </span>
                 <button
                   onClick={() => onAdd(d)}
-                  className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-[hsl(var(--vr-cyan)_/_0.1)] border border-[hsl(var(--vr-cyan)_/_0.3)] text-[hsl(var(--vr-cyan))] text-xs font-medium hover:bg-[hsl(var(--vr-cyan)_/_0.18)] transition-colors active:scale-95 shrink-0"
+                  disabled={prefillingSerial !== null}
+                  className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-[hsl(var(--vr-cyan)_/_0.1)] border border-[hsl(var(--vr-cyan)_/_0.3)] text-[hsl(var(--vr-cyan))] text-xs font-medium hover:bg-[hsl(var(--vr-cyan)_/_0.18)] transition-colors active:scale-95 shrink-0 disabled:opacity-50"
                 >
-                  Ajouter <ChevronRight size={11} />
+                  {prefillingSerial === d.serial ? (
+                    <><Loader2 size={11} className="animate-spin" /> Lecture…</>
+                  ) : (
+                    <>Ajouter <ChevronRight size={11} /></>
+                  )}
                 </button>
               </div>
             ))}
