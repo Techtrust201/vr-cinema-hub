@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useVRStore, Device, LibraryType } from "@/store/vrStore";
 import DeviceCard from "@/components/dashboard/DeviceCard";
-import { RefreshCw, Usb, Wifi, Info, Plus, X, Scan, ChevronRight, Loader2, Signal } from "lucide-react";
+import { RefreshCw, Usb, Wifi, Info, Plus, X, Scan, ChevronRight, Loader2, Signal, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { checkServer, fetchServerDevices, fetchDeviceStatus, connectDevice, prepareTcpip, fetchDeviceIp, ServerDevice, ServerStatus } from "@/lib/serverApi";
@@ -11,30 +11,51 @@ interface AddDeviceModalProps {
   initialSerial?: string;
   initialName?: string;
   initialIp?: string;
+  initialStorageTotalGB?: number;
+  initialStorageUsedGB?: number;
+  initialBattery?: number;
+  initialConnected?: boolean;
+  detectedFromAdb?: boolean;
 }
 
-function AddDeviceModal({ onClose, initialSerial = "", initialName = "", initialIp = "" }: AddDeviceModalProps) {
+function AddDeviceModal({
+  onClose,
+  initialSerial = "",
+  initialName = "",
+  initialIp = "",
+  initialStorageTotalGB,
+  initialStorageUsedGB = 0,
+  initialBattery = 0,
+  initialConnected = false,
+  detectedFromAdb = false,
+}: AddDeviceModalProps) {
   const addDevice = useVRStore((s) => s.addDevice);
+  const existingDevices = useVRStore((s) => s.devices);
   const [form, setForm] = useState({
     name: initialName,
     serial: initialSerial,
     type: "location" as LibraryType,
     ipAddress: initialIp,
-    storageTotalGB: 128,
+    storageTotalGB: initialStorageTotalGB && initialStorageTotalGB > 0 ? initialStorageTotalGB : 128,
   });
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.name.trim() || !form.serial.trim()) return;
+    const serial = form.serial.trim().toUpperCase();
+    if (existingDevices.some((d) => d.serial === serial)) {
+      toast.error(`Casque ${serial} déjà ajouté`);
+      return;
+    }
     const device: Device = {
       id: `d-${Date.now()}`,
-      serial: form.serial.trim().toUpperCase(),
+      serial,
       name: form.name.trim(),
       type: form.type,
-      status: "disconnected",
-      storageUsedGB: 0,
+      status: initialConnected ? "connected" : "disconnected",
+      storageUsedGB: initialStorageUsedGB,
       storageTotalGB: form.storageTotalGB,
-      battery: 0,
+      battery: initialBattery,
       lastSyncAt: null,
       ipAddress: form.ipAddress.trim() || null,
     };
@@ -62,6 +83,16 @@ function AddDeviceModal({ onClose, initialSerial = "", initialName = "", initial
           <h3 className="text-base font-semibold">Ajouter un casque</h3>
           <button onClick={onClose} className="p-1 rounded text-muted-foreground hover:bg-muted/50"><X size={15} /></button>
         </div>
+        {detectedFromAdb && (
+          <div className="mb-4 px-3 py-2 rounded-lg border border-[hsl(140_70%_40%_/_0.3)] bg-[hsl(140_70%_40%_/_0.08)] text-[11px] text-[hsl(140_70%_55%)] flex items-center gap-2">
+            <Check size={12} />
+            <span>
+              Détecté via ADB
+              {initialBattery > 0 && ` — batterie ${initialBattery}%`}
+              {initialStorageTotalGB && initialStorageTotalGB > 0 && ` — stockage ${initialStorageUsedGB.toFixed(1)}/${initialStorageTotalGB} GB`}
+            </span>
+          </div>
+        )}
         <form onSubmit={handleSubmit} className="space-y-4">
           {field("Nom du casque *", (
             <input
@@ -118,7 +149,10 @@ function AddDeviceModal({ onClose, initialSerial = "", initialName = "", initial
               onChange={(e) => setForm({ ...form, storageTotalGB: Number(e.target.value) })}
               className={inputCls}
             >
-              {[64, 128, 256, 512].map((v) => <option key={v} value={v}>{v} GB</option>)}
+              {Array.from(new Set([64, 128, 256, 512, form.storageTotalGB]))
+                .filter((v) => v > 0)
+                .sort((a, b) => a - b)
+                .map((v) => <option key={v} value={v}>{v} GB</option>)}
             </select>
           ))}
           <div className="flex gap-2 pt-1">
@@ -241,10 +275,11 @@ function WifiConnectModal({ onClose, initialIp = "" }: WifiConnectModalProps) {
 interface AdbDetectPanelProps {
   adbDevices: ServerDevice[];
   onAdd: (d: ServerDevice) => void;
+  prefillingSerial: string | null;
   onClose: () => void;
 }
 
-function AdbDetectPanel({ adbDevices, onAdd, onClose }: AdbDetectPanelProps) {
+function AdbDetectPanel({ adbDevices, onAdd, prefillingSerial, onClose }: AdbDetectPanelProps) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/70 backdrop-blur-sm" onClick={onClose}>
       <div
@@ -288,9 +323,14 @@ function AdbDetectPanel({ adbDevices, onAdd, onClose }: AdbDetectPanelProps) {
                 </span>
                 <button
                   onClick={() => onAdd(d)}
-                  className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-[hsl(var(--vr-cyan)_/_0.1)] border border-[hsl(var(--vr-cyan)_/_0.3)] text-[hsl(var(--vr-cyan))] text-xs font-medium hover:bg-[hsl(var(--vr-cyan)_/_0.18)] transition-colors active:scale-95 shrink-0"
+                  disabled={prefillingSerial !== null}
+                  className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-[hsl(var(--vr-cyan)_/_0.1)] border border-[hsl(var(--vr-cyan)_/_0.3)] text-[hsl(var(--vr-cyan))] text-xs font-medium hover:bg-[hsl(var(--vr-cyan)_/_0.18)] transition-colors active:scale-95 shrink-0 disabled:opacity-50"
                 >
-                  Ajouter <ChevronRight size={11} />
+                  {prefillingSerial === d.serial ? (
+                    <><Loader2 size={11} className="animate-spin" /> Lecture…</>
+                  ) : (
+                    <>Ajouter <ChevronRight size={11} /></>
+                  )}
                 </button>
               </div>
             ))}
@@ -307,7 +347,17 @@ export default function Devices() {
   const [addModalOpen, setAddModalOpen] = useState(false);
   const [wifiModalOpen, setWifiModalOpen] = useState(false);
   const [wifiInitialIp, setWifiInitialIp] = useState("");
-  const [addInitial, setAddInitial] = useState<{ serial?: string; name?: string; ip?: string }>({});
+  const [addInitial, setAddInitial] = useState<{
+    serial?: string;
+    name?: string;
+    ip?: string;
+    storageTotalGB?: number;
+    storageUsedGB?: number;
+    battery?: number;
+    connected?: boolean;
+    fromAdb?: boolean;
+  }>({});
+  const [prefillingSerial, setPrefillingSerial] = useState<string | null>(null);
 
   // ADB detect state
   const [serverStatus, setServerStatus] = useState<ServerStatus>("checking");
@@ -406,13 +456,34 @@ export default function Devices() {
     }
   };
 
-  const handleAddFromAdb = (d: ServerDevice) => {
+  const handleAddFromAdb = async (d: ServerDevice) => {
+    if (devices.some((dev) => dev.serial.toUpperCase() === d.serial.toUpperCase())) {
+      toast.error(`Casque ${d.serial} déjà ajouté`);
+      return;
+    }
+    setPrefillingSerial(d.serial);
+    const baseUrl = settings.publicServerUrl?.trim() || settings.serverUrl?.trim() || undefined;
+    const [statusRes, ipRes] = await Promise.allSettled([
+      fetchDeviceStatus(d.serial, baseUrl, settings.authToken),
+      d.ipAddress ? Promise.resolve({ ip: d.ipAddress }) : fetchDeviceIp(d.serial, baseUrl, settings.authToken),
+    ]);
+    const status = statusRes.status === "fulfilled" ? statusRes.value : null;
+    const ip = ipRes.status === "fulfilled" ? ipRes.value.ip : (d.ipAddress ?? "");
+    if (!status || ipRes.status === "rejected") {
+      toast.info("Certaines infos n'ont pas pu être lues — vérifiez avant d'ajouter");
+    }
     setAdbPanelOpen(false);
     setAddInitial({
       serial: d.serial,
       name: d.model ? `Meta ${d.model}` : "Meta Quest",
-      ip: d.ipAddress ?? "",
+      ip,
+      storageTotalGB: status?.storageTotalGB && status.storageTotalGB > 0 ? Math.round(status.storageTotalGB) : undefined,
+      storageUsedGB: status?.storageUsedGB ?? 0,
+      battery: status?.battery ?? 0,
+      connected: d.status === "device",
+      fromAdb: true,
     });
+    setPrefillingSerial(null);
     setAddModalOpen(true);
   };
 
@@ -608,6 +679,11 @@ export default function Devices() {
           initialSerial={addInitial.serial}
           initialName={addInitial.name}
           initialIp={addInitial.ip}
+          initialStorageTotalGB={addInitial.storageTotalGB}
+          initialStorageUsedGB={addInitial.storageUsedGB}
+          initialBattery={addInitial.battery}
+          initialConnected={addInitial.connected}
+          detectedFromAdb={addInitial.fromAdb}
         />
       )}
       {wifiModalOpen && (
@@ -617,6 +693,7 @@ export default function Devices() {
         <AdbDetectPanel
           adbDevices={adbDevices}
           onAdd={handleAddFromAdb}
+          prefillingSerial={prefillingSerial}
           onClose={() => setAdbPanelOpen(false)}
         />
       )}
