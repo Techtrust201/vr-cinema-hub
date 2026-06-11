@@ -17,6 +17,9 @@ interface HeadsetRow {
   battery_percent: number | null;
   app_version: string | null;
   paired_at: string | null;
+  desired_manifest_version?: number;
+  applied_manifest_version?: number;
+  last_sync_status?: string | null;
 }
 
 function formatRelative(iso: string | null): string {
@@ -140,6 +143,7 @@ export default function Headsets() {
                   </p>
                   <p className="text-xs text-muted-foreground/70 mt-0.5">Vu {formatRelative(h.last_seen_at)}</p>
                 </div>
+                <SyncBadge h={h} />
                 <div className="hidden md:flex items-center gap-4 text-xs text-muted-foreground">
                   {h.battery_percent != null && (
                     <span className="flex items-center gap-1"><Battery size={12} /> {h.battery_percent}%</span>
