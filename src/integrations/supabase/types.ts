@@ -535,7 +535,9 @@ export type Database = {
           id: string
           library: Database["public"]["Enums"]["library_type"]
           name: string
+          projection: Database["public"]["Enums"]["video_projection"]
           size_bytes: number
+          stereo_mode: Database["public"]["Enums"]["video_stereo_mode"]
           storage_path: string
           thumbnail_url: string | null
           updated_at: string
@@ -549,7 +551,9 @@ export type Database = {
           id?: string
           library?: Database["public"]["Enums"]["library_type"]
           name: string
+          projection?: Database["public"]["Enums"]["video_projection"]
           size_bytes?: number
+          stereo_mode?: Database["public"]["Enums"]["video_stereo_mode"]
           storage_path: string
           thumbnail_url?: string | null
           updated_at?: string
@@ -563,7 +567,9 @@ export type Database = {
           id?: string
           library?: Database["public"]["Enums"]["library_type"]
           name?: string
+          projection?: Database["public"]["Enums"]["video_projection"]
           size_bytes?: number
+          stereo_mode?: Database["public"]["Enums"]["video_stereo_mode"]
           storage_path?: string
           thumbnail_url?: string | null
           updated_at?: string
@@ -597,6 +603,8 @@ export type Database = {
         | "failed"
         | "cancelled"
       sync_status: "started" | "success" | "partial" | "failed"
+      video_projection: "360" | "180" | "flat"
+      video_stereo_mode: "mono" | "top_bottom" | "side_by_side" | "unknown"
       vr_format: "360_mono" | "180_mono" | "360_stereo" | "180_stereo" | "flat"
     }
     CompositeTypes: {
@@ -738,6 +746,8 @@ export const Constants = {
         "cancelled",
       ],
       sync_status: ["started", "success", "partial", "failed"],
+      video_projection: ["360", "180", "flat"],
+      video_stereo_mode: ["mono", "top_bottom", "side_by_side", "unknown"],
       vr_format: ["360_mono", "180_mono", "360_stereo", "180_stereo", "flat"],
     },
   },
