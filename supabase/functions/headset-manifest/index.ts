@@ -88,7 +88,7 @@ Deno.serve(async (req) => {
   if (playlistIds.length > 0) {
     const { data: pvideos } = await supabase
       .from("playlist_videos")
-      .select("video_id, position, videos(id, title, storage_path, size_bytes, checksum, content_type)")
+      .select("video_id, position, videos(id, name, storage_path, size_bytes, duration_seconds, format)")
       .in("playlist_id", playlistIds);
     videoRows = pvideos ?? [];
   }
@@ -112,10 +112,10 @@ Deno.serve(async (req) => {
 
     videos.push({
       id: v.id,
-      title: v.title,
+      name: v.name,
       size_bytes: v.size_bytes,
-      checksum: v.checksum,
-      content_type: v.content_type,
+      duration_seconds: v.duration_seconds,
+      format: v.format,
       download_url,
     });
   }
