@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { CheckCircle2, XCircle, Loader2, AlertTriangle, RefreshCw, Clock, WifiOff, Zap } from "lucide-react";
+import { CheckCircle2, XCircle, Loader2, AlertTriangle, RefreshCw, Clock, WifiOff, Zap, Bug } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
@@ -82,15 +82,21 @@ export default function Sync() {
   const [headsets, setHeadsets] = useState<Headset[]>([]);
   const [loading, setLoading] = useState(true);
   const [forcing, setForcing] = useState<Record<string, boolean>>({});
+  const [diagJson, setDiagJson] = useState<string | null>(null);
+  const [diagLoading, setDiagLoading] = useState<string | null>(null);
+  const [playlists, setPlaylists] = useState<Array<{ id: string; name: string }>>([]);
+  const [diagPlaylistId, setDiagPlaylistId] = useState<string>("");
 
   const fetchAll = useCallback(async () => {
     setLoading(true);
-    const [r, h] = await Promise.all([
+    const [r, h, p] = await Promise.all([
       supabase.from("sync_reports").select("*").order("started_at", { ascending: false }).limit(100),
       supabase.from("headsets").select("id, name, status, last_seen_at, last_manifest_at, last_sync_at, last_sync_status, desired_manifest_version, applied_manifest_version").order("name"),
+      supabase.from("playlists").select("id, name").order("name"),
     ]);
     setReports((r.data ?? []) as SyncReport[]);
     setHeadsets((h.data ?? []) as Headset[]);
+    setPlaylists((p.data ?? []) as Array<{ id: string; name: string }>);
     setLoading(false);
   }, []);
 
@@ -120,6 +126,37 @@ export default function Sync() {
     } else {
       toast.success(`Resync demandée pour ${h.name}`);
     }
+  }
+
+  async function runHeadsetDiag(h: Headset) {
+    setDiagLoading(h.id);
+    const { data, error } = await supabase.rpc("diagnose_headset_sync", { _headset_id: h.id });
+    setDiagLoading(null);
+    if (error) {
+      if (error.message?.includes("admin_required")) toast.error("Réservé aux administrateurs.");
+      else toast.error("Diag erreur : " + error.message);
+      return;
+    }
+    console.info("[SyncDiag] headset", h.name, data);
+    setDiagJson(JSON.stringify(data, null, 2));
+    toast.success(`Diagnostic casque ${h.name} — voir console + panneau.`);
+  }
+
+  async function runPlaylistDiag() {
+    if (!diagPlaylistId) { toast.error("Sélectionnez une playlist."); return; }
+    setDiagLoading("playlist");
+    const { data, error } = await supabase.rpc("diagnose_playlist_impact", { _playlist_id: diagPlaylistId });
+    setDiagLoading(null);
+    if (error) {
+      if (error.message?.includes("admin_required")) toast.error("Réservé aux administrateurs.");
+      else toast.error("Diag erreur : " + error.message);
+      return;
+    }
+    console.info("[SyncDiag] playlist", diagPlaylistId, data);
+    setDiagJson(JSON.stringify(data, null, 2));
+    const impacted = (data as any)?.impacted_headsets ?? [];
+    if ((data as any)?.discrepancy) toast.warning(`Discrepancy : ${impacted.length} vs trigger ${(data as any)?.trigger_target_count}.`);
+    else toast.success(`${impacted.length} casque(s) impacté(s).`);
   }
 
   if (loading) return <div className="p-6 text-muted-foreground flex items-center gap-2"><Loader2 className="animate-spin" size={16} /> Chargement…</div>;
