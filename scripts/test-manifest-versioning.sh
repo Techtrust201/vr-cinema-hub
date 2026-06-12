@@ -30,6 +30,16 @@ FAILED=0
 
 auth=(-H "Authorization: Bearer $DEVICE_TOKEN" -H "apikey: $ANON_KEY" -H "Content-Type: application/json")
 
+# DELETE/UPDATE on playlist_videos require service role (psql role only has SELECT/INSERT).
+SR_KEY="${SUPABASE_SERVICE_ROLE_KEY:-}"
+REST="https://${PROJECT_ID}.supabase.co/rest/v1"
+rest_delete() {
+  # $1 = path with filters, e.g. "playlist_videos?playlist_id=eq.X&video_id=eq.Y"
+  [ -z "$SR_KEY" ] && { echo "(skip rest_delete: SUPABASE_SERVICE_ROLE_KEY not set)"; return 1; }
+  curl -sS -X DELETE "${REST}/$1" \
+    -H "apikey: $SR_KEY" -H "Authorization: Bearer $SR_KEY" -H "Prefer: return=minimal"
+}
+
 # Decode sub from JWT
 HEADSET_ID=$(echo "$DEVICE_TOKEN" | cut -d. -f2 | base64 -d 2>/dev/null | jq -r .sub)
 [ -z "$HEADSET_ID" ] && { echo "Cannot decode headset_id from DEVICE_TOKEN"; exit 1; }
@@ -122,7 +132,7 @@ echo "  → log de rejet attendu (voir supabase edge_function_logs headset-repor
 echo ""
 echo "── E. Suppression de la vidéo de la playlist ──"
 V_BEFORE_E=$(desired)
-psql -c "DELETE FROM playlist_videos WHERE playlist_id='$PLAYLIST_ID' AND video_id='$VIDEO_ID'" >/dev/null
+rest_delete "playlist_videos?playlist_id=eq.${PLAYLIST_ID}&video_id=eq.${VIDEO_ID}" >/dev/null
 V_AFTER_E=$(desired)
 [ "$V_AFTER_E" -gt "$V_BEFORE_E" ] && pass "desired: $V_BEFORE_E → $V_AFTER_E" || fail "desired n'a pas bumpé"
 manifest2=$(curl -sS -X POST "$BASE/headset-manifest" "${auth[@]}")
