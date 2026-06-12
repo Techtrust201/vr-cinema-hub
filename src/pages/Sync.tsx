@@ -39,12 +39,19 @@ type HeadsetSyncState = "up_to_date" | "pending" | "syncing" | "error" | "offlin
 
 function headsetState(h: Headset): HeadsetSyncState {
   const seenAge = h.last_seen_at ? Date.now() - new Date(h.last_seen_at).getTime() : Infinity;
+  const reportAge = h.last_sync_at ? Date.now() - new Date(h.last_sync_at).getTime() : Infinity;
   const offline = seenAge > 10 * 60 * 1000;
-  if (h.desired_manifest_version === 0 && !h.last_sync_at) return offline ? "offline" : "never";
-  if (h.last_sync_status === "failed") return "error";
-  if (h.last_sync_status === "started") return "syncing";
-  if (h.applied_manifest_version < h.desired_manifest_version) return offline ? "offline" : "pending";
-  return offline ? "offline" : "up_to_date";
+  // 1. Offline always wins
+  if (offline) return "offline";
+  // 2. Recent error
+  if (h.last_sync_status === "failed" && reportAge < 30 * 60 * 1000) return "error";
+  // 3. Recently started + not yet finished
+  if (h.last_sync_status === "started" && reportAge < 10 * 60 * 1000) return "syncing";
+  // 4. Behind
+  if (h.applied_manifest_version < h.desired_manifest_version) return "pending";
+  // 5. Up to date (or never reported but desired is 0)
+  if (h.desired_manifest_version === 0 && !h.last_sync_at) return "never";
+  return "up_to_date";
 }
 
 function fmtTime(iso: string) {
