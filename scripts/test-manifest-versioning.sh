@@ -43,9 +43,9 @@ applied() { psql -tAc "SELECT applied_manifest_version FROM headsets WHERE id='$
 echo ""
 echo "▶ Setup: create video, playlist, assignment targeting this headset…"
 USER_ID=$(psql -tAc "SELECT uploaded_by FROM videos WHERE uploaded_by IS NOT NULL LIMIT 1")
-[ -z "$USER_ID" ] && USER_ID=$(psql -tAc "SELECT id FROM auth.users LIMIT 1")
-
-VIDEO_ID=$(psql -tAc "INSERT INTO videos (name, storage_path, format, projection, stereo_mode, size_bytes, duration_seconds, uploaded_by) VALUES ('test-versioning.mp4', 'test/test-versioning.mp4', 'mp4', '360', 'mono', 100, 10, '$USER_ID') RETURNING id")
+[ -z "$USER_ID" ] && USER_ID=$(psql -tAc "SELECT id FROM profiles LIMIT 1")
+SUFFIX=$(date +%s)
+VIDEO_ID=$(psql -tAc "INSERT INTO videos (name, storage_path, format, projection, stereo_mode, size_bytes, duration_seconds, uploaded_by) VALUES ('test-versioning-${SUFFIX}.mp4', 'test/test-versioning-${SUFFIX}.mp4', '360_mono', '360', 'mono', 100, 10, '$USER_ID') RETURNING id")
 PLAYLIST_ID=$(psql -tAc "INSERT INTO playlists (name, created_by) VALUES ('test-versioning-pl', '$USER_ID') RETURNING id")
 ASSIGN_ID=$(psql -tAc "INSERT INTO assignments (playlist_id, target_type, target_id, created_by) VALUES ('$PLAYLIST_ID', 'headset', '$HEADSET_ID', '$USER_ID') RETURNING id")
 V0=$(desired)
