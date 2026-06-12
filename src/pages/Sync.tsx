@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { CheckCircle2, XCircle, Loader2, AlertTriangle, RefreshCw, Clock, WifiOff, Zap } from "lucide-react";
+import { CheckCircle2, XCircle, Loader2, AlertTriangle, RefreshCw, Clock, WifiOff, Zap, Bug } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
@@ -82,15 +82,21 @@ export default function Sync() {
   const [headsets, setHeadsets] = useState<Headset[]>([]);
   const [loading, setLoading] = useState(true);
   const [forcing, setForcing] = useState<Record<string, boolean>>({});
+  const [diagJson, setDiagJson] = useState<string | null>(null);
+  const [diagLoading, setDiagLoading] = useState<string | null>(null);
+  const [playlists, setPlaylists] = useState<Array<{ id: string; name: string }>>([]);
+  const [diagPlaylistId, setDiagPlaylistId] = useState<string>("");
 
   const fetchAll = useCallback(async () => {
     setLoading(true);
-    const [r, h] = await Promise.all([
+    const [r, h, p] = await Promise.all([
       supabase.from("sync_reports").select("*").order("started_at", { ascending: false }).limit(100),
       supabase.from("headsets").select("id, name, status, last_seen_at, last_manifest_at, last_sync_at, last_sync_status, desired_manifest_version, applied_manifest_version").order("name"),
+      supabase.from("playlists").select("id, name").order("name"),
     ]);
     setReports((r.data ?? []) as SyncReport[]);
     setHeadsets((h.data ?? []) as Headset[]);
+    setPlaylists((p.data ?? []) as Array<{ id: string; name: string }>);
     setLoading(false);
   }, []);
 
@@ -120,6 +126,37 @@ export default function Sync() {
     } else {
       toast.success(`Resync demandée pour ${h.name}`);
     }
+  }
+
+  async function runHeadsetDiag(h: Headset) {
+    setDiagLoading(h.id);
+    const { data, error } = await supabase.rpc("diagnose_headset_sync", { _headset_id: h.id });
+    setDiagLoading(null);
+    if (error) {
+      if (error.message?.includes("admin_required")) toast.error("Réservé aux administrateurs.");
+      else toast.error("Diag erreur : " + error.message);
+      return;
+    }
+    console.info("[SyncDiag] headset", h.name, data);
+    setDiagJson(JSON.stringify(data, null, 2));
+    toast.success(`Diagnostic casque ${h.name} — voir console + panneau.`);
+  }
+
+  async function runPlaylistDiag() {
+    if (!diagPlaylistId) { toast.error("Sélectionnez une playlist."); return; }
+    setDiagLoading("playlist");
+    const { data, error } = await supabase.rpc("diagnose_playlist_impact", { _playlist_id: diagPlaylistId });
+    setDiagLoading(null);
+    if (error) {
+      if (error.message?.includes("admin_required")) toast.error("Réservé aux administrateurs.");
+      else toast.error("Diag erreur : " + error.message);
+      return;
+    }
+    console.info("[SyncDiag] playlist", diagPlaylistId, data);
+    setDiagJson(JSON.stringify(data, null, 2));
+    const impacted = (data as any)?.impacted_headsets ?? [];
+    if ((data as any)?.discrepancy) toast.warning(`Discrepancy : ${impacted.length} vs trigger ${(data as any)?.trigger_target_count}.`);
+    else toast.success(`${impacted.length} casque(s) impacté(s).`);
   }
 
   if (loading) return <div className="p-6 text-muted-foreground flex items-center gap-2"><Loader2 className="animate-spin" size={16} /> Chargement…</div>;
@@ -172,14 +209,24 @@ export default function Sync() {
                     </p>
                   </div>
                   {isAdmin && (
-                    <button
-                      onClick={() => forceResync(h)}
-                      disabled={forcing[h.id]}
-                      className="px-3 py-1.5 text-xs rounded-lg border border-border/50 text-muted-foreground hover:text-foreground hover:bg-muted/40 transition flex items-center gap-1.5 disabled:opacity-40"
-                    >
-                      {forcing[h.id] ? <Loader2 size={12} className="animate-spin" /> : <Zap size={12} />}
-                      Forcer resync
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => runHeadsetDiag(h)}
+                        disabled={diagLoading === h.id}
+                        className="px-3 py-1.5 text-xs rounded-lg border border-border/50 text-muted-foreground hover:text-foreground hover:bg-muted/40 transition flex items-center gap-1.5 disabled:opacity-40"
+                      >
+                        {diagLoading === h.id ? <Loader2 size={12} className="animate-spin" /> : <Bug size={12} />}
+                        Diag
+                      </button>
+                      <button
+                        onClick={() => forceResync(h)}
+                        disabled={forcing[h.id]}
+                        className="px-3 py-1.5 text-xs rounded-lg border border-border/50 text-muted-foreground hover:text-foreground hover:bg-muted/40 transition flex items-center gap-1.5 disabled:opacity-40"
+                      >
+                        {forcing[h.id] ? <Loader2 size={12} className="animate-spin" /> : <Zap size={12} />}
+                        Forcer resync
+                      </button>
+                    </div>
                   )}
                 </div>
               );
@@ -227,6 +274,44 @@ export default function Sync() {
             })}
           </div>
         )
+      )}
+
+      {isAdmin && tab === "state" && (
+        <div className="mt-6 p-4 rounded-xl border border-border/40 bg-[hsl(var(--vr-surface))] space-y-3">
+          <div className="flex items-center gap-2">
+            <Bug size={16} className="text-[hsl(var(--vr-violet))]" />
+            <h2 className="font-semibold">Diagnostic playlist</h2>
+          </div>
+          <p className="text-xs text-muted-foreground">Analyse l'impact réel d'une playlist : assignments directs, via groupes, ou globaux, et liste dédupliquée des casques qui doivent bumper.</p>
+          <div className="flex gap-2 items-center">
+            <select
+              value={diagPlaylistId}
+              onChange={(e) => setDiagPlaylistId(e.target.value)}
+              className="flex-1 px-3 py-2 rounded-lg bg-background border border-border/50 focus:outline-none focus:border-[hsl(var(--vr-violet))] text-sm"
+            >
+              <option value="">— Sélectionner une playlist —</option>
+              {playlists.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </select>
+            <button
+              onClick={runPlaylistDiag}
+              disabled={diagLoading === "playlist"}
+              className="px-4 py-2 text-sm rounded-lg bg-[hsl(var(--vr-violet))] text-white flex items-center gap-2 hover:opacity-90 disabled:opacity-40"
+            >
+              {diagLoading === "playlist" ? <Loader2 size={14} className="animate-spin" /> : <Bug size={14} />}
+              Analyser
+            </button>
+          </div>
+        </div>
+      )}
+
+      {isAdmin && diagJson && (
+        <div className="mt-4 p-4 rounded-xl border border-border/40 bg-[hsl(var(--vr-surface))]">
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="text-sm font-semibold">Résultat diagnostic</h3>
+            <button onClick={() => setDiagJson(null)} className="text-xs text-muted-foreground hover:text-foreground">Fermer</button>
+          </div>
+          <pre className="text-[11px] font-mono bg-background/50 p-3 rounded-lg overflow-auto max-h-[60vh] whitespace-pre-wrap break-all">{diagJson}</pre>
+        </div>
       )}
     </div>
   );
