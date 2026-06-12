@@ -657,6 +657,11 @@ export type Database = {
         Args: { _cause: string; _headset_ids: string[] }
         Returns: undefined
       }
+      diagnose_headset_sync: { Args: { _headset_id: string }; Returns: Json }
+      diagnose_playlist_impact: {
+        Args: { _playlist_id: string }
+        Returns: Json
+      }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
