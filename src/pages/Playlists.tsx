@@ -3,6 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { ListVideo, Plus, Trash2, Loader2, Check, Globe2, Headset as HeadsetIcon, FolderTree } from "lucide-react";
 import { toast } from "sonner";
+import { isPermissionError } from "@/lib/supabaseErrors";
 
 interface Playlist { id: string; name: string; description: string | null; }
 interface Video { id: string; name: string; }
@@ -64,20 +65,86 @@ export default function Playlists() {
   }
 
   async function toggleVideo(playlistId: string, videoId: string, present: boolean) {
+    const playlist = playlists.find((p) => p.id === playlistId);
+    const video = videos.find((v) => v.id === videoId);
+    const op = present ? "delete" : "insert";
+    console.info("[PlaylistDebug] toggling", {
+      playlist_id: playlistId, playlist_name: playlist?.name,
+      video_id: videoId, video_name: video?.name, op,
+    });
+
+    // 1. Snapshot impacted headsets BEFORE
+    const beforeRes = await supabase.rpc("diagnose_playlist_impact", { _playlist_id: playlistId });
+    const beforeImpacted = (beforeRes.data as any)?.impacted_headsets ?? [];
+    console.info("[PlaylistDebug] impacted_headsets_before", beforeImpacted);
+    if (beforeRes.error) console.warn("[PlaylistDebug] diag before error", beforeRes.error);
+
+    // 2. Mutation
+    let mutationError: { code?: string; message?: string } | null = null;
     if (present) {
       const { error } = await supabase
-        .from("playlist_videos")
-        .delete()
+        .from("playlist_videos").delete()
         .match({ playlist_id: playlistId, video_id: videoId });
-      if (error) { toast.error(`Retrait impossible : ${error.message}`); return; }
-      toast.success("Vidéo retirée de la playlist");
+      mutationError = error;
     } else {
       const max = Math.max(0, ...pvideos.filter((x) => x.playlist_id === playlistId).map((x) => x.position));
       const { error } = await supabase
         .from("playlist_videos")
         .insert({ playlist_id: playlistId, video_id: videoId, position: max + 1 });
-      if (error) { toast.error(`Ajout impossible : ${error.message}`); return; }
-      toast.success("Vidéo ajoutée à la playlist");
+      mutationError = error;
+    }
+
+    if (mutationError) {
+      console.error("[PlaylistDebug] mutation rejected", mutationError);
+      if (isPermissionError(mutationError)) {
+        toast.error("Modification non enregistrée : votre compte n'a pas les droits administrateur.");
+      } else {
+        toast.error(`Échec : ${mutationError.message}`);
+      }
+      return;
+    }
+
+    // 3. Refetch ciblé pour confirmer
+    const { data: row } = await supabase
+      .from("playlist_videos").select("*")
+      .eq("playlist_id", playlistId).eq("video_id", videoId).maybeSingle();
+    const db_confirmed = present ? row === null : row !== null;
+    console.info("[PlaylistDebug] mutation result", { op, success: true, db_confirmed, row_after: row });
+    if (!db_confirmed) {
+      toast.error("Mutation non confirmée par la base — réessayer.");
+      console.warn("[PlaylistDebug] db_confirmed=false");
+      return;
+    }
+
+    // 4. Snapshot AFTER + diff bumped/not_bumped
+    const afterRes = await supabase.rpc("diagnose_playlist_impact", { _playlist_id: playlistId });
+    const afterImpacted = (afterRes.data as any)?.impacted_headsets ?? [];
+    console.info("[PlaylistDebug] impacted_headsets_after", afterImpacted);
+
+    const beforeMap = new Map<string, number>(
+      beforeImpacted.map((h: any) => [h.headset_id, h.desired]),
+    );
+    const bumped: Array<{ id: string; name: string; before: number; after: number }> = [];
+    const not_bumped: Array<{ id: string; name: string; desired: number }> = [];
+    for (const h of afterImpacted as any[]) {
+      const before = beforeMap.get(h.headset_id) ?? 0;
+      if (h.desired > before) {
+        bumped.push({ id: h.headset_id, name: h.headset_name, before, after: h.desired });
+      } else {
+        not_bumped.push({ id: h.headset_id, name: h.headset_name, desired: h.desired });
+      }
+    }
+    console.info("[PlaylistDebug] bumped_headsets", bumped);
+    console.info("[PlaylistDebug] not_bumped_headsets", not_bumped);
+
+    if (afterImpacted.length === 0) {
+      toast.success(present ? "Vidéo retirée de la playlist." : "Vidéo ajoutée à la playlist.");
+    } else if (not_bumped.length > 0) {
+      toast.warning(`Sync incomplète : ${not_bumped.length} casque(s) impacté(s) n'ont pas bumpé. Voir console.`);
+    } else {
+      toast.success(
+        `${present ? "Vidéo retirée" : "Vidéo ajoutée"} — ${bumped.length} casque(s) à resynchroniser.`,
+      );
     }
     fetchAll();
   }
@@ -86,9 +153,18 @@ export default function Playlists() {
     const existing = assignments.find((a) =>
       a.playlist_id === playlistId && a.target_type === targetType && a.target_id === targetId,
     );
+    const playlist = playlists.find((p) => p.id === playlistId);
+    console.info("[PlaylistDebug] toggleAssignment", {
+      playlist_id: playlistId, playlist_name: playlist?.name,
+      target_type: targetType, target_id: targetId, op: existing ? "delete" : "insert",
+    });
+    const beforeRes = await supabase.rpc("diagnose_playlist_impact", { _playlist_id: playlistId });
+    console.info("[PlaylistDebug] impacted_headsets_before", (beforeRes.data as any)?.impacted_headsets ?? []);
+
+    let mutationError: { code?: string; message?: string } | null = null;
     if (existing) {
       const { error } = await supabase.from("assignments").delete().eq("id", existing.id);
-      if (error) { toast.error(`Suppression impossible : ${error.message}`); return; }
+      mutationError = error;
     } else {
       const itemsForPl = pvideos.filter((x) => x.playlist_id === playlistId);
       if (itemsForPl.length === 0) {
@@ -98,8 +174,21 @@ export default function Playlists() {
       const { error } = await supabase
         .from("assignments")
         .insert({ playlist_id: playlistId, target_type: targetType, target_id: targetId });
-      if (error) { toast.error(`Diffusion impossible : ${error.message}`); return; }
+      mutationError = error;
     }
+
+    if (mutationError) {
+      console.error("[PlaylistDebug] assignment rejected", mutationError);
+      if (isPermissionError(mutationError)) {
+        toast.error("Modification non enregistrée : votre compte n'a pas les droits administrateur.");
+      } else {
+        toast.error(`Échec : ${mutationError.message}`);
+      }
+      return;
+    }
+
+    const afterRes = await supabase.rpc("diagnose_playlist_impact", { _playlist_id: playlistId });
+    console.info("[PlaylistDebug] impacted_headsets_after", (afterRes.data as any)?.impacted_headsets ?? []);
     fetchAll();
   }
 
