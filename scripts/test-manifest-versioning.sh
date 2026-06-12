@@ -45,9 +45,10 @@ echo "▶ Setup: create video, playlist, assignment targeting this headset…"
 USER_ID=$(psql -tAc "SELECT uploaded_by FROM videos WHERE uploaded_by IS NOT NULL LIMIT 1")
 [ -z "$USER_ID" ] && USER_ID=$(psql -tAc "SELECT id FROM profiles LIMIT 1")
 SUFFIX=$(date +%s)
-VIDEO_ID=$(psql -tAc "INSERT INTO videos (name, storage_path, format, projection, stereo_mode, size_bytes, duration_seconds, uploaded_by) VALUES ('test-versioning-${SUFFIX}.mp4', 'test/test-versioning-${SUFFIX}.mp4', '360_mono', '360', 'mono', 100, 10, '$USER_ID') RETURNING id")
-PLAYLIST_ID=$(psql -tAc "INSERT INTO playlists (name, created_by) VALUES ('test-versioning-pl', '$USER_ID') RETURNING id")
-ASSIGN_ID=$(psql -tAc "INSERT INTO assignments (playlist_id, target_type, target_id, created_by) VALUES ('$PLAYLIST_ID', 'headset', '$HEADSET_ID', '$USER_ID') RETURNING id")
+pq() { psql -tAc "$1" | head -1 | tr -d '\r\n '; }
+VIDEO_ID=$(pq "INSERT INTO videos (name, storage_path, format, projection, stereo_mode, size_bytes, duration_seconds, uploaded_by) VALUES ('test-versioning-${SUFFIX}.mp4', 'test/test-versioning-${SUFFIX}.mp4', '360_mono', '360', 'mono', 100, 10, '$USER_ID') RETURNING id")
+PLAYLIST_ID=$(pq "INSERT INTO playlists (name, created_by) VALUES ('test-versioning-pl-${SUFFIX}', '$USER_ID') RETURNING id")
+ASSIGN_ID=$(pq "INSERT INTO assignments (playlist_id, target_type, target_id, created_by) VALUES ('$PLAYLIST_ID', 'headset', '$HEADSET_ID', '$USER_ID') RETURNING id")
 V0=$(desired)
 echo "  desired=$V0 after assignment"
 
