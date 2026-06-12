@@ -207,6 +207,7 @@ export type Database = {
           desired_manifest_version: number
           id: string
           last_manifest_at: string | null
+          last_manifest_cause: string | null
           last_seen_at: string | null
           last_sync_at: string | null
           last_sync_status: Database["public"]["Enums"]["sync_status"] | null
@@ -228,6 +229,7 @@ export type Database = {
           desired_manifest_version?: number
           id?: string
           last_manifest_at?: string | null
+          last_manifest_cause?: string | null
           last_seen_at?: string | null
           last_sync_at?: string | null
           last_sync_status?: Database["public"]["Enums"]["sync_status"] | null
@@ -249,6 +251,7 @@ export type Database = {
           desired_manifest_version?: number
           id?: string
           last_manifest_at?: string | null
+          last_manifest_cause?: string | null
           last_seen_at?: string | null
           last_sync_at?: string | null
           last_sync_status?: Database["public"]["Enums"]["sync_status"] | null
