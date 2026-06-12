@@ -209,14 +209,24 @@ export default function Sync() {
                     </p>
                   </div>
                   {isAdmin && (
-                    <button
-                      onClick={() => forceResync(h)}
-                      disabled={forcing[h.id]}
-                      className="px-3 py-1.5 text-xs rounded-lg border border-border/50 text-muted-foreground hover:text-foreground hover:bg-muted/40 transition flex items-center gap-1.5 disabled:opacity-40"
-                    >
-                      {forcing[h.id] ? <Loader2 size={12} className="animate-spin" /> : <Zap size={12} />}
-                      Forcer resync
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => runHeadsetDiag(h)}
+                        disabled={diagLoading === h.id}
+                        className="px-3 py-1.5 text-xs rounded-lg border border-border/50 text-muted-foreground hover:text-foreground hover:bg-muted/40 transition flex items-center gap-1.5 disabled:opacity-40"
+                      >
+                        {diagLoading === h.id ? <Loader2 size={12} className="animate-spin" /> : <Bug size={12} />}
+                        Diag
+                      </button>
+                      <button
+                        onClick={() => forceResync(h)}
+                        disabled={forcing[h.id]}
+                        className="px-3 py-1.5 text-xs rounded-lg border border-border/50 text-muted-foreground hover:text-foreground hover:bg-muted/40 transition flex items-center gap-1.5 disabled:opacity-40"
+                      >
+                        {forcing[h.id] ? <Loader2 size={12} className="animate-spin" /> : <Zap size={12} />}
+                        Forcer resync
+                      </button>
+                    </div>
                   )}
                 </div>
               );
