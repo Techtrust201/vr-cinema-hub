@@ -74,6 +74,15 @@ Deno.serve(async (req) => {
   const knownVersion = Number(cleanedEtag);
   const forceFullParam = (url.searchParams.get("force_full") ?? url.searchParams.get("force") ?? "").toLowerCase();
   const forceFull = forceFullParam === "1" || forceFullParam === "true";
+  console.log(JSON.stringify({
+    fn: "headset-manifest", phase: "decide",
+    headset_id: headset.id,
+    known_version_raw: rawEtag,
+    known_version_parsed: knownVersion,
+    force_full: forceFull,
+    desired_version: desiredVersion,
+    will_return_304: !forceFull && Number.isFinite(knownVersion) && knownVersion > 0 && knownVersion === desiredVersion,
+  }));
   if (!forceFull && Number.isFinite(knownVersion) && knownVersion > 0 && knownVersion === desiredVersion) {
     console.log(JSON.stringify({
       fn: "headset-manifest",
