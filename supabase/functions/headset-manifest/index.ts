@@ -10,6 +10,12 @@ const SIGNED_URL_TTL_SECONDS = 15 * 60;
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+  if (req.method !== "GET" && req.method !== "POST") {
+    return new Response(JSON.stringify({ error: "Method not allowed" }), {
+      status: 405,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
 
   const token = extractBearer(req);
   if (!token) {
@@ -34,7 +40,7 @@ Deno.serve(async (req) => {
   // Make sure the headset still exists and is active.
   const { data: headset, error: hErr } = await supabase
     .from("headsets")
-    .select("id, status, desired_manifest_version, applied_manifest_version")
+    .select("id, status, desired_manifest_version, applied_manifest_version, last_manifest_cause")
     .eq("id", claims.sub)
     .maybeSingle();
   if (hErr || !headset) {
@@ -61,20 +67,24 @@ Deno.serve(async (req) => {
 
   // Optional short-circuit: if the headset tells us the version it already
   // has and it matches what we'd serve, return 304 to skip URL signing.
+  // Accepts If-None-Match as: 42, "42", W/"42". Falls back to ?known_version=N.
   const url = new URL(req.url);
-  const knownVersion = Number(
-    req.headers.get("If-None-Match") ?? url.searchParams.get("known_version") ?? "",
-  );
-  if (Number.isFinite(knownVersion) && knownVersion > 0 && knownVersion === desiredVersion) {
+  const rawEtag = req.headers.get("If-None-Match") ?? url.searchParams.get("known_version") ?? "";
+  const cleanedEtag = rawEtag.replace(/^W\//, "").replace(/^"(.*)"$/, "$1").trim();
+  const knownVersion = Number(cleanedEtag);
+  const forceFullParam = (url.searchParams.get("force_full") ?? url.searchParams.get("force") ?? "").toLowerCase();
+  const forceFull = forceFullParam === "1" || forceFullParam === "true";
+  if (!forceFull && Number.isFinite(knownVersion) && knownVersion > 0 && knownVersion === desiredVersion) {
     console.log(JSON.stringify({
       fn: "headset-manifest",
       headset_id: headset.id,
       served: "304",
       manifest_version: desiredVersion,
     }));
+    console.log(`[headset-manifest] served_version=${desiredVersion} final_videos=0 (304)`);
     return new Response(null, {
       status: 304,
-      headers: { ...corsHeaders, "ETag": String(desiredVersion) },
+      headers: { ...corsHeaders, "ETag": `"${desiredVersion}"` },
     });
   }
 
@@ -201,7 +211,9 @@ Deno.serve(async (req) => {
     videos,
   };
 
-  // Snapshot for audit. Ignore conflicts (same version already stored).
+  // Snapshot for audit. Canonical payload: NO signed urls (they expire).
+  // Cause comes from headsets.last_manifest_cause (set by bump_headset_versions).
+  // We then reset last_manifest_cause to NULL so the next bump can write a fresh one.
   if (desiredVersion > 0) {
     await supabase
       .from("manifest_versions")
@@ -209,11 +221,15 @@ Deno.serve(async (req) => {
         headset_id: headset.id,
         version: desiredVersion,
         playlist_id: playlistId,
+        cause: headset.last_manifest_cause ?? null,
         payload: { ...payload, videos: videos.map((v) => ({ ...v, url: undefined, download_url: undefined })) },
       }, { onConflict: "headset_id,version" });
+    await supabase.from("headsets").update({ last_manifest_cause: null }).eq("id", headset.id);
   }
 
+  console.log(`[headset-manifest] served_version=${desiredVersion} final_videos=${videos.length}`);
+
   return new Response(JSON.stringify(payload), {
-    headers: { ...corsHeaders, "Content-Type": "application/json", "ETag": String(desiredVersion) },
+    headers: { ...corsHeaders, "Content-Type": "application/json", "ETag": `"${desiredVersion}"` },
   });
 });
