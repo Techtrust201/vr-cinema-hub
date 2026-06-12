@@ -33,7 +33,7 @@ Deno.serve(async (req) => {
   let body: {
     phase?: "started" | "finished";
     report_id?: string;
-    status?: "success" | "partial" | "failed" | "no_change";
+    status?: "success" | "partial" | "failed" | "no_change" | "pending" | "started";
     downloaded_count?: number;
     failed_count?: number;
     deleted_count?: number;
@@ -62,6 +62,11 @@ Deno.serve(async (req) => {
   );
 
   if (!body.phase || body.phase === "started") {
+    if (body.status && body.status === "pending") {
+      return new Response(JSON.stringify({
+        error: "pending is a server-computed state, not a report status",
+      }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
     const { data, error } = await supabase
       .from("sync_reports")
       .insert({
@@ -94,6 +99,12 @@ Deno.serve(async (req) => {
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
       );
     }
+    const allowed = new Set(["success", "partial", "failed", "no_change"]);
+    if (!allowed.has(body.status)) {
+      return new Response(JSON.stringify({
+        error: `status must be one of ${[...allowed].join(", ")} (pending is server-computed)`,
+      }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
     const nowIso = new Date().toISOString();
     const { error } = await supabase
       .from("sync_reports")
@@ -123,32 +134,58 @@ Deno.serve(async (req) => {
     }
 
     // Update headset.applied_manifest_version ONLY on success / no_change
-    // AND when the reported version is at least the current applied one.
+    // AND when the reported version passes ALL these checks:
+    //   - integer > 0
+    //   - >= current applied (no rollback)
+    //   - <= desired (no inventing a higher version than what we served)
+    //   - matches a row in manifest_versions(headset_id, version) we previously served
     const headsetUpdate: Record<string, unknown> = {
       last_sync_status: body.status,
       last_sync_at: nowIso,
     };
+    let applyReason = "skipped";
     if ((body.status === "success" || body.status === "no_change") &&
         typeof body.applied_manifest_version === "number" &&
+        Number.isInteger(body.applied_manifest_version) &&
         body.applied_manifest_version > 0) {
-      // Fetch current to compare (avoid going backwards).
+      const reported = body.applied_manifest_version;
       const { data: cur } = await supabase
         .from("headsets")
-        .select("applied_manifest_version")
+        .select("applied_manifest_version, desired_manifest_version")
         .eq("id", claims.sub)
         .maybeSingle();
-      if (!cur || body.applied_manifest_version >= (cur.applied_manifest_version ?? 0)) {
-        headsetUpdate.applied_manifest_version = body.applied_manifest_version;
+      const curApplied = cur?.applied_manifest_version ?? 0;
+      const curDesired = cur?.desired_manifest_version ?? 0;
+      if (reported < curApplied) {
+        applyReason = `rollback (reported=${reported} < applied=${curApplied})`;
+      } else if (reported > curDesired) {
+        applyReason = `above_desired (reported=${reported} > desired=${curDesired})`;
+      } else {
+        const { data: snap } = await supabase
+          .from("manifest_versions")
+          .select("version")
+          .eq("headset_id", claims.sub)
+          .eq("version", reported)
+          .maybeSingle();
+        if (!snap) {
+          applyReason = `unknown_version (no manifest_versions row for v${reported})`;
+        } else {
+          headsetUpdate.applied_manifest_version = reported;
+          applyReason = "ok";
+        }
       }
+    } else if (body.status === "success" || body.status === "no_change") {
+      applyReason = "missing_applied_manifest_version";
     }
     await supabase.from("headsets").update(headsetUpdate).eq("id", claims.sub);
 
-    console.log(JSON.stringify({
-      fn: "headset-report-sync",
-      headset_id: claims.sub,
-      status: body.status,
-      applied_version: body.applied_manifest_version,
-    }));
+    if (applyReason === "ok") {
+      console.log(`[SyncReport] applied version updated headset=${claims.sub} version=${body.applied_manifest_version}`);
+    } else if (applyReason === "skipped") {
+      console.log(`[SyncReport] report stored but applied version unchanged headset=${claims.sub} status=${body.status}`);
+    } else {
+      console.log(`[SyncReport] rejected invalid applied version headset=${claims.sub} reported=${body.applied_manifest_version} reason=${applyReason}`);
+    }
 
     return new Response(JSON.stringify({ ok: true }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },

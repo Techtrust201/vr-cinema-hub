@@ -1,0 +1,1 @@
+UPDATE public.headsets SET applied_manifest_version = 0 WHERE id IN ('b67e0e14-9b71-4f1b-9a34-0ff099526f98','d90e28fb-8cf0-47e8-aad8-a8ec566985ca','4fa32419-4a05-4d96-bc8d-479b50640b87');
