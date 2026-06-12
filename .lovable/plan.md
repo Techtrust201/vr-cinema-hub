@@ -1,125 +1,145 @@
-## Objectif
+## Plan final v2 — diagnostic généralisé par casque ET par playlist
 
-Faire en sorte que la page "Suivi des synchronisations" reflète la **réalité du casque**, pas la réalité du dashboard. Le vert n'apparaît plus quand on clique côté web — uniquement quand le casque Quest confirme avoir appliqué une version donnée.
+Objectif structurel : **toute modification d'une playlist doit bumper tous les casques qui dépendent de cette playlist, et seulement ceux-là.** Le diagnostic et les preuves couvrent les 4 chemins d'assignment (`headset` direct, `group`, `all`, multi-groupe avec dédup).
 
-## Modèle de données (migration)
+---
 
-### 1. Versionner le manifest par casque
+### 1. Migration unique — 2 fonctions de diagnostic + helper de comparaison
 
-Nouvelle colonne sur `headsets` :
-- `desired_manifest_version BIGINT NOT NULL DEFAULT 0` — incrémentée par le serveur dès qu'une mutation impacte ce casque.
-- `applied_manifest_version BIGINT NOT NULL DEFAULT 0` — mise à jour uniquement par le report du casque.
-- `last_manifest_at TIMESTAMPTZ` — dernier appel à `headset-manifest`.
+Toutes `SECURITY DEFINER`, `SET search_path = public, pg_temp`, garde admin en première instruction :
+```sql
+IF NOT public.has_role(auth.uid(), 'admin') THEN
+  RAISE EXCEPTION 'admin_required' USING ERRCODE = '42501';
+END IF;
+```
+`GRANT EXECUTE … TO authenticated;` sur chaque fonction.
 
-Le casque est `up_to_date` quand `applied = desired`, sinon `pending` (ou `stale` si pas de heartbeat depuis X minutes).
+#### 1a. `diagnose_headset_sync(_headset_id uuid) RETURNS jsonb`
+Identique au plan précédent : `headset`, `groups[]`, `assignments_effective[]`, `effective_playlists[]` (avec vidéos), `manifest_versions_recent[]`, `triggers_present`, `bump_dry_run`.
 
-### 2. Historique des versions
+`bump_dry_run` : choisit une playlist effective, tente INSERT temporaire d'une vidéo absente, sinon UPDATE `position = position` sur une ligne existante. Wrap dans bloc `BEGIN/EXCEPTION` qui `RAISE EXCEPTION 'ROLLBACK_DIAGNOSE_OK'` pour annuler. Retourne `{ method, would_bump, before_desired, after_desired_inside_transaction, rolled_back, reason }`.
 
-Nouvelle table `manifest_versions` (snapshot immuable du manifest émis) :
-- `headset_id`, `version` (BIGINT), `playlist_id`, `payload JSONB` (le manifest tel qu'envoyé), `cause TEXT` (ex: `playlist_video_added`), `created_at`.
-- PK composite `(headset_id, version)`.
-- Permet d'auditer "qu'a vraiment vu le casque" et de diagnostiquer les régressions.
+#### 1b. `diagnose_playlist_impact(_playlist_id uuid) RETURNS jsonb`
+Nouvelle fonction. Retourne :
+```jsonb
+{
+  "playlist": { "id", "name", "video_count" },
+  "assignments": {
+    "direct":  [{ "assignment_id", "headset_id", "headset_name" }],
+    "group":   [{ "assignment_id", "group_id", "group_name", "members": [{ "headset_id", "headset_name" }] }],
+    "all":     [{ "assignment_id" }]
+  },
+  "impacted_headsets": [
+    { "headset_id", "headset_name", "status", "desired", "applied",
+      "impact_paths": ["direct"] | ["group:<group_name>"] | ["all"] | ["group:A","group:B"],
+      "group_ids": [...], "group_names": [...] }
+    // dédupliqué par headset_id ; impact_paths contient TOUTES les voies d'impact
+  ],
+  "trigger_target_count":  <int>  // = SELECT count(*) FROM headsets_for_playlist(_playlist_id) — référence "source de vérité" du trigger
+}
+```
 
-### 3. Enrichir `sync_reports`
+Règle clé : `impacted_headsets` est calculé par UNION dédupliquée des trois sources (direct / group members / all = tous les `headsets WHERE status='active'`). Filtré à `status='active'` pour matcher `headsets_for_playlist`. Si `trigger_target_count != len(impacted_headsets)` → la fonction inclut un champ `discrepancy: true` (signal d'alarme).
 
-Ajout de colonnes :
-- `applied_manifest_version BIGINT` — version réellement appliquée.
-- `playlist_id UUID NULL` — playlist effective au moment du report.
-- `remote_video_count INT`, `local_video_count INT`, `visible_video_count INT`.
-- Extension du type enum `sync_status` avec `no_change` et `pending`.
+#### 1c. `diff_bump(_before jsonb, _after jsonb) RETURNS jsonb` (helper côté client)
+Optionnel ; ou faire le diff côté JS. Plus simple côté JS.
 
-### 4. Fonction SQL `bump_headset_versions(headset_ids uuid[], cause text)`
+### 2. Page Sync — boutons diagnostic admin
 
-`SECURITY DEFINER`. Incrémente `desired_manifest_version` pour chaque casque ciblé, log la cause. Réutilisée par toutes les mutations.
+Dans `src/pages/Sync.tsx` :
+- **Par casque** : bouton "Diag casque" → appelle `diagnose_headset_sync`, console + `<pre>`.
+- **Nouvelle section "Diag playlist"** admin-only : sélecteur de playlist + bouton "Analyser impact" → appelle `diagnose_playlist_impact`, affiche `impacted_headsets` en tableau (headset, desired, applied, impact_paths) + alerte si `discrepancy`.
 
-### 5. Triggers d'invalidation côté DB
+### 3. Logs frontend dans `src/pages/Playlists.tsx`
 
-Triggers AFTER INSERT/UPDATE/DELETE sur :
-- `playlist_videos` → casques abonnés à la playlist (via `assignments` + `headset_group_members`).
-- `assignments` → casques de la cible (`all` / `group` / `headset`).
-- `headset_group_members` → casque concerné.
-- `videos` (UPDATE de `storage_path`, `projection`, `stereo_mode`, `name`) → tous les casques abonnés via une playlist contenant la vidéo.
-- `playlists` (UPDATE name) → idem.
+Wrapper unique `mutateAndVerify(playlistId, op)` qui :
 
-Chaque trigger calcule l'ensemble des `headset_id` impactés et appelle `bump_headset_versions(...)`. Source de vérité unique : impossible d'oublier d'incrémenter depuis le front.
+1. `before = await supabase.rpc("diagnose_playlist_impact", { _playlist_id: playlistId })`
+   → log `[PlaylistDebug] impacted_headsets_before=[{id,name,desired,applied,impact_paths}, …]`.
+2. Log `[PlaylistDebug] toggling { playlist_id, playlist_name, video_id, video_name, op }`.
+3. Mutation Supabase. En cas d'erreur : toast RLS clair via `isPermissionError`, **pas** de toast success, return.
+4. Refetch ciblé `playlist_videos` (clé `playlist_id+video_id`) → `db_confirmed` booléen. Log `[PlaylistDebug] mutation result success=true db_confirmed=<bool>`.
+5. Si `!db_confirmed` → toast "Mutation non confirmée par la base — réessayer", return.
+6. `after = await supabase.rpc("diagnose_playlist_impact", { _playlist_id: playlistId })`
+   → log `[PlaylistDebug] impacted_headsets_after=[…]`.
+7. Diff côté JS :
+   - `bumped` = headsets dont `desired_after > desired_before`.
+   - `not_bumped` = headsets impactés dont `desired_after === desired_before`.
+   - Log `[PlaylistDebug] bumped_headsets=[…]` et `[PlaylistDebug] not_bumped_headsets=[…]`.
+8. Si `not_bumped.length > 0` → `toast.warning("Sync incomplète : N casque(s) impacté(s) n'ont pas bumpé. Voir console.")`. **Pas** de toast success "Vidéo ajoutée".
+9. Sinon → `toast.success("Vidéo ajoutée/retirée — N casque(s) à resynchroniser.")`.
 
-## Edge functions
+Helper `src/lib/supabaseErrors.ts` :
+```ts
+export function isPermissionError(err: { code?: string; message?: string }) {
+  return err?.code === "42501" || /permission denied|row-level security|RLS/i.test(err?.message ?? "");
+}
+```
 
-### `headset-manifest` (réécriture v3)
+Même pattern appliqué à `toggleAssignment` (mais le diff `impacted_headsets` est calculé sur **deux playlists** si l'assignment change la cible — simplification : on log `before/after` de la playlist concernée par l'assignment toggle).
 
-- Calcule la playlist effective (logique actuelle conservée).
-- Lit `desired_manifest_version` du casque.
-- Construit le payload (videos[] avec `id`, `name`, `download_url`, `projection`, `stereo_mode`, `file_extension`, `size_bytes`, `duration_seconds`, `position`, `updated_at`).
-- Insère/upsert dans `manifest_versions` si la version n'existe pas encore.
-- Réponse :
-  ```json
-  {
-    "manifest_version": 42,
-    "headset_id": "...",
-    "playlist_id": "...",
-    "updated_at": "...",
-    "url_expires_in": 900,
-    "videos": [ ... ]
-  }
-  ```
-- Supporte `If-None-Match: <version>` (header ou query `?known_version=`) → renvoie `304` si rien n'a changé, ce qui évite de re-signer les URLs.
-- Met à jour `last_manifest_at`.
-- Logs structurés : `headset_id`, `groups`, `playlists`, `playlist_video_rows`, `final_videos`, `desired_version`, `served_version`.
+### 4. Logs renforcés dans `headset-manifest`
 
-### `headset-report-sync` (extension)
+Un seul log structuré à la décision 304 vs 200 :
+```ts
+console.log(JSON.stringify({
+  fn: "headset-manifest", phase: "decide",
+  headset_id, known_version_raw, known_version_parsed: knownVersion,
+  force_full: forceFull, desired_version: desiredVersion,
+  will_return_304: !forceFull && Number.isFinite(knownVersion) && knownVersion === desiredVersion,
+}));
+```
+Aucun changement de logique métier.
 
-- Accepte les nouveaux champs : `applied_manifest_version`, `playlist_id`, `remote_video_count`, `local_video_count`, `visible_video_count`, `status` (`success`, `partial`, `failed`, `no_change`).
-- Si `status in ('success','no_change')` ET `applied_manifest_version >= headsets.applied_manifest_version` → met à jour `headsets.applied_manifest_version`.
-- Sinon laisse tel quel (l'écart `desired - applied` reste visible).
-- Ne marque JAMAIS un report `success` sans `applied_manifest_version`.
+### 5. Hors scope — confirmé
 
-### `headset-heartbeat` (extension légère)
+- Pas d'`notify_playlist_changed` automatique.
+- Pas de modification des triggers / `bump_headset_versions` / `headsets_for_playlist`.
+- Pas de modification Unity.
+- Pas de reset DB ni de suppression de données.
 
-Ajoute dans la réponse `{ desired_manifest_version, applied_manifest_version }` pour que le casque sache s'il doit relancer une sync immédiatement (sans attendre son cycle).
+---
 
-## Dashboard
+## Protocole de test final (A → D)
 
-### Page "Suivi des synchronisations" (`src/pages/Sync.tsx`)
+Chaque test livre : `playlist_id` modifié, `impacted_headsets_before/after`, `bumped`, `not_bumped`, snapshot SQL, et appel curl manifest pour AU MOINS un casque par chemin d'impact.
 
-Nouvelle structure en 2 onglets :
+### Test A — assignment direct `target_type='headset'`
+- Casque : `test emulate casque unity` (b67e0e14, assigné directement à 2 playlists).
+- Modifier l'une de ces playlists (INSERT vidéo).
+- Attendu : `impacted_headsets` = [b67e0e14], `bumped` = [b67e0e14], aucun autre casque touché.
+- Vérification : `desired` du casque +1, snapshot v=N+1 dans `manifest_versions` après `curl …?known_version=N` → 200.
 
-**1. État par casque** (vue par défaut)
-Liste tous les casques avec :
-- nom
-- `desired_version` / `applied_version`
-- badge : `À jour` (vert), `En attente` (orange, applied<desired), `Hors-ligne` (gris, pas de heartbeat >10 min), `Erreur` (rouge, dernier report failed)
-- date du dernier manifest servi, date du dernier report
-- bouton "Forcer resync" → incrémente `desired_manifest_version` côté serveur (cause `manual_force`).
+### Test B — assignment via `target_type='group'`
+- Playlist : `video de la mer` (93bb2ea3), groupe `cae4324c` contenant 3 casques.
+- Modifier la playlist (INSERT vidéo).
+- Attendu : `impacted_headsets` = [Quest numero5, test emulate, test2 quest5] (tous status=active), `bumped` = mêmes 3.
+- Vérification : `desired` +1 pour chacun, snapshot v=N+1 créé après premier `curl manifest` par casque.
+- Appel `curl …?known_version=2` avec le DEVICE_TOKEN de test2 quest5 → **200**, `manifest_version: 3`, nouvelle vidéo dans `videos[]`.
 
-**2. Historique des reports**
-La liste actuelle, enrichie : version appliquée, playlist, compteurs vidéos (remote/local/visible).
+### Test C — assignment `target_type='all'` (si présent)
+- Si aucun assignment `all` n'existe : créer un temporaire via UI sur une playlist dédiée.
+- Attendu : `impacted_headsets` = tous les `headsets WHERE status='active'`. `bumped` = idem.
+- Cleanup : retirer l'assignment `all` après test.
 
-Realtime via Supabase Realtime sur `headsets` ET `sync_reports`. Le client n'invente plus aucun statut : tout vient des colonnes serveur.
+### Test D — casque dans plusieurs groupes (déduplication)
+- Ajouter test2 quest5 à un second groupe temporaire ; assigner ce groupe à `video de la mer`.
+- Diag : `impacted_headsets` doit contenir test2 quest5 **une seule fois**, avec `impact_paths: ["group:cae4324c", "group:<temp>"]`.
+- Modifier playlist (INSERT vidéo) : `desired` de test2 quest5 augmente de **1**, pas de 2 (le trigger reçoit un array dédupliqué — `bump_headset_versions` fait un seul UPDATE par headset_id).
+- Cleanup groupe temporaire après test.
 
-### Page "Headsets"
-Ajout d'une colonne badge sync (mêmes états que ci-dessus).
+### Tests négatifs (intégrés à A et B)
+- Pour chaque mutation, vérifier que les casques **non listés** dans `impacted_headsets_before` n'ont pas vu leur `desired` changer.
 
-## Points hors scope (Unity)
+---
 
-Le code Unity doit envoyer `applied_manifest_version` dans `headset-report-sync` et lire `manifest_version` dans la réponse. Documenté dans `docs/API.md` mais non implémenté dans ce repo (Unity vit ailleurs).
+## Livrables finaux (sortie brute)
 
-## Validation (suivre `scripts/test-headset-flow.sh` étendu)
-
-1. Ajout d'une vidéo à une playlist diffusée à un casque → un trigger bump `desired_manifest_version` → page Sync passe en `En attente` immédiatement.
-2. Appel manuel `headset-manifest` avec le token → renvoie `manifest_version` incrémentée + la nouvelle vidéo.
-3. `headset-report-sync` avec `applied_manifest_version` égale → `applied_manifest_version` mis à jour côté DB → page passe en `À jour`.
-4. Sans report : la page reste `En attente` indéfiniment (jamais de faux vert).
-5. Suppression d'une vidéo de playlist → re-bump → re-cycle.
-
-## Étapes d'implémentation
-
-1. Migration : colonnes `desired/applied_manifest_version` + `last_manifest_at` sur `headsets`, table `manifest_versions`, colonnes `sync_reports`, enum étendu, fonction `bump_headset_versions`, triggers d'invalidation, GRANTs.
-2. Réécrire `headset-manifest` (v3) avec versioning + snapshot.
-3. Étendre `headset-report-sync` pour appliquer la version.
-4. Étendre `headset-heartbeat` (réponse enrichie).
-5. Refondre `src/pages/Sync.tsx` (onglets, état par casque, realtime sur `headsets`).
-6. Ajouter badge sync dans `src/pages/Headsets.tsx`.
-7. Bouton "Forcer resync" (mini edge function `headset-force-resync` qui appelle `bump_headset_versions`, protégée par auth admin).
-8. Mettre à jour `docs/API.md` et `scripts/test-headset-flow.sh`.
-
-Aucune modification de logique métier des playlists/groupes : les triggers DB rendent l'invalidation automatique, donc le front existant n'a rien à changer pour rester correct.
+Pour chaque test A → D :
+1. `playlist_id` réellement modifié (depuis `[PlaylistDebug] toggling`).
+2. Sortie complète `impacted_headsets_before` et `impacted_headsets_after`.
+3. Diff `bumped` / `not_bumped`.
+4. SQL : `SELECT id, name, desired_manifest_version, applied_manifest_version FROM headsets WHERE id = ANY(<liste>);` avant et après.
+5. Pour 1 casque par test : sortie curl `headset-manifest?known_version=<avant>` (status, ETag, `manifest_version`, présence/absence de la vidéo).
+6. Sortie SQL des nouvelles lignes `manifest_versions` correspondantes.
+7. Confirmation explicite "aucun casque hors impacted_headsets n'a vu son desired changer" (SQL global avant/après sur tous les casques actifs).
