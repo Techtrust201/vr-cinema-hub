@@ -75,9 +75,17 @@ export default function Playlists() {
 
     // 1. Snapshot impacted headsets BEFORE
     const beforeRes = await supabase.rpc("diagnose_playlist_impact", { _playlist_id: playlistId });
+    if (beforeRes.error) {
+      console.warn("[PlaylistDebug] diag before error", beforeRes.error);
+      if (isPermissionError(beforeRes.error)) {
+        toast.error("Diagnostic refusé : droits administrateur requis.");
+      } else {
+        toast.error(`Diagnostic indisponible : ${beforeRes.error.message}. Mutation annulée.`);
+      }
+      return;
+    }
     const beforeImpacted = (beforeRes.data as any)?.impacted_headsets ?? [];
     console.info("[PlaylistDebug] impacted_headsets_before", beforeImpacted);
-    if (beforeRes.error) console.warn("[PlaylistDebug] diag before error", beforeRes.error);
 
     // 2. Mutation
     let mutationError: { code?: string; message?: string } | null = null;
@@ -118,6 +126,12 @@ export default function Playlists() {
 
     // 4. Snapshot AFTER + diff bumped/not_bumped
     const afterRes = await supabase.rpc("diagnose_playlist_impact", { _playlist_id: playlistId });
+    if (afterRes.error) {
+      console.warn("[PlaylistDebug] diag after error", afterRes.error);
+      toast.warning(`Mutation OK mais diagnostic after indisponible : ${afterRes.error.message}`);
+      fetchAll();
+      return;
+    }
     const afterImpacted = (afterRes.data as any)?.impacted_headsets ?? [];
     console.info("[PlaylistDebug] impacted_headsets_after", afterImpacted);
 
@@ -137,10 +151,14 @@ export default function Playlists() {
     console.info("[PlaylistDebug] bumped_headsets", bumped);
     console.info("[PlaylistDebug] not_bumped_headsets", not_bumped);
 
-    if (afterImpacted.length === 0) {
-      toast.success(present ? "Vidéo retirée de la playlist." : "Vidéo ajoutée à la playlist.");
-    } else if (not_bumped.length > 0) {
+    if (not_bumped.length > 0) {
       toast.warning(`Sync incomplète : ${not_bumped.length} casque(s) impacté(s) n'ont pas bumpé. Voir console.`);
+    } else if (afterImpacted.length === 0) {
+      toast.success(
+        present
+          ? "Vidéo retirée (aucun casque assigné à cette playlist)."
+          : "Vidéo ajoutée (aucun casque assigné à cette playlist).",
+      );
     } else {
       toast.success(
         `${present ? "Vidéo retirée" : "Vidéo ajoutée"} — ${bumped.length} casque(s) à resynchroniser.`,
@@ -159,6 +177,15 @@ export default function Playlists() {
       target_type: targetType, target_id: targetId, op: existing ? "delete" : "insert",
     });
     const beforeRes = await supabase.rpc("diagnose_playlist_impact", { _playlist_id: playlistId });
+    if (beforeRes.error) {
+      console.warn("[PlaylistDebug] assignment diag before error", beforeRes.error);
+      if (isPermissionError(beforeRes.error)) {
+        toast.error("Diagnostic refusé : droits administrateur requis.");
+      } else {
+        toast.error(`Diagnostic indisponible : ${beforeRes.error.message}. Mutation annulée.`);
+      }
+      return;
+    }
     console.info("[PlaylistDebug] impacted_headsets_before", (beforeRes.data as any)?.impacted_headsets ?? []);
 
     let mutationError: { code?: string; message?: string } | null = null;
