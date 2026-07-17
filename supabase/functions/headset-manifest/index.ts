@@ -59,7 +59,7 @@ Deno.serve(async (req) => {
 
   // Update last_seen + last_manifest_at + contact provenance
   const nowIso = new Date().toISOString();
-  await supabase
+  const { error: touchErr } = await supabase
     .from("headsets")
     .update({
       last_seen_at: nowIso,
@@ -67,6 +67,13 @@ Deno.serve(async (req) => {
       last_contact_source: "manifest",
     })
     .eq("id", headset.id);
+  if (touchErr) {
+    console.error("headset touch error", touchErr);
+    return new Response(JSON.stringify({ error: "Internal error" }), {
+      status: 500,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
   console.log(`[HeadsetContact] headset_id=${headset.id} source=manifest`);
 
   const desiredVersion: number = headset.desired_manifest_version ?? 0;
@@ -104,10 +111,17 @@ Deno.serve(async (req) => {
   }
 
   // Collect group IDs this headset belongs to.
-  const { data: groups } = await supabase
+  const { data: groups, error: groupsErr } = await supabase
     .from("headset_group_members")
     .select("group_id")
     .eq("headset_id", headset.id);
+  if (groupsErr) {
+    console.error("headset_group_members fetch error", groupsErr);
+    return new Response(JSON.stringify({ error: "Internal error" }), {
+      status: 500,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
   const groupIds = (groups ?? []).map((g) => g.group_id);
 
   // Fetch assignments that target: this headset, one of its groups, or 'all'.
@@ -281,7 +295,14 @@ Deno.serve(async (req) => {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
-    await supabase.from("headsets").update({ last_manifest_cause: null }).eq("id", headset.id);
+    const { error: clearCauseErr } = await supabase
+      .from("headsets")
+      .update({ last_manifest_cause: null })
+      .eq("id", headset.id);
+    if (clearCauseErr) {
+      console.error("clear last_manifest_cause failed", clearCauseErr);
+      // Snapshot already stored — do not fail the serve, but surface the error.
+    }
   }
 
   console.log(`[headset-manifest] served_version=${desiredVersion} final_videos=${videos.length}`);

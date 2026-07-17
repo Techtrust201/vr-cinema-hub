@@ -4,8 +4,8 @@ import { getSecretKey } from "../_shared/supabase-keys.ts";
 
 // Receives the result of a sync cycle from the Quest app.
 // Two modes:
-//   - { phase: "started" } → creates a new sync_reports row, returns its id
-//   - { phase: "finished", report_id, status, ... } → updates the row
+//   - { phase: "started" } → idempotent start via start_sync_report RPC
+//   - { phase: "finished", report_id, status, ... } → transactional finalize_sync_report RPC
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -47,6 +47,8 @@ Deno.serve(async (req) => {
     local_video_count?: number;
     visible_video_count?: number;
     cause?: string;
+    client_cycle_id?: string;
+    session_id?: string;
   };
   try {
     body = await req.json();
@@ -68,27 +70,29 @@ Deno.serve(async (req) => {
         error: "pending is a server-computed state, not a report status",
       }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
-    const { data, error } = await supabase
-      .from("sync_reports")
-      .insert({
-        headset_id: claims.sub,
-        status: "started",
-        cause: body.cause ?? null,
-      })
-      .select("id")
-      .single();
-    await supabase
-      .from("headsets")
-      .update({ last_sync_status: "started", last_sync_at: new Date().toISOString() })
-      .eq("id", claims.sub);
+
+    const { data, error } = await supabase.rpc("start_sync_report", {
+      _headset_id: claims.sub,
+      _cause: body.cause ?? null,
+      _client_cycle_id: body.client_cycle_id ?? null,
+      _session_id: body.session_id ?? null,
+    });
     if (error || !data) {
-      console.error("sync_reports insert error", error);
+      console.error("start_sync_report error", error);
       return new Response(JSON.stringify({ error: "Internal error" }), {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
-    return new Response(JSON.stringify({ report_id: data.id }), {
+    const result = data as { ok?: boolean; report_id?: string; error?: string };
+    if (!result.ok || !result.report_id) {
+      console.error("start_sync_report rejected", result);
+      return new Response(JSON.stringify({ error: result.error ?? "Internal error" }), {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    return new Response(JSON.stringify({ report_id: result.report_id }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
@@ -106,73 +110,45 @@ Deno.serve(async (req) => {
         error: `status must be one of ${[...allowed].join(", ")} (pending is server-computed)`,
       }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
-    const nowIso = new Date().toISOString();
 
-    // Ownership + existence check BEFORE mutating applied_manifest_version.
-    const { data: existingReport, error: findReportErr } = await supabase
-      .from("sync_reports")
-      .select("id, headset_id, status, finished_at")
-      .eq("id", body.report_id)
-      .eq("headset_id", claims.sub)
-      .maybeSingle();
-    if (findReportErr) {
-      console.error("sync_reports lookup error", findReportErr);
+    const { data, error } = await supabase.rpc("finalize_sync_report", {
+      _headset_id: claims.sub,
+      _report_id: body.report_id,
+      _status: body.status,
+      _applied_manifest_version: body.applied_manifest_version ?? null,
+      _downloaded_count: body.downloaded_count ?? 0,
+      _failed_count: body.failed_count ?? 0,
+      _deleted_count: body.deleted_count ?? 0,
+      _total_bytes: body.total_bytes ?? 0,
+      _error_message: body.error_message ?? null,
+      _details: (body.details ?? null) as Record<string, unknown> | null,
+      _playlist_id: body.playlist_id ?? null,
+      _remote_video_count: body.remote_video_count ?? null,
+      _local_video_count: body.local_video_count ?? null,
+      _visible_video_count: body.visible_video_count ?? null,
+      _cause: body.cause ?? null,
+      _client_cycle_id: body.client_cycle_id ?? null,
+    });
+    if (error || !data) {
+      console.error("finalize_sync_report error", error);
       return new Response(JSON.stringify({ error: "Internal error" }), {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
-    if (!existingReport) {
-      return new Response(JSON.stringify({
-        ok: false,
-        report_stored: false,
-        applied_updated: false,
-        reason: "invalid_report_id",
-      }), {
-        status: 404,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-    if (existingReport.finished_at && existingReport.status !== "started") {
-      return new Response(JSON.stringify({
-        ok: true,
-        report_stored: false,
-        applied_updated: false,
-        reason: "report_already_finished",
-      }), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
 
-    const { data: updatedRows, error } = await supabase
-      .from("sync_reports")
-      .update({
-        status: body.status,
-        finished_at: nowIso,
-        downloaded_count: body.downloaded_count ?? 0,
-        failed_count: body.failed_count ?? 0,
-        deleted_count: body.deleted_count ?? 0,
-        total_bytes: body.total_bytes ?? 0,
-        error_message: body.error_message ?? null,
-        details: (body.details ?? null) as Record<string, unknown> | null,
-        applied_manifest_version: body.applied_manifest_version ?? null,
-        playlist_id: body.playlist_id ?? null,
-        remote_video_count: body.remote_video_count ?? null,
-        local_video_count: body.local_video_count ?? null,
-        visible_video_count: body.visible_video_count ?? null,
-      })
-      .eq("id", body.report_id)
-      .eq("headset_id", claims.sub)
-      .select("id");
-    if (error) {
-      console.error("sync_reports update error", error);
-      return new Response(JSON.stringify({ error: "Internal error" }), {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-    const reportStored = Array.isArray(updatedRows) && updatedRows.length > 0;
-    if (!reportStored) {
+    const result = data as {
+      ok?: boolean;
+      report_stored?: boolean;
+      applied_updated?: boolean;
+      accepted_applied_manifest_version?: number;
+      server_desired_manifest_version?: number;
+      server_previous_applied_manifest_version?: number;
+      reason?: string;
+      error?: string;
+    };
+
+    if (result.error === "invalid_report_id" || result.reason === "invalid_report_id") {
       return new Response(JSON.stringify({
         ok: false,
         report_stored: false,
@@ -184,21 +160,10 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Update headset.applied_manifest_version ONLY on success / no_change
-    // AND when the reported version passes ALL these checks:
-    //   - integer > 0
-    //   - >= current applied (no rollback)
-    //   - <= desired (no inventing a higher version than what we served)
-    //   - matches a row in manifest_versions(headset_id, version) we previously served
-    const { data: cur } = await supabase
-      .from("headsets")
-      .select("applied_manifest_version, desired_manifest_version")
-      .eq("id", claims.sub)
-      .maybeSingle();
-    if (!cur) {
+    if (result.reason === "headset_not_found") {
       return new Response(JSON.stringify({
         ok: false,
-        report_stored: true,
+        report_stored: result.report_stored ?? false,
         applied_updated: false,
         reason: "headset_not_found",
       }), {
@@ -207,66 +172,19 @@ Deno.serve(async (req) => {
       });
     }
 
-    const previousApplied = cur.applied_manifest_version ?? 0;
-    const serverDesired = cur.desired_manifest_version ?? 0;
-    const headsetUpdate: Record<string, unknown> = {
-      last_sync_status: body.status,
-      last_sync_at: nowIso,
-      last_seen_at: nowIso,
-      last_contact_source: "sync_report",
-    };
-    let reason = "skipped";
-    let appliedUpdated = false;
-    let acceptedApplied = previousApplied;
-
-    if ((body.status === "success" || body.status === "no_change") &&
-        typeof body.applied_manifest_version === "number" &&
-        Number.isInteger(body.applied_manifest_version) &&
-        body.applied_manifest_version > 0) {
-      const reported = body.applied_manifest_version;
-      if (reported < previousApplied) {
-        reason = "rollback";
-      } else if (reported > serverDesired) {
-        reason = "above_desired";
-      } else {
-        const { data: snap } = await supabase
-          .from("manifest_versions")
-          .select("version")
-          .eq("headset_id", claims.sub)
-          .eq("version", reported)
-          .maybeSingle();
-        if (!snap) {
-          reason = "unknown_version";
-        } else {
-          headsetUpdate.applied_manifest_version = reported;
-          appliedUpdated = true;
-          acceptedApplied = reported;
-          reason = "ok";
-        }
-      }
-    } else if (body.status === "success" || body.status === "no_change") {
-      reason = "missing_applied_manifest_version";
-    } else {
-      reason = "invalid_status";
-    }
-
-    await supabase.from("headsets").update(headsetUpdate).eq("id", claims.sub);
+    console.log(
+      `[SyncReport] headset=${claims.sub} applied_updated=${result.applied_updated} reason=${result.reason}`,
+    );
     console.log(`[HeadsetContact] headset_id=${claims.sub} source=sync_report`);
 
-    if (appliedUpdated) {
-      console.log(`[SyncReport] applied version updated headset=${claims.sub} version=${acceptedApplied}`);
-    } else {
-      console.log(`[SyncReport] report stored but applied unchanged headset=${claims.sub} reported=${body.applied_manifest_version} reason=${reason}`);
-    }
-
     return new Response(JSON.stringify({
-      ok: true,
-      report_stored: true,
-      applied_updated: appliedUpdated,
-      accepted_applied_manifest_version: acceptedApplied,
-      server_desired_manifest_version: serverDesired,
-      server_previous_applied_manifest_version: previousApplied,
-      reason,
+      ok: result.ok !== false,
+      report_stored: result.report_stored ?? false,
+      applied_updated: result.applied_updated ?? false,
+      accepted_applied_manifest_version: result.accepted_applied_manifest_version ?? 0,
+      server_desired_manifest_version: result.server_desired_manifest_version ?? 0,
+      server_previous_applied_manifest_version: result.server_previous_applied_manifest_version ?? 0,
+      reason: result.reason ?? "skipped",
     }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
