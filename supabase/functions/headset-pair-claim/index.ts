@@ -118,6 +118,25 @@ Deno.serve(async (req) => {
     });
   }
 
+  // Nouveau casque actif : bump immédiat pour hériter des assignments `all`
+  // déjà présents (sinon desired reste 0 et le report v0 ne peut jamais confirmer).
+  const { error: bumpErr } = await admin.rpc("bump_headset_versions", {
+    _headset_ids: [headset.id],
+    _cause: "pairing_claim",
+  });
+  if (bumpErr) {
+    console.error("pairing bump failed", bumpErr);
+  } else {
+    console.log(`[HeadsetContact] headset_id=${headset.id} source=pairing`);
+    await admin
+      .from("headsets")
+      .update({
+        last_contact_source: "pairing",
+        last_seen_at: new Date().toISOString(),
+      })
+      .eq("id", headset.id);
+  }
+
   const device_token = await signDeviceToken(headset.id);
 
   await admin

@@ -1,8 +1,8 @@
 import { createClient } from "npm:@supabase/supabase-js@2.45.4";
 import { corsHeaders, extractBearer, verifyDeviceToken } from "../_shared/device-jwt.ts";
 
-// Lightweight ping sent by the Quest app every ~5 minutes.
-// Updates last_seen + diagnostics (battery, storage, app version).
+// Lightweight ping sent by the Quest app (immediate on start/foreground, then periodically).
+// Updates last_seen + last_heartbeat_at + diagnostics, returns sync hint.
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -45,7 +45,38 @@ Deno.serve(async (req) => {
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
   );
 
-  const update: Record<string, unknown> = { last_seen_at: new Date().toISOString() };
+  const { data: existing, error: findErr } = await supabase
+    .from("headsets")
+    .select("id, status, desired_manifest_version, applied_manifest_version")
+    .eq("id", claims.sub)
+    .maybeSingle();
+
+  if (findErr) {
+    console.error("heartbeat lookup error", findErr);
+    return new Response(JSON.stringify({ error: "Internal error" }), {
+      status: 500,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+  if (!existing) {
+    return new Response(JSON.stringify({ error: "Headset not found" }), {
+      status: 404,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+  if (existing.status === "revoked") {
+    return new Response(JSON.stringify({ error: "Headset revoked" }), {
+      status: 403,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+
+  const nowIso = new Date().toISOString();
+  const update: Record<string, unknown> = {
+    last_seen_at: nowIso,
+    last_heartbeat_at: nowIso,
+    last_contact_source: "heartbeat",
+  };
   if (typeof body.battery_percent === "number") {
     update.battery_percent = Math.max(0, Math.min(100, Math.round(body.battery_percent)));
   }
@@ -62,17 +93,16 @@ Deno.serve(async (req) => {
     });
   }
 
-  const { data: h } = await supabase
-    .from("headsets")
-    .select("desired_manifest_version, applied_manifest_version")
-    .eq("id", claims.sub)
-    .maybeSingle();
+  console.log(`[HeadsetContact] headset_id=${claims.sub} source=heartbeat`);
+
+  const desired = existing.desired_manifest_version ?? 0;
+  const applied = existing.applied_manifest_version ?? 0;
 
   return new Response(JSON.stringify({
     ok: true,
-    desired_manifest_version: h?.desired_manifest_version ?? 0,
-    applied_manifest_version: h?.applied_manifest_version ?? 0,
-    needs_sync: (h?.desired_manifest_version ?? 0) > (h?.applied_manifest_version ?? 0),
+    desired_manifest_version: desired,
+    applied_manifest_version: applied,
+    needs_sync: desired > applied,
   }), {
     headers: { ...corsHeaders, "Content-Type": "application/json" },
   });

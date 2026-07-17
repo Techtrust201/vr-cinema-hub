@@ -206,6 +206,10 @@ export type Database = {
           created_at: string
           desired_manifest_version: number
           id: string
+          last_contact_source: string | null
+          last_error_code: string | null
+          last_error_message: string | null
+          last_heartbeat_at: string | null
           last_manifest_at: string | null
           last_manifest_cause: string | null
           last_seen_at: string | null
@@ -228,6 +232,10 @@ export type Database = {
           created_at?: string
           desired_manifest_version?: number
           id?: string
+          last_contact_source?: string | null
+          last_error_code?: string | null
+          last_error_message?: string | null
+          last_heartbeat_at?: string | null
           last_manifest_at?: string | null
           last_manifest_cause?: string | null
           last_seen_at?: string | null
@@ -250,6 +258,10 @@ export type Database = {
           created_at?: string
           desired_manifest_version?: number
           id?: string
+          last_contact_source?: string | null
+          last_error_code?: string | null
+          last_error_message?: string | null
+          last_heartbeat_at?: string | null
           last_manifest_at?: string | null
           last_manifest_cause?: string | null
           last_seen_at?: string | null

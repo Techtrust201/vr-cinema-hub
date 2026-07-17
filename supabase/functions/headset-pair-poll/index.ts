@@ -3,7 +3,7 @@ import { corsHeaders } from "../_shared/device-jwt.ts";
 
 // The Quest headset polls this endpoint (no user auth) using its
 // {code, pairing_secret}. Once the admin has claimed the code from the
-// dashboard, this returns the long-lived device token (read once).
+// dashboard, this returns the long-lived device token exactly once (atomic RPC).
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -36,53 +36,51 @@ Deno.serve(async (req) => {
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
   );
 
-  const { data: row, error } = await supabase
-    .from("pairing_codes")
-    .select("id, pairing_secret, expires_at, claimed_by_headset_id, device_token, failed_attempts")
-    .eq("code", body.code)
-    .maybeSingle();
+  const { data, error } = await supabase.rpc("claim_pairing_device_token", {
+    _code: body.code,
+    _pairing_secret: body.pairing_secret,
+  });
 
-  if (error || !row) {
+  if (error) {
+    console.error("claim_pairing_device_token error", error);
+    return new Response(JSON.stringify({ error: "Internal error" }), {
+      status: 500,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+
+  const row = Array.isArray(data) ? data[0] : data;
+  const status = row?.status ?? "not_found";
+
+  if (status === "not_found") {
     return new Response(JSON.stringify({ status: "not_found" }), {
       status: 404,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
-
-  // Bad secret → bump failed_attempts (basic brute-force defense).
-  if (row.pairing_secret !== body.pairing_secret) {
-    await supabase
-      .from("pairing_codes")
-      .update({ failed_attempts: (row.failed_attempts ?? 0) + 1 })
-      .eq("id", row.id);
+  if (status === "unauthorized") {
     return new Response(JSON.stringify({ status: "unauthorized" }), {
       status: 401,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
-
-  if (new Date(row.expires_at).getTime() < Date.now()) {
-    return new Response(JSON.stringify({ status: "expired" }), {
+  if (status === "expired" || status === "pending") {
+    return new Response(JSON.stringify({ status }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
-
-  if (!row.claimed_by_headset_id || !row.device_token) {
-    return new Response(JSON.stringify({ status: "pending" }), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+  if (status === "claimed" && row?.device_token && row?.headset_id) {
+    return new Response(
+      JSON.stringify({
+        status: "claimed",
+        headset_id: row.headset_id,
+        device_token: row.device_token,
+      }),
+      { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+    );
   }
 
-  // Claimed → return token and wipe it from the pairing row.
-  const device_token = row.device_token;
-  const headset_id = row.claimed_by_headset_id;
-  await supabase
-    .from("pairing_codes")
-    .update({ device_token: null })
-    .eq("id", row.id);
-
-  return new Response(
-    JSON.stringify({ status: "claimed", headset_id, device_token }),
-    { headers: { ...corsHeaders, "Content-Type": "application/json" } },
-  );
+  return new Response(JSON.stringify({ status: "pending" }), {
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
 });

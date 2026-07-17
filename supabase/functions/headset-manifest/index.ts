@@ -56,12 +56,17 @@ Deno.serve(async (req) => {
     });
   }
 
-  // Update last_seen + last_manifest_at
+  // Update last_seen + last_manifest_at + contact provenance
   const nowIso = new Date().toISOString();
   await supabase
     .from("headsets")
-    .update({ last_seen_at: nowIso, last_manifest_at: nowIso })
+    .update({
+      last_seen_at: nowIso,
+      last_manifest_at: nowIso,
+      last_contact_source: "manifest",
+    })
     .eq("id", headset.id);
+  console.log(`[HeadsetContact] headset_id=${headset.id} source=manifest`);
 
   const desiredVersion: number = headset.desired_manifest_version ?? 0;
 
@@ -137,14 +142,41 @@ Deno.serve(async (req) => {
     applied_version: headset.applied_manifest_version ?? 0,
   }));
 
-  let videoRows: any[] = [];
+  // Deterministic playlist order.
+  playlistIds.sort();
+
+  type PvRow = {
+    playlist_id: string;
+    video_id: string;
+    position: number | null;
+    videos: {
+      id: string;
+      name: string;
+      storage_path: string | null;
+      size_bytes: number | null;
+      duration_seconds: number | null;
+      format: string | null;
+      projection: string | null;
+      stereo_mode: string | null;
+      updated_at: string | null;
+    } | null;
+  };
+
+  let videoRows: PvRow[] = [];
   if (playlistIds.length > 0) {
-    const { data: pvideos } = await supabase
+    const { data: pvideos, error: pvErr } = await supabase
       .from("playlist_videos")
       .select("playlist_id, video_id, position, videos(id, name, storage_path, size_bytes, duration_seconds, format, projection, stereo_mode, updated_at)")
       .in("playlist_id", playlistIds)
       .order("position", { ascending: true });
-    videoRows = pvideos ?? [];
+    if (pvErr) {
+      console.error("playlist_videos fetch error", pvErr);
+      return new Response(JSON.stringify({ error: "Internal error" }), {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    videoRows = (pvideos ?? []) as unknown as PvRow[];
   }
 
   console.log(JSON.stringify({
@@ -153,9 +185,10 @@ Deno.serve(async (req) => {
     playlist_video_rows: videoRows.length,
   }));
 
-  // Dedup by video_id.
+  // Dedup by video_id (first occurrence by playlist order + position wins).
   const seen = new Set<string>();
-  const videos: any[] = [];
+  type ManifestVideoOut = Record<string, unknown>;
+  const videos: ManifestVideoOut[] = [];
   for (const row of videoRows) {
     const v = row.videos;
     if (!v || seen.has(v.id)) continue;
@@ -163,14 +196,20 @@ Deno.serve(async (req) => {
 
     let download_url: string | null = null;
     if (v.storage_path) {
-      const { data: signed } = await supabase
+      const { data: signed, error: signErr } = await supabase
         .storage
         .from("videos")
         .createSignedUrl(v.storage_path, SIGNED_URL_TTL_SECONDS);
-      download_url = signed?.signedUrl ?? null;
+      if (signErr || !signed?.signedUrl) {
+        console.error("signed url failed", { path: v.storage_path, signErr });
+        return new Response(JSON.stringify({ error: "Signed URL generation failed" }), {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      download_url = signed.signedUrl;
     }
 
-    // Real container extension from storage_path (NOT from format).
     const pathLower = (v.storage_path ?? "").toLowerCase();
     const dot = pathLower.lastIndexOf(".");
     const ext = dot >= 0 ? pathLower.slice(dot + 1) : "";
@@ -199,21 +238,17 @@ Deno.serve(async (req) => {
     headset_id: headset.id,
     served_version: desiredVersion,
     final_videos: videos.length,
-    breakdown: videos.map((v) => ({
-      id: v.id,
-      projection: v.projection,
-      stereo_mode: v.stereo_mode,
-      file_extension: v.file_extension,
-      legacy_format: v.legacy_format,
-    })),
+    playlist_ids: playlistIds,
   }));
 
+  // playlist_id kept for compatibility (first sorted id); playlist_ids is the truth.
   const playlistId = playlistIds[0] ?? null;
   const payload = {
     manifest_version: desiredVersion,
     schema_version: 3,
     headset_id: headset.id,
     playlist_id: playlistId,
+    playlist_ids: playlistIds,
     generated_at: nowIso,
     updated_at: nowIso,
     url_expires_in: SIGNED_URL_TTL_SECONDS,
@@ -221,18 +256,30 @@ Deno.serve(async (req) => {
   };
 
   // Snapshot for audit. Canonical payload: NO signed urls (they expire).
-  // Cause comes from headsets.last_manifest_cause (set by bump_headset_versions).
-  // We then reset last_manifest_cause to NULL so the next bump can write a fresh one.
+  // Never serve a version that could not be archived when desired > 0.
   if (desiredVersion > 0) {
-    await supabase
+    const { error: snapErr } = await supabase
       .from("manifest_versions")
       .upsert({
         headset_id: headset.id,
         version: desiredVersion,
         playlist_id: playlistId,
         cause: headset.last_manifest_cause ?? null,
-        payload: { ...payload, videos: videos.map((v) => ({ ...v, url: undefined, download_url: undefined })) },
+        payload: {
+          ...payload,
+          videos: videos.map((v) => {
+            const { url: _u, download_url: _d, ...rest } = v;
+            return rest;
+          }),
+        },
       }, { onConflict: "headset_id,version" });
+    if (snapErr) {
+      console.error("manifest_versions upsert failed", snapErr);
+      return new Response(JSON.stringify({ error: "Manifest snapshot failed" }), {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
     await supabase.from("headsets").update({ last_manifest_cause: null }).eq("id", headset.id);
   }
 
