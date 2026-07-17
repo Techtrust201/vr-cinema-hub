@@ -38,11 +38,12 @@ interface SyncReport {
 type HeadsetSyncState = "up_to_date" | "pending" | "syncing" | "error" | "offline" | "never";
 
 function headsetState(h: Headset): HeadsetSyncState {
+  // "offline" = application VR n'a pas contacté le serveur récemment (≠ casque éteint).
   const seenAge = h.last_seen_at ? Date.now() - new Date(h.last_seen_at).getTime() : Infinity;
   const reportAge = h.last_sync_at ? Date.now() - new Date(h.last_sync_at).getTime() : Infinity;
-  const offline = seenAge > 10 * 60 * 1000;
-  // 1. Offline always wins
-  if (offline) return "offline";
+  const appOffline = !h.last_seen_at || seenAge > 10 * 60 * 1000;
+  // 1. App offline wins for presence, but never claim physical headset power state.
+  if (appOffline) return "offline";
   // 2. Recent error
   if (h.last_sync_status === "failed" && reportAge < 30 * 60 * 1000) return "error";
   // 3. Recently started + not yet finished
@@ -107,8 +108,9 @@ export default function Sync() {
       .on("postgres_changes", { event: "*", schema: "public", table: "sync_reports" }, () => fetchAll())
       .on("postgres_changes", { event: "*", schema: "public", table: "headsets" }, () => fetchAll())
       .subscribe();
-    // periodic refresh so "offline" updates without a DB event
-    const t = setInterval(() => fetchAll(), 30000);
+    // Polling de secours : Realtime peut être bloqué (policy deny-all sur realtime.messages).
+    // Tables headsets/sync_reports restent dans la publication, mais on ne dépend pas uniquement de Realtime.
+    const t = setInterval(() => fetchAll(), 15_000);
     return () => { supabase.removeChannel(ch); clearInterval(t); };
   }, [fetchAll]);
 
@@ -154,8 +156,14 @@ export default function Sync() {
     }
     console.info("[SyncDiag] playlist", diagPlaylistId, data);
     setDiagJson(JSON.stringify(data, null, 2));
-    const impacted = (data as any)?.impacted_headsets ?? [];
-    if ((data as any)?.discrepancy) toast.warning(`Discrepancy : ${impacted.length} vs trigger ${(data as any)?.trigger_target_count}.`);
+    type PlaylistDiag = {
+      impacted_headsets?: unknown[];
+      discrepancy?: boolean;
+      trigger_target_count?: number;
+    };
+    const diag = data as PlaylistDiag | null;
+    const impacted = diag?.impacted_headsets ?? [];
+    if (diag?.discrepancy) toast.warning(`Discrepancy : ${impacted.length} vs trigger ${diag?.trigger_target_count}.`);
     else toast.success(`${impacted.length} casque(s) impacté(s).`);
   }
 
@@ -339,7 +347,7 @@ function StateBadge({ state }: { state: HeadsetSyncState }) {
   if (state === "pending") return <div className={cn(base, "bg-[hsl(35_90%_55%_/_0.15)] text-[hsl(35_90%_55%)]")} title="En attente"><Clock size={18} /></div>;
   if (state === "syncing") return <div className={cn(base, "bg-[hsl(var(--vr-cyan)_/_0.15)] text-[hsl(var(--vr-cyan))]")} title="Synchronisation"><Loader2 className="animate-spin" size={18} /></div>;
   if (state === "error") return <div className={cn(base, "bg-destructive/15 text-destructive")} title="Erreur"><XCircle size={18} /></div>;
-  if (state === "offline") return <div className={cn(base, "bg-muted/60 text-muted-foreground")} title="Hors-ligne"><WifiOff size={18} /></div>;
+  if (state === "offline") return <div className={cn(base, "bg-muted/60 text-muted-foreground")} title="Application hors ligne (pas de contact serveur récent)"><WifiOff size={18} /></div>;
   return <div className={cn(base, "bg-muted/60 text-muted-foreground")} title="Pas encore synchronisé"><AlertTriangle size={18} /></div>;
 }
 

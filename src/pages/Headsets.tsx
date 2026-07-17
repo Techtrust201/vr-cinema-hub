@@ -4,6 +4,8 @@ import { useAuth } from "@/hooks/useAuth";
 import { Headset, Plus, Battery, HardDrive, Wifi, WifiOff, Trash2, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { isPermissionError } from "@/lib/supabaseErrors";
+import { appContactLabel, appContactState, formatRelativeFr, type AppContactState } from "@/lib/headsetContact";
 
 interface HeadsetRow {
   id: string;
@@ -12,6 +14,11 @@ interface HeadsetRow {
   model: string | null;
   status: "pending" | "active" | "revoked";
   last_seen_at: string | null;
+  last_heartbeat_at: string | null;
+  last_manifest_at: string | null;
+  last_contact_source: string | null;
+  last_error_code: string | null;
+  last_error_message: string | null;
   storage_free_bytes: number | null;
   storage_total_bytes: number | null;
   battery_percent: number | null;
@@ -20,32 +27,20 @@ interface HeadsetRow {
   desired_manifest_version?: number;
   applied_manifest_version?: number;
   last_sync_status?: string | null;
-}
-
-function formatRelative(iso: string | null): string {
-  if (!iso) return "jamais";
-  const diff = Date.now() - new Date(iso).getTime();
-  const m = Math.floor(diff / 60000);
-  if (m < 1) return "à l'instant";
-  if (m < 60) return `il y a ${m} min`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `il y a ${h} h`;
-  const d = Math.floor(h / 24);
-  return `il y a ${d} j`;
-}
-
-function onlineStatus(iso: string | null): "online" | "recent" | "offline" {
-  if (!iso) return "offline";
-  const diff = Date.now() - new Date(iso).getTime();
-  if (diff < 10 * 60 * 1000) return "online";
-  if (diff < 24 * 60 * 60 * 1000) return "recent";
-  return "offline";
+  last_sync_at?: string | null;
 }
 
 function fmtBytes(b: number | null) {
   if (!b) return "—";
   if (b < 1024 * 1024 * 1024) return `${(b / (1024 * 1024)).toFixed(0)} MB`;
   return `${(b / (1024 * 1024 * 1024)).toFixed(1)} GB`;
+}
+
+function contactTone(st: AppContactState) {
+  if (st === "app_active") return "bg-[hsl(140_70%_40%_/_0.15)] text-[hsl(140_70%_55%)]";
+  if (st === "app_recent") return "bg-[hsl(35_90%_55%_/_0.15)] text-[hsl(35_90%_55%)]";
+  if (st === "revoked") return "bg-destructive/15 text-destructive";
+  return "bg-muted/60 text-muted-foreground";
 }
 
 export default function Headsets() {
@@ -68,23 +63,56 @@ export default function Headsets() {
 
   useEffect(() => {
     fetchList();
+    // Realtime may be denied by migration; poll as reliable fallback.
+    const poll = window.setInterval(() => { fetchList(); }, 15_000);
     const ch = supabase
       .channel("headsets-realtime")
       .on("postgres_changes", { event: "*", schema: "public", table: "headsets" }, () => fetchList())
       .subscribe();
-    return () => { supabase.removeChannel(ch); };
+    return () => {
+      window.clearInterval(poll);
+      supabase.removeChannel(ch);
+    };
   }, [fetchList]);
 
   async function revoke(id: string, name: string) {
-    if (!confirm(`Retirer le casque "${name}" ? Il devra être ré-appairé.`)) return;
-    const { error } = await supabase.from("headsets").update({ status: "revoked" }).eq("id", id);
-    if (error) toast.error(error.message); else toast.success("Casque retiré");
+    if (!confirm(`Révoquer le casque "${name}" ? L'application VR ne pourra plus se synchroniser.`)) return;
+    const { data, error } = await supabase
+      .from("headsets")
+      .update({ status: "revoked" })
+      .eq("id", id)
+      .select("id, status")
+      .maybeSingle();
+    if (error) {
+      toast.error(isPermissionError(error)
+        ? "Révoquer nécessite les droits administrateur."
+        : error.message);
+      return;
+    }
+    if (!data || data.status !== "revoked") {
+      toast.error("Révocation non confirmée par la base.");
+      return;
+    }
+    toast.success("Casque révoqué");
+    fetchList();
   }
 
   async function remove(id: string, name: string) {
     if (!confirm(`Supprimer définitivement "${name}" ?`)) return;
     const { error } = await supabase.from("headsets").delete().eq("id", id);
-    if (error) toast.error(error.message); else toast.success("Supprimé");
+    if (error) {
+      toast.error(isPermissionError(error)
+        ? "Suppression refusée : droits administrateur requis."
+        : error.message);
+      return;
+    }
+    const { data: stillThere } = await supabase.from("headsets").select("id").eq("id", id).maybeSingle();
+    if (stillThere) {
+      toast.error("Suppression non confirmée par la base.");
+      return;
+    }
+    toast.success("Supprimé");
+    fetchList();
   }
 
   return (
@@ -92,7 +120,9 @@ export default function Headsets() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">Casques</h1>
-          <p className="text-sm text-muted-foreground">Suivi en temps réel des casques déployés.</p>
+          <p className="text-sm text-muted-foreground">
+            Statut = contact de l&apos;application VR avec le serveur (pas l&apos;alimentation physique du casque).
+          </p>
         </div>
         {isAdmin && (
           <button
@@ -117,31 +147,38 @@ export default function Headsets() {
       ) : (
         <div className="grid gap-3">
           {list.map((h) => {
-            const st = onlineStatus(h.last_seen_at);
+            const st = appContactState(h.status, h.last_seen_at);
             return (
-              <div key={h.id} className="p-4 rounded-xl border border-border/50 bg-[hsl(var(--vr-surface))] flex items-center gap-4">
-                <div className={cn(
-                  "w-10 h-10 rounded-lg flex items-center justify-center",
-                  st === "online" && "bg-[hsl(140_70%_40%_/_0.15)] text-[hsl(140_70%_55%)]",
-                  st === "recent" && "bg-[hsl(35_90%_55%_/_0.15)] text-[hsl(35_90%_55%)]",
-                  st === "offline" && "bg-muted/60 text-muted-foreground",
-                )}>
-                  {st === "offline" ? <WifiOff size={16} /> : <Wifi size={16} />}
+              <div key={h.id} className="p-4 rounded-xl border border-border/50 bg-[hsl(var(--vr-surface))] flex flex-col gap-3 md:flex-row md:items-center md:gap-4">
+                <div className={cn("w-10 h-10 rounded-lg flex items-center justify-center shrink-0", contactTone(st))}>
+                  {st === "app_offline" || st === "never" || st === "revoked" ? <WifiOff size={16} /> : <Wifi size={16} />}
                 </div>
-                <div className="flex-1 min-w-0">
+                <div className="flex-1 min-w-0 space-y-1">
                   <div className="flex items-center gap-2 flex-wrap">
                     <p className="font-semibold">{h.name}</p>
-                    {h.status === "revoked" && (
-                      <span className="text-[10px] px-2 py-0.5 rounded bg-destructive/15 text-destructive">RÉVOQUÉ</span>
-                    )}
+                    <span className={cn("text-[10px] px-2 py-0.5 rounded", contactTone(st))}>
+                      {appContactLabel(st)}
+                    </span>
                     {h.status === "pending" && (
                       <span className="text-[10px] px-2 py-0.5 rounded bg-muted text-muted-foreground">EN ATTENTE</span>
                     )}
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    {h.model ?? "Modèle inconnu"}{h.serial ? ` • ${h.serial}` : ""}{h.app_version ? ` • v${h.app_version}` : ""}
+                    {h.model ?? "Modèle inconnu"}{h.serial ? ` • ${h.serial}` : ""}{h.app_version ? ` • app v${h.app_version}` : ""}
                   </p>
-                  <p className="text-xs text-muted-foreground/70 mt-0.5">Vu {formatRelative(h.last_seen_at)}</p>
+                  <p className="text-xs text-muted-foreground/80">
+                    Dernier contact {formatRelativeFr(h.last_seen_at)}
+                    {h.last_contact_source ? ` (${h.last_contact_source})` : ""}
+                    {" · "}Heartbeat {formatRelativeFr(h.last_heartbeat_at)}
+                    {" · "}Manifest {formatRelativeFr(h.last_manifest_at)}
+                    {" · "}Sync {formatRelativeFr(h.last_sync_at ?? null)}
+                    {h.last_sync_status ? ` [${h.last_sync_status}]` : ""}
+                  </p>
+                  {(h.last_error_code || h.last_error_message) && (
+                    <p className="text-xs text-destructive/80">
+                      Erreur {h.last_error_code ?? ""}{h.last_error_message ? `: ${h.last_error_message}` : ""}
+                    </p>
+                  )}
                 </div>
                 <SyncBadge h={h} />
                 <div className="hidden md:flex items-center gap-4 text-xs text-muted-foreground">
@@ -178,15 +215,15 @@ function SyncBadge({ h }: { h: HeadsetRow }) {
   const applied = h.applied_manifest_version ?? 0;
   if (h.status !== "active") return null;
   if (desired === 0 && applied === 0) {
-    return <span className="hidden md:inline-flex text-[10px] px-2 py-0.5 rounded bg-muted/60 text-muted-foreground">jamais sync</span>;
+    return <span className="hidden md:inline-flex text-[10px] px-2 py-0.5 rounded bg-muted/60 text-muted-foreground">jamais sync · d{desired}/a{applied}</span>;
   }
   if (h.last_sync_status === "failed") {
-    return <span className="hidden md:inline-flex text-[10px] px-2 py-0.5 rounded bg-destructive/15 text-destructive">erreur</span>;
+    return <span className="hidden md:inline-flex text-[10px] px-2 py-0.5 rounded bg-destructive/15 text-destructive">erreur · d{desired}/a{applied}</span>;
   }
   if (applied < desired) {
-    return <span className="hidden md:inline-flex text-[10px] px-2 py-0.5 rounded bg-[hsl(35_90%_55%_/_0.15)] text-[hsl(35_90%_55%)]">en attente v{desired}</span>;
+    return <span className="hidden md:inline-flex text-[10px] px-2 py-0.5 rounded bg-[hsl(35_90%_55%_/_0.15)] text-[hsl(35_90%_55%)]">en attente · d{desired}/a{applied}</span>;
   }
-  return <span className="hidden md:inline-flex text-[10px] px-2 py-0.5 rounded bg-[hsl(140_70%_40%_/_0.15)] text-[hsl(140_70%_55%)]">à jour v{applied}</span>;
+  return <span className="hidden md:inline-flex text-[10px] px-2 py-0.5 rounded bg-[hsl(140_70%_40%_/_0.15)] text-[hsl(140_70%_55%)]">à jour · v{applied}</span>;
 }
 
 function PairModal({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
@@ -202,8 +239,8 @@ function PairModal({ onClose, onDone }: { onClose: () => void; onDone: () => voi
       body: { code: code.trim(), name: name.trim() },
     });
     setBusy(false);
-    if (error || (data as any)?.error) {
-      toast.error((data as any)?.error ?? error?.message ?? "Erreur d'appairage");
+    if (error || (data as { error?: string })?.error) {
+      toast.error((data as { error?: string })?.error ?? error?.message ?? "Erreur d'appairage");
       return;
     }
     toast.success(`Casque "${name}" appairé !`);
@@ -221,7 +258,8 @@ function PairModal({ onClose, onDone }: { onClose: () => void; onDone: () => voi
         <div>
           <h2 className="text-lg font-bold">Appairer un casque</h2>
           <p className="text-xs text-muted-foreground mt-1">
-            Allume le casque, lance l'app VR. Un code à 6 chiffres s'affichera. Saisis-le ici avec un nom pour ce casque.
+            Allume le casque, lance l&apos;app VR. Un code à 6 chiffres s&apos;affichera. Saisis-le ici avec un nom pour ce casque.
+            Le casque n&apos;apparaîtra « Application active » qu&apos;après que l&apos;app ait contacté le serveur.
           </p>
         </div>
         <div className="space-y-2">

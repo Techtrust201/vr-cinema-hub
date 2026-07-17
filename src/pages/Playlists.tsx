@@ -4,6 +4,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { ListVideo, Plus, Trash2, Loader2, Check, Globe2, Headset as HeadsetIcon, FolderTree } from "lucide-react";
 import { toast } from "sonner";
 import { isPermissionError } from "@/lib/supabaseErrors";
+import { computeScopeUnionDiff } from "@/lib/assignmentDiff";
 
 interface Playlist { id: string; name: string; description: string | null; }
 interface Video { id: string; name: string; }
@@ -84,7 +85,8 @@ export default function Playlists() {
       }
       return;
     }
-    const beforeImpacted = (beforeRes.data as any)?.impacted_headsets ?? [];
+    type ImpactRow = { headset_id: string; headset_name?: string; desired?: number; desired_manifest_version?: number };
+    const beforeImpacted = ((beforeRes.data as { impacted_headsets?: ImpactRow[] } | null)?.impacted_headsets) ?? [];
     console.info("[PlaylistDebug] impacted_headsets_before", beforeImpacted);
 
     // 2. Mutation
@@ -132,20 +134,21 @@ export default function Playlists() {
       fetchAll();
       return;
     }
-    const afterImpacted = (afterRes.data as any)?.impacted_headsets ?? [];
+    const afterImpacted = ((afterRes.data as { impacted_headsets?: ImpactRow[] } | null)?.impacted_headsets) ?? [];
     console.info("[PlaylistDebug] impacted_headsets_after", afterImpacted);
 
     const beforeMap = new Map<string, number>(
-      beforeImpacted.map((h: any) => [h.headset_id, h.desired]),
+      beforeImpacted.map((h) => [h.headset_id, h.desired ?? h.desired_manifest_version ?? 0]),
     );
     const bumped: Array<{ id: string; name: string; before: number; after: number }> = [];
     const not_bumped: Array<{ id: string; name: string; desired: number }> = [];
-    for (const h of afterImpacted as any[]) {
+    for (const h of afterImpacted) {
+      const afterDesired = h.desired ?? h.desired_manifest_version ?? 0;
       const before = beforeMap.get(h.headset_id) ?? 0;
-      if (h.desired > before) {
-        bumped.push({ id: h.headset_id, name: h.headset_name, before, after: h.desired });
+      if (afterDesired > before) {
+        bumped.push({ id: h.headset_id, name: h.headset_name ?? h.headset_id, before, after: afterDesired });
       } else {
-        not_bumped.push({ id: h.headset_id, name: h.headset_name, desired: h.desired });
+        not_bumped.push({ id: h.headset_id, name: h.headset_name ?? h.headset_id, desired: afterDesired });
       }
     }
     console.info("[PlaylistDebug] bumped_headsets", bumped);
@@ -186,7 +189,8 @@ export default function Playlists() {
       }
       return;
     }
-    console.info("[PlaylistDebug] impacted_headsets_before", (beforeRes.data as any)?.impacted_headsets ?? []);
+    const beforeImpacted = ((beforeRes.data as { impacted_headsets?: Array<{ headset_id: string; desired_manifest_version?: number }> })?.impacted_headsets) ?? [];
+    console.info("[PlaylistDebug] impacted_headsets_before", beforeImpacted);
 
     let mutationError: { code?: string; message?: string } | null = null;
     if (existing) {
@@ -215,7 +219,38 @@ export default function Playlists() {
     }
 
     const afterRes = await supabase.rpc("diagnose_playlist_impact", { _playlist_id: playlistId });
-    console.info("[PlaylistDebug] impacted_headsets_after", (afterRes.data as any)?.impacted_headsets ?? []);
+    if (afterRes.error) {
+      console.warn("[PlaylistDebug] assignment diag after error", afterRes.error);
+      toast.warning(`Assignation OK mais diagnostic after indisponible : ${afterRes.error.message}`);
+      fetchAll();
+      return;
+    }
+    const afterImpacted = ((afterRes.data as { impacted_headsets?: Array<{ headset_id: string; desired_manifest_version?: number }> })?.impacted_headsets) ?? [];
+    console.info("[PlaylistDebug] impacted_headsets_after", afterImpacted);
+
+    const scopeDiff = computeScopeUnionDiff(beforeImpacted, afterImpacted);
+    console.info("[PlaylistDebug] scope_union_diff", scopeDiff);
+
+    const beforeDesired = new Map(beforeImpacted.map((h) => [h.headset_id, h.desired_manifest_version ?? 0]));
+    const removed = scopeDiff.filter((d) => d.scope === "removed_from_scope");
+    if (removed.length > 0) {
+      const ids = removed.map((r) => r.headset_id);
+      const { data: bumpedRows } = await supabase
+        .from("headsets")
+        .select("id, desired_manifest_version")
+        .in("id", ids);
+      for (const row of bumpedRows ?? []) {
+        const before = beforeDesired.get(row.id) ?? 0;
+        console.info("[PlaylistDebug] removed_headset_bump", {
+          headset_id: row.id,
+          desired_before: before,
+          desired_after: row.desired_manifest_version,
+          bumped: (row.desired_manifest_version ?? 0) > before,
+        });
+      }
+    }
+
+    toast.success(existing ? "Assignation retirée" : "Assignation ajoutée");
     fetchAll();
   }
 

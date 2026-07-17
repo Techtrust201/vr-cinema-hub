@@ -3,9 +3,10 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { FolderTree, Plus, Trash2, Loader2, Check, X } from "lucide-react";
 import { toast } from "sonner";
+import { isPermissionError } from "@/lib/supabaseErrors";
 
 interface Group { id: string; name: string; description: string | null; }
-interface Headset { id: string; name: string; }
+interface Headset { id: string; name: string; desired_manifest_version?: number; applied_manifest_version?: number; }
 interface Member { group_id: string; headset_id: string; }
 
 export default function Groups() {
@@ -17,12 +18,13 @@ export default function Groups() {
   const [loading, setLoading] = useState(true);
   const [newName, setNewName] = useState("");
   const [editing, setEditing] = useState<string | null>(null);
+  const [busyMember, setBusyMember] = useState<string | null>(null);
 
   const fetchAll = useCallback(async () => {
     setLoading(true);
     const [g, h, m] = await Promise.all([
       supabase.from("headset_groups").select("*").order("name"),
-      supabase.from("headsets").select("id, name").eq("status", "active").order("name"),
+      supabase.from("headsets").select("id, name, desired_manifest_version, applied_manifest_version").eq("status", "active").order("name"),
       supabase.from("headset_group_members").select("*"),
     ]);
     if (g.error || h.error || m.error) toast.error("Erreur de chargement");
@@ -37,23 +39,121 @@ export default function Groups() {
   async function createGroup() {
     if (!newName.trim()) return;
     const { error } = await supabase.from("headset_groups").insert({ name: newName.trim() });
-    if (error) toast.error(error.message);
-    else { setNewName(""); toast.success("Groupe créé"); fetchAll(); }
+    if (error) {
+      toast.error(isPermissionError(error)
+        ? "Création refusée : droits administrateur requis."
+        : error.message);
+      return;
+    }
+    setNewName("");
+    toast.success("Groupe créé");
+    fetchAll();
   }
 
   async function deleteGroup(id: string, name: string) {
     if (!confirm(`Supprimer "${name}" ?`)) return;
     const { error } = await supabase.from("headset_groups").delete().eq("id", id);
-    if (error) toast.error(error.message); else { toast.success("Supprimé"); fetchAll(); }
+    if (error) {
+      toast.error(isPermissionError(error)
+        ? "Suppression refusée : droits administrateur requis."
+        : error.message);
+      return;
+    }
+    toast.success("Supprimé");
+    fetchAll();
   }
 
   async function toggleMember(groupId: string, headsetId: string, present: boolean) {
+    const key = `${groupId}:${headsetId}`;
+    if (busyMember) return;
+    setBusyMember(key);
+
+    const headset = headsets.find((h) => h.id === headsetId);
+    const group = groups.find((g) => g.id === groupId);
+    console.info("[GroupDebug] toggling", {
+      group_id: groupId,
+      group_name: group?.name,
+      headset_id: headsetId,
+      headset_name: headset?.name,
+      op: present ? "delete" : "insert",
+    });
+
+    const { data: beforeHeadset } = await supabase
+      .from("headsets")
+      .select("id, desired_manifest_version, applied_manifest_version")
+      .eq("id", headsetId)
+      .maybeSingle();
+    const desiredBefore = beforeHeadset?.desired_manifest_version ?? 0;
+    console.info("[GroupDebug] desired_before", desiredBefore);
+
+    const { data: membershipBefore } = await supabase
+      .from("headset_group_members")
+      .select("group_id, headset_id")
+      .eq("group_id", groupId)
+      .eq("headset_id", headsetId)
+      .maybeSingle();
+    console.info("[GroupDebug] membership_before", membershipBefore);
+
+    let mutationError: { code?: string; message?: string } | null = null;
     if (present) {
-      await supabase.from("headset_group_members").delete().match({ group_id: groupId, headset_id: headsetId });
+      const { error } = await supabase
+        .from("headset_group_members")
+        .delete()
+        .match({ group_id: groupId, headset_id: headsetId });
+      mutationError = error;
     } else {
-      await supabase.from("headset_group_members").insert({ group_id: groupId, headset_id: headsetId });
+      const { error } = await supabase
+        .from("headset_group_members")
+        .insert({ group_id: groupId, headset_id: headsetId });
+      mutationError = error;
     }
-    fetchAll();
+
+    console.info("[GroupDebug] mutation_result", mutationError ?? { ok: true });
+    if (mutationError) {
+      console.error("[GroupDebug] mutation rejected", mutationError);
+      toast.error(isPermissionError(mutationError)
+        ? "Modification non enregistrée : droits administrateur requis."
+        : `Échec : ${mutationError.message}`);
+      setBusyMember(null);
+      return;
+    }
+
+    const { data: membershipAfter } = await supabase
+      .from("headset_group_members")
+      .select("group_id, headset_id")
+      .eq("group_id", groupId)
+      .eq("headset_id", headsetId)
+      .maybeSingle();
+    console.info("[GroupDebug] membership_after", membershipAfter);
+
+    const membershipOk = present ? !membershipAfter : !!membershipAfter;
+    if (!membershipOk) {
+      toast.error("Mutation non confirmée par la base — réessayer.");
+      setBusyMember(null);
+      await fetchAll();
+      return;
+    }
+
+    const { data: afterHeadset } = await supabase
+      .from("headsets")
+      .select("id, desired_manifest_version, applied_manifest_version")
+      .eq("id", headsetId)
+      .maybeSingle();
+    const desiredAfter = afterHeadset?.desired_manifest_version ?? 0;
+    console.info("[GroupDebug] desired_before_after", { before: desiredBefore, after: desiredAfter });
+
+    const bumped = desiredAfter > desiredBefore;
+    console.info("[GroupDebug] bump_confirmed", bumped);
+    if (!bumped) {
+      toast.warning(
+        "Membre mis à jour, mais desired_manifest_version n'a pas augmenté. Vérifier les triggers / assignments.",
+      );
+    } else {
+      toast.success(present ? "Casque retiré du groupe (manifest bumpé)" : "Casque ajouté au groupe (manifest bumpé)");
+    }
+
+    setBusyMember(null);
+    await fetchAll();
   }
 
   if (loading) return <div className="p-6 text-muted-foreground flex items-center gap-2"><Loader2 className="animate-spin" size={16} /> Chargement…</div>;
@@ -114,16 +214,20 @@ export default function Groups() {
                       <p className="text-xs text-muted-foreground">Aucun casque actif.</p>
                     ) : headsets.map((h) => {
                       const present = groupMembers.some((m) => m.headset_id === h.id);
+                      const busy = busyMember === `${g.id}:${h.id}`;
                       return (
                         <button
                           key={h.id}
+                          disabled={!!busyMember}
                           onClick={() => toggleMember(g.id, h.id, present)}
-                          className="w-full flex items-center justify-between px-3 py-2 rounded text-sm hover:bg-muted/40 transition"
+                          className="w-full flex items-center justify-between px-3 py-2 rounded text-sm hover:bg-muted/40 transition disabled:opacity-50"
                         >
                           <span>{h.name}</span>
-                          {present
-                            ? <Check size={14} className="text-[hsl(140_70%_55%)]" />
-                            : <X size={14} className="text-muted-foreground/40" />}
+                          {busy
+                            ? <Loader2 size={14} className="animate-spin text-muted-foreground" />
+                            : present
+                              ? <Check size={14} className="text-[hsl(140_70%_55%)]" />
+                              : <X size={14} className="text-muted-foreground/40" />}
                         </button>
                       );
                     })}
