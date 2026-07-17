@@ -26,3 +26,10 @@ dist-ssr
 # Secrets / Supabase CLI temp
 secret_key.png
 supabase/.temp/
+
+# Nested independent Unity git repo — never stage into parent
+vr-cinema-quest-app-unity/
+
+# Local video fixtures / dumps
+videos-alex/
+vr-ultimate-videos/

@@ -1,0 +1,26 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  web:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+      - run: npm ci || npm install
+      - run: npm run build
+      - run: npx tsc --noEmit -p tsconfig.app.json
+      - run: npm run test
+      # lint may include pre-existing debt; keep non-blocking until cleaned
+      - run: npm run lint
+        continue-on-error: true
