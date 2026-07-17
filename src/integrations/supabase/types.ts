@@ -619,6 +619,7 @@ export type Database = {
           library: Database["public"]["Enums"]["library_type"]
           name: string
           projection: Database["public"]["Enums"]["video_projection"]
+          sha256: string | null
           size_bytes: number
           stereo_mode: Database["public"]["Enums"]["video_stereo_mode"]
           storage_path: string
@@ -635,6 +636,7 @@ export type Database = {
           library?: Database["public"]["Enums"]["library_type"]
           name: string
           projection?: Database["public"]["Enums"]["video_projection"]
+          sha256?: string | null
           size_bytes?: number
           stereo_mode?: Database["public"]["Enums"]["video_stereo_mode"]
           storage_path: string
@@ -651,6 +653,7 @@ export type Database = {
           library?: Database["public"]["Enums"]["library_type"]
           name?: string
           projection?: Database["public"]["Enums"]["video_projection"]
+          sha256?: string | null
           size_bytes?: number
           stereo_mode?: Database["public"]["Enums"]["video_stereo_mode"]
           storage_path?: string

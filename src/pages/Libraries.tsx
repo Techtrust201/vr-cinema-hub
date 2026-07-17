@@ -152,6 +152,14 @@ export default function Libraries() {
     return isStereo ? "360_stereo" : "360_mono";
   };
 
+  const sha256Hex = async (file: File): Promise<string> => {
+    const buf = await file.arrayBuffer();
+    const digest = await crypto.subtle.digest("SHA-256", buf);
+    return Array.from(new Uint8Array(digest))
+      .map((b) => b.toString(16).padStart(2, "0"))
+      .join("");
+  };
+
   const confirmUpload = async (item: PendingUpload) => {
     // Block inconsistent uploads: stereo projection without known layout
     if (item.projection !== "flat" && item.stereo_mode === "unknown") {
@@ -164,6 +172,7 @@ export default function Libraries() {
     try {
       const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
       const path = `${activeLib}/${crypto.randomUUID()}-${safeName}`;
+      const sha256 = await sha256Hex(file);
       const { error: upErr } = await supabase.storage
         .from("videos")
         .upload(path, file, { cacheControl: "3600", upsert: false });
@@ -177,6 +186,7 @@ export default function Libraries() {
         stereo_mode,
         size_bytes: file.size,
         storage_path: path,
+        sha256,
       });
       if (dbErr) {
         await supabase.storage.from("videos").remove([path]);

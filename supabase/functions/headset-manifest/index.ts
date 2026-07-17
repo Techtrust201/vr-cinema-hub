@@ -174,6 +174,7 @@ Deno.serve(async (req) => {
       projection: string | null;
       stereo_mode: string | null;
       updated_at: string | null;
+      sha256: string | null;
     } | null;
   };
 
@@ -181,7 +182,7 @@ Deno.serve(async (req) => {
   if (playlistIds.length > 0) {
     const { data: pvideos, error: pvErr } = await supabase
       .from("playlist_videos")
-      .select("playlist_id, video_id, position, videos(id, name, storage_path, size_bytes, duration_seconds, format, projection, stereo_mode, updated_at)")
+      .select("playlist_id, video_id, position, videos(id, name, storage_path, size_bytes, duration_seconds, format, projection, stereo_mode, updated_at, sha256)")
       .in("playlist_id", playlistIds)
       .order("position", { ascending: true });
     if (pvErr) {
@@ -245,6 +246,7 @@ Deno.serve(async (req) => {
       format: v.format,
       size_bytes: v.size_bytes,
       duration_seconds: v.duration_seconds,
+      sha256: v.sha256 ?? null,
     });
   }
 
