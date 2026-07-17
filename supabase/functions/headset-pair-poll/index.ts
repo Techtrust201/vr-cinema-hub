@@ -1,5 +1,6 @@
 import { createClient } from "npm:@supabase/supabase-js@2.45.4";
 import { corsHeaders } from "../_shared/device-jwt.ts";
+import { getSecretKey } from "../_shared/supabase-keys.ts";
 
 // The Quest headset polls this endpoint (no user auth) using its
 // {code, pairing_secret}. Once the admin has claimed the code from the
@@ -33,7 +34,7 @@ Deno.serve(async (req) => {
 
   const supabase = createClient(
     Deno.env.get("SUPABASE_URL")!,
-    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+    getSecretKey(),
   );
 
   const { data, error } = await supabase.rpc("claim_pairing_device_token", {

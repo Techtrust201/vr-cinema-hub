@@ -1,5 +1,6 @@
 import { createClient } from "npm:@supabase/supabase-js@2.45.4";
 import { corsHeaders, extractBearer, verifyDeviceToken } from "../_shared/device-jwt.ts";
+import { getSecretKey } from "../_shared/supabase-keys.ts";
 
 // Lightweight ping sent by the Quest app (immediate on start/foreground, then periodically).
 // Updates last_seen + last_heartbeat_at + diagnostics, returns sync hint.
@@ -42,7 +43,7 @@ Deno.serve(async (req) => {
 
   const supabase = createClient(
     Deno.env.get("SUPABASE_URL")!,
-    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+    getSecretKey(),
   );
 
   const { data: existing, error: findErr } = await supabase

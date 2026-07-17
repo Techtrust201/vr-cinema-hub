@@ -1,5 +1,6 @@
 import { createClient } from "npm:@supabase/supabase-js@2.45.4";
 import { corsHeaders, extractBearer, verifyDeviceToken } from "../_shared/device-jwt.ts";
+import { getSecretKey } from "../_shared/supabase-keys.ts";
 
 // Called by the Quest app on every sync cycle.
 // v3: returns a versioned manifest. The headset MUST echo back the
@@ -34,7 +35,7 @@ Deno.serve(async (req) => {
 
   const supabase = createClient(
     Deno.env.get("SUPABASE_URL")!,
-    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+    getSecretKey(),
   );
 
   // Make sure the headset still exists and is active.

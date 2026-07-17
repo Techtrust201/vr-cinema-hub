@@ -1,5 +1,6 @@
 import { createClient } from "npm:@supabase/supabase-js@2.45.4";
 import { corsHeaders, extractBearer, verifyDeviceToken } from "../_shared/device-jwt.ts";
+import { getSecretKey } from "../_shared/supabase-keys.ts";
 
 // Receives the result of a sync cycle from the Quest app.
 // Two modes:
@@ -58,7 +59,7 @@ Deno.serve(async (req) => {
 
   const supabase = createClient(
     Deno.env.get("SUPABASE_URL")!,
-    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+    getSecretKey(),
   );
 
   if (!body.phase || body.phase === "started") {

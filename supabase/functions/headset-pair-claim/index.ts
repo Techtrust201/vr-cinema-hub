@@ -1,5 +1,6 @@
 import { createClient } from "npm:@supabase/supabase-js@2.45.4";
 import { corsHeaders, signDeviceToken } from "../_shared/device-jwt.ts";
+import { getPublishableKey, getSecretKey } from "../_shared/supabase-keys.ts";
 
 // Called by the dashboard (admin user, JWT required) to claim a pairing
 // code displayed on a headset. Creates the headset row, signs a device
@@ -42,7 +43,7 @@ Deno.serve(async (req) => {
   // Verify the calling user and that they have admin role.
   const userClient = createClient(
     Deno.env.get("SUPABASE_URL")!,
-    Deno.env.get("SUPABASE_PUBLISHABLE_KEY") ?? Deno.env.get("SUPABASE_ANON_KEY")!,
+    getPublishableKey(),
     { global: { headers: { Authorization: authHeader } } },
   );
   const token = authHeader.slice(7);
@@ -56,7 +57,7 @@ Deno.serve(async (req) => {
 
   const admin = createClient(
     Deno.env.get("SUPABASE_URL")!,
-    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+    getSecretKey(),
   );
 
   const { data: roles } = await admin
