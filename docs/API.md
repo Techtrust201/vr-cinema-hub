@@ -169,6 +169,25 @@ Fin :
 
 Sinon : le report est stocké, `applied_manifest_version` reste inchangé, un log de rejet est émis.
 
+### Réponse `phase=finished` (explicite)
+
+```json
+{
+  "ok": true,
+  "report_stored": true,
+  "applied_updated": true,
+  "accepted_applied_manifest_version": 42,
+  "server_desired_manifest_version": 42,
+  "server_previous_applied_manifest_version": 41,
+  "reason": "ok"
+}
+```
+
+`reason` ∈ `ok | rollback | above_desired | unknown_version | missing_applied_manifest_version | invalid_status | headset_not_found | report_not_found | skipped`.
+
+Unity ne doit avancer son `lastApplied` local que si `applied_updated === true`
+et `accepted_applied_manifest_version` égale la version envoyée.
+
 ### Statuts interdits côté casque
 
 `pending` est **calculé côté serveur/dashboard** (`applied < desired`). Le casque ne doit JAMAIS envoyer `status: pending` ; le serveur répond `400`.
