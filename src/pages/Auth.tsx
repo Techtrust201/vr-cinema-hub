@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
@@ -120,6 +121,13 @@ export default function Auth() {
               />
               {mode === "signup" && (
                 <p className="text-[10px] text-muted-foreground/60 mt-1">Au moins 8 caractères</p>
+              )}
+              {mode === "signin" && (
+                <div className="text-right mt-1.5">
+                  <Link to="/forgot-password" className="text-[11px] text-[hsl(var(--vr-cyan))] hover:text-[hsl(var(--vr-cyan)_/_0.8)] transition-colors">
+                    Mot de passe oublié ?
+                  </Link>
+                </div>
               )}
             </div>
             <button
