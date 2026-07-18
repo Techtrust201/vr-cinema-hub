@@ -7,6 +7,7 @@ import DashboardLayout from "@/components/dashboard/DashboardLayout";
 import { AuthProvider } from "@/hooks/useAuth";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import Auth from "./pages/Auth";
+import AdminInvite from "./pages/AdminInvite";
 import ForgotPassword from "./pages/ForgotPassword";
 import ResetPassword from "./pages/ResetPassword";
 import Index from "./pages/Index";
@@ -30,6 +31,7 @@ const App = () => (
         <AuthProvider>
           <Routes>
             <Route path="/auth" element={<Auth />} />
+            <Route path="/admin/invite" element={<AdminInvite />} />
             <Route path="/forgot-password" element={<ForgotPassword />} />
             <Route path="/reset-password" element={<ResetPassword />} />
             <Route element={<ProtectedRoute />}>

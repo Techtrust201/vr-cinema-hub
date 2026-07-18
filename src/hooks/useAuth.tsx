@@ -27,36 +27,51 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Register listener FIRST
     const { data: sub } = supabase.auth.onAuthStateChange((_event, newSession) => {
       setSession(newSession);
       setUser(newSession?.user ?? null);
       if (!newSession?.user) {
         setRole(null);
       } else {
-        // Defer DB call to avoid deadlock
         setTimeout(() => fetchRole(newSession.user.id), 0);
       }
     });
 
-    // Then check existing session
     supabase.auth.getSession().then(({ data: { session: s } }) => {
       setSession(s);
       setUser(s?.user ?? null);
-      if (s?.user) fetchRole(s.user.id);
-      setLoading(false);
+      if (s?.user) {
+        fetchRole(s.user.id).finally(() => setLoading(false));
+      } else {
+        setLoading(false);
+      }
     });
 
     return () => sub.subscription.unsubscribe();
   }, []);
 
   async function fetchRole(uid: string) {
-    const { data } = await supabase
+    // Prefer deterministic RPC when available; fall back to single-row select.
+    const { data: rpcRole, error: rpcErr } = await supabase.rpc("get_user_role", {
+      _user_id: uid,
+    });
+    if (!rpcErr && (rpcRole === "admin" || rpcRole === "operator" || rpcRole === null)) {
+      setRole(rpcRole as Role);
+      return;
+    }
+
+    const { data, error } = await supabase
       .from("user_roles")
       .select("role")
       .eq("user_id", uid)
       .maybeSingle();
-    setRole((data?.role as Role) ?? "operator");
+
+    if (error) {
+      setRole(null);
+      return;
+    }
+    // Never invent a default operator role client-side.
+    setRole((data?.role as Role) ?? null);
   }
 
   const signOut = async () => {

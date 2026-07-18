@@ -39,9 +39,31 @@ export default function UserMenu() {
           <div className="px-4 py-3 border-b border-border/50">
             <p className="text-xs text-muted-foreground truncate">{user.email}</p>
             <div className="flex items-center gap-1.5 mt-1.5">
-              <Shield size={10} className={cn(role === "admin" ? "text-[hsl(var(--vr-violet))]" : "text-[hsl(var(--vr-cyan))]")} />
-              <span className={cn("text-[10px] font-semibold uppercase tracking-wider", role === "admin" ? "text-[hsl(var(--vr-violet))]" : "text-[hsl(var(--vr-cyan))]")}>
-                {role === "admin" ? "Administrateur" : "Opérateur"}
+              <Shield
+                size={10}
+                className={cn(
+                  role === "admin"
+                    ? "text-[hsl(var(--vr-violet))]"
+                    : role === "operator"
+                      ? "text-[hsl(var(--vr-cyan))]"
+                      : "text-muted-foreground",
+                )}
+              />
+              <span
+                className={cn(
+                  "text-[10px] font-semibold uppercase tracking-wider",
+                  role === "admin"
+                    ? "text-[hsl(var(--vr-violet))]"
+                    : role === "operator"
+                      ? "text-[hsl(var(--vr-cyan))]"
+                      : "text-muted-foreground",
+                )}
+              >
+                {role === "admin"
+                  ? "Administrateur"
+                  : role === "operator"
+                    ? "Opérateur"
+                    : "Non autorisé"}
               </span>
             </div>
           </div>
