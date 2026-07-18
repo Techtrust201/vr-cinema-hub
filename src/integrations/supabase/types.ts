@@ -677,12 +677,23 @@ export type Database = {
         Args: { _playlist_id: string }
         Returns: Json
       }
+      get_user_role: {
+        Args: { _user_id: string }
+        Returns: Database["public"]["Enums"]["app_role"] | null
+      }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
           _user_id: string
         }
         Returns: boolean
+      }
+      set_user_role: {
+        Args: {
+          _role: Database["public"]["Enums"]["app_role"]
+          _user_id: string
+        }
+        Returns: Database["public"]["Enums"]["app_role"]
       }
       headsets_for_playlist: {
         Args: { _playlist_id: string }
