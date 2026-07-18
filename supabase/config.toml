@@ -1,1 +1,46 @@
-project_id = "eanocqzhvlpgppccfppi"
+# Linked staging project (never point this at production/legacy Lovable).
+project_id = "fllhnbeukuwrvserebqn"
+
+[api]
+enabled = true
+
+[db]
+major_version = 15
+
+[auth]
+enabled = true
+# Local default; staging disable_signup is enforced via project Auth settings.
+enable_signup = false
+
+# ---------------------------------------------------------------------------
+# Edge Functions — gateway JWT verification
+#
+# Device endpoints authenticate with a custom DEVICE_TOKEN_SECRET JWT (or a
+# pairing_secret). Publishable keys (sb_publishable_…) are not JWTs, so the
+# gateway must not verify Authorization for these routes. Auth is enforced
+# inside each function (device token / admin role checks).
+#
+# Admin dashboard endpoints keep verify_jwt = true so only a valid user JWT
+# reaches the handler; the handler still re-checks admin role.
+# ---------------------------------------------------------------------------
+
+[functions.headset-pair-init]
+verify_jwt = false
+
+[functions.headset-pair-poll]
+verify_jwt = false
+
+[functions.headset-heartbeat]
+verify_jwt = false
+
+[functions.headset-manifest]
+verify_jwt = false
+
+[functions.headset-report-sync]
+verify_jwt = false
+
+[functions.headset-pair-claim]
+verify_jwt = true
+
+[functions.headset-force-resync]
+verify_jwt = true
