@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useAuth } from "@/hooks/useAuth";
-import { LogOut, User as UserIcon, Shield } from "lucide-react";
+import { roleLabel } from "@/lib/permissions";
+import { LogOut, Shield } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -19,6 +20,7 @@ export default function UserMenu() {
 
   if (!user) return null;
   const initial = (user.email ?? "?").charAt(0).toUpperCase();
+  const label = roleLabel(role);
 
   const handleLogout = async () => {
     await signOut();
@@ -42,28 +44,28 @@ export default function UserMenu() {
               <Shield
                 size={10}
                 className={cn(
-                  role === "admin"
-                    ? "text-[hsl(var(--vr-violet))]"
-                    : role === "operator"
-                      ? "text-[hsl(var(--vr-cyan))]"
-                      : "text-muted-foreground",
+                  role === "owner"
+                    ? "text-[hsl(45_90%_55%)]"
+                    : role === "admin"
+                      ? "text-[hsl(var(--vr-violet))]"
+                      : role === "operator"
+                        ? "text-[hsl(var(--vr-cyan))]"
+                        : "text-muted-foreground",
                 )}
               />
               <span
                 className={cn(
                   "text-[10px] font-semibold uppercase tracking-wider",
-                  role === "admin"
-                    ? "text-[hsl(var(--vr-violet))]"
-                    : role === "operator"
-                      ? "text-[hsl(var(--vr-cyan))]"
-                      : "text-muted-foreground",
+                  role === "owner"
+                    ? "text-[hsl(45_90%_55%)]"
+                    : role === "admin"
+                      ? "text-[hsl(var(--vr-violet))]"
+                      : role === "operator"
+                        ? "text-[hsl(var(--vr-cyan))]"
+                        : "text-muted-foreground",
                 )}
               >
-                {role === "admin"
-                  ? "Administrateur"
-                  : role === "operator"
-                    ? "Opérateur"
-                    : "Non autorisé"}
+                {label}
               </span>
             </div>
           </div>

@@ -19,8 +19,7 @@ interface Assignment {
 }
 
 export default function Playlists() {
-  const { role } = useAuth();
-  const isAdmin = role === "admin";
+  const { canManageContent } = useAuth();
   const [playlists, setPlaylists] = useState<Playlist[]>([]);
   const [videos, setVideos] = useState<Video[]>([]);
   const [pvideos, setPvideos] = useState<PlaylistVideo[]>([]);
@@ -79,7 +78,7 @@ export default function Playlists() {
     if (beforeRes.error) {
       console.warn("[PlaylistDebug] diag before error", beforeRes.error);
       if (isPermissionError(beforeRes.error)) {
-        toast.error("Diagnostic refusé : droits administrateur requis.");
+        toast.error("Diagnostic refusé : droits insuffisants.");
       } else {
         toast.error(`Diagnostic indisponible : ${beforeRes.error.message}. Mutation annulée.`);
       }
@@ -107,7 +106,7 @@ export default function Playlists() {
     if (mutationError) {
       console.error("[PlaylistDebug] mutation rejected", mutationError);
       if (isPermissionError(mutationError)) {
-        toast.error("Modification non enregistrée : votre compte n'a pas les droits administrateur.");
+        toast.error("Modification non enregistrée : droits insuffisants.");
       } else {
         toast.error(`Échec : ${mutationError.message}`);
       }
@@ -183,7 +182,7 @@ export default function Playlists() {
     if (beforeRes.error) {
       console.warn("[PlaylistDebug] assignment diag before error", beforeRes.error);
       if (isPermissionError(beforeRes.error)) {
-        toast.error("Diagnostic refusé : droits administrateur requis.");
+        toast.error("Diagnostic refusé : droits insuffisants.");
       } else {
         toast.error(`Diagnostic indisponible : ${beforeRes.error.message}. Mutation annulée.`);
       }
@@ -211,7 +210,7 @@ export default function Playlists() {
     if (mutationError) {
       console.error("[PlaylistDebug] assignment rejected", mutationError);
       if (isPermissionError(mutationError)) {
-        toast.error("Modification non enregistrée : votre compte n'a pas les droits administrateur.");
+        toast.error("Modification non enregistrée : droits insuffisants.");
       } else {
         toast.error(`Échec : ${mutationError.message}`);
       }
@@ -263,7 +262,7 @@ export default function Playlists() {
         <p className="text-sm text-muted-foreground">Regroupez les vidéos puis assignez-les aux casques ou groupes.</p>
       </div>
 
-      {isAdmin && (
+      {canManageContent && (
         <div className="flex gap-2">
           <input
             value={newName}
@@ -298,7 +297,7 @@ export default function Playlists() {
                       {items.length} vidéo{items.length !== 1 ? "s" : ""} • {assigns.length} assignation{assigns.length !== 1 ? "s" : ""}
                     </p>
                   </div>
-                  {isAdmin && (
+                  {canManageContent && (
                     <div className="flex items-center gap-2">
                       <button onClick={() => setEditing(isEditing ? null : pl.id)} className="text-xs text-[hsl(var(--vr-violet))] hover:underline">
                         {isEditing ? "Fermer" : "Éditer"}

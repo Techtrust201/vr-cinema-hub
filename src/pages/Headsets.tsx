@@ -44,8 +44,7 @@ function contactTone(st: AppContactState) {
 }
 
 export default function Headsets() {
-  const { role } = useAuth();
-  const isAdmin = role === "admin";
+  const { canManageContent } = useAuth();
   const [list, setList] = useState<HeadsetRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [pairOpen, setPairOpen] = useState(false);
@@ -85,7 +84,7 @@ export default function Headsets() {
       .maybeSingle();
     if (error) {
       toast.error(isPermissionError(error)
-        ? "Révoquer nécessite les droits administrateur."
+        ? "Révoquer nécessite des droits de gestion."
         : error.message);
       return;
     }
@@ -102,7 +101,7 @@ export default function Headsets() {
     const { error } = await supabase.from("headsets").delete().eq("id", id);
     if (error) {
       toast.error(isPermissionError(error)
-        ? "Suppression refusée : droits administrateur requis."
+        ? "Suppression refusée : droits insuffisants."
         : error.message);
       return;
     }
@@ -124,7 +123,7 @@ export default function Headsets() {
             Statut = contact de l&apos;application VR avec le serveur (pas l&apos;alimentation physique du casque).
           </p>
         </div>
-        {isAdmin && (
+        {canManageContent && (
           <button
             onClick={() => setPairOpen(true)}
             className="flex items-center gap-2 px-4 py-2 rounded-lg bg-[hsl(var(--vr-violet))] text-white font-medium hover:opacity-90 transition"
@@ -142,7 +141,7 @@ export default function Headsets() {
         <div className="text-center py-12 border border-dashed border-border/50 rounded-xl">
           <Headset className="mx-auto mb-3 text-muted-foreground/50" size={32} />
           <p className="text-muted-foreground">Aucun casque appairé.</p>
-          {isAdmin && <p className="text-xs text-muted-foreground/60 mt-1">Cliquez sur « Appairer un casque » pour commencer.</p>}
+          {canManageContent && <p className="text-xs text-muted-foreground/60 mt-1">Cliquez sur « Appairer un casque » pour commencer.</p>}
         </div>
       ) : (
         <div className="grid gap-3">
@@ -189,7 +188,7 @@ export default function Headsets() {
                     <span className="flex items-center gap-1"><HardDrive size={12} /> {fmtBytes(h.storage_free_bytes)} libres</span>
                   )}
                 </div>
-                {isAdmin && (
+                {canManageContent && (
                   <div className="flex items-center gap-1">
                     {h.status === "active" && (
                       <button onClick={() => revoke(h.id, h.name)} className="px-2 py-1 text-xs text-muted-foreground hover:text-destructive transition">Révoquer</button>

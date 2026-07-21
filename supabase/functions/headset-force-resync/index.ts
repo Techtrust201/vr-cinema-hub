@@ -48,14 +48,13 @@ Deno.serve(async (req) => {
     getSecretKey(),
   );
 
-  const { data: roleRow } = await admin
-    .from("user_roles")
-    .select("role")
-    .eq("user_id", userData.user.id)
-    .eq("role", "admin")
-    .maybeSingle();
-
-  if (!roleRow) {
+  const { data: actorRole, error: roleErr } = await admin.rpc("get_user_role", {
+    _user_id: userData.user.id,
+  });
+  if (
+    roleErr ||
+    (actorRole !== "owner" && actorRole !== "admin" && actorRole !== "operator")
+  ) {
     return new Response(JSON.stringify({ error: "Forbidden" }), {
       status: 403,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
