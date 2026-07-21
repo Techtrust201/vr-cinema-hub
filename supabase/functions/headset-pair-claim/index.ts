@@ -98,25 +98,66 @@ Deno.serve(async (req) => {
     });
   }
 
-  const { data: headset, error: hErr } = await admin
-    .from("headsets")
-    .insert({
-      name: body.name.trim(),
-      serial: pairing.pending_serial,
-      model: pairing.pending_model,
-      status: "active",
-      paired_by: userData.user.id,
-      paired_at: new Date().toISOString(),
-    })
-    .select("id, name")
-    .single();
+  // Reuse existing headset for the same physical serial to avoid duplicates.
+  let headset: { id: string; name: string } | null = null;
+  const serial = pairing.pending_serial?.trim() || null;
+  if (serial) {
+    const { data: existing, error: findErr } = await admin
+      .from("headsets")
+      .select("id, name")
+      .eq("serial", serial)
+      .order("created_at", { ascending: true })
+      .limit(1)
+      .maybeSingle();
+    if (findErr) {
+      console.error("headset serial lookup failed", findErr);
+    } else if (existing) {
+      const { data: updated, error: updErr } = await admin
+        .from("headsets")
+        .update({
+          name: body.name.trim(),
+          model: pairing.pending_model,
+          status: "active",
+          paired_by: userData.user.id,
+          paired_at: new Date().toISOString(),
+        })
+        .eq("id", existing.id)
+        .select("id, name")
+        .single();
+      if (updErr || !updated) {
+        console.error("headset reuse update failed", updErr);
+        return new Response(JSON.stringify({ error: "Could not reuse headset" }), {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      headset = updated;
+      console.log(`[PairClaim] reused headset_id=${headset.id} serial_hash_present=true`);
+    }
+  }
 
-  if (hErr || !headset) {
-    console.error("headset insert failed", hErr);
-    return new Response(JSON.stringify({ error: "Could not create headset" }), {
-      status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+  if (!headset) {
+    const { data: created, error: hErr } = await admin
+      .from("headsets")
+      .insert({
+        name: body.name.trim(),
+        serial,
+        model: pairing.pending_model,
+        status: "active",
+        paired_by: userData.user.id,
+        paired_at: new Date().toISOString(),
+      })
+      .select("id, name")
+      .single();
+
+    if (hErr || !created) {
+      console.error("headset insert failed", hErr);
+      return new Response(JSON.stringify({ error: "Could not create headset" }), {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    headset = created;
   }
 
   // Nouveau casque actif : bump immédiat pour hériter des assignments `all`
