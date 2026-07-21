@@ -16,7 +16,7 @@ export function resolveVideoContentType(file: File): string {
   const dot = name.lastIndexOf(".");
   if (dot < 0) return typed || "application/octet-stream";
   const ext = name.slice(dot).toLowerCase();
-  return EXT_MIME[ext] ?? typed || "application/octet-stream";
+  return EXT_MIME[ext] ?? (typed || "application/octet-stream");
 }
 
 /** Sanitize storage object basename without changing the display title. */
