@@ -15,7 +15,7 @@
 # =============================================================================
 set -euo pipefail
 
-PROJECT_ID="eanocqzhvlpgppccfppi"
+PROJECT_ID="fllhnbeukuwrvserebqn"
 BASE="https://${PROJECT_ID}.supabase.co/functions/v1"
 ANON_KEY="sb_publishable_BG39aLgEbKIdusPcOHHcgg_ynDKu6aA"
 
