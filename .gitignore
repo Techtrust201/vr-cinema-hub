@@ -39,3 +39,7 @@ supabase/.branches/
 .env.local*
 .env.*.local
 .env.new-supabase.local
+
+# Local env backups — never commit
+.env.backup*
+*.backup-pre-cutover*
