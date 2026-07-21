@@ -76,8 +76,7 @@ function fmtBytes(b: number) {
 }
 
 export default function Sync() {
-  const { role } = useAuth();
-  const isAdmin = role === "admin";
+  const { canManageContent } = useAuth();
   const [tab, setTab] = useState<"state" | "history">("state");
   const [reports, setReports] = useState<SyncReport[]>([]);
   const [headsets, setHeadsets] = useState<Headset[]>([]);
@@ -135,8 +134,12 @@ export default function Sync() {
     const { data, error } = await supabase.rpc("diagnose_headset_sync", { _headset_id: h.id });
     setDiagLoading(null);
     if (error) {
-      if (error.message?.includes("admin_required")) toast.error("Réservé aux administrateurs.");
-      else toast.error("Diag erreur : " + error.message);
+      if (
+        error.message?.includes("admin_required") ||
+        error.message?.includes("content_manager_required")
+      ) {
+        toast.error("Réservé aux gestionnaires de contenu.");
+      } else toast.error("Diag erreur : " + error.message);
       return;
     }
     console.info("[SyncDiag] headset", h.name, data);
@@ -150,8 +153,12 @@ export default function Sync() {
     const { data, error } = await supabase.rpc("diagnose_playlist_impact", { _playlist_id: diagPlaylistId });
     setDiagLoading(null);
     if (error) {
-      if (error.message?.includes("admin_required")) toast.error("Réservé aux administrateurs.");
-      else toast.error("Diag erreur : " + error.message);
+      if (
+        error.message?.includes("admin_required") ||
+        error.message?.includes("content_manager_required")
+      ) {
+        toast.error("Réservé aux gestionnaires de contenu.");
+      } else toast.error("Diag erreur : " + error.message);
       return;
     }
     console.info("[SyncDiag] playlist", diagPlaylistId, data);
@@ -216,7 +223,7 @@ export default function Sync() {
                       Dernier manifest servi : {fmtRel(h.last_manifest_at)} • Dernier report : {fmtRel(h.last_sync_at)}
                     </p>
                   </div>
-                  {isAdmin && (
+                  {canManageContent && (
                     <div className="flex items-center gap-2">
                       <button
                         onClick={() => runHeadsetDiag(h)}
@@ -284,7 +291,7 @@ export default function Sync() {
         )
       )}
 
-      {isAdmin && tab === "state" && (
+      {canManageContent && tab === "state" && (
         <div className="mt-6 p-4 rounded-xl border border-border/40 bg-[hsl(var(--vr-surface))] space-y-3">
           <div className="flex items-center gap-2">
             <Bug size={16} className="text-[hsl(var(--vr-violet))]" />
@@ -312,7 +319,7 @@ export default function Sync() {
         </div>
       )}
 
-      {isAdmin && diagJson && (
+      {canManageContent && diagJson && (
         <div className="mt-4 p-4 rounded-xl border border-border/40 bg-[hsl(var(--vr-surface))]">
           <div className="flex items-center justify-between mb-2">
             <h3 className="text-sm font-semibold">Résultat diagnostic</h3>

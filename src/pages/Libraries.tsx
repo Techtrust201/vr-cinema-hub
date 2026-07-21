@@ -94,8 +94,7 @@ interface PendingUpload {
 }
 
 export default function Libraries() {
-  const { role } = useAuth();
-  const isAdmin = role === "admin";
+  const { canManageContent } = useAuth();
   const [activeLib, setActiveLib] = useState<LibraryType>("location");
   const [videos, setVideos] = useState<VideoRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -120,7 +119,7 @@ export default function Libraries() {
   useEffect(() => { fetchVideos(); }, [fetchVideos]);
 
   const handleFiles = (files: FileList | null) => {
-    if (!files || !isAdmin) return;
+    if (!files || !canManageContent) return;
     const next: PendingUpload[] = Array.from(files).map((file) => ({
       tempId: `up-${Date.now()}-${Math.random()}`,
       file,
@@ -246,10 +245,10 @@ export default function Libraries() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Bibliothèques</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            {isAdmin ? "Gérez la bibliothèque vidéo partagée" : "Consultez les vidéos disponibles"}
+            {canManageContent ? "Gérez la bibliothèque vidéo partagée" : "Consultez les vidéos disponibles"}
           </p>
         </div>
-        {isAdmin && (
+        {canManageContent && (
           <button
             onClick={() => fileRef.current?.click()}
             className="flex items-center gap-2 px-4 py-2 rounded-lg bg-[hsl(var(--vr-violet))] text-white text-sm font-medium hover:bg-[hsl(var(--vr-violet)_/_0.85)] transition-colors"
@@ -377,8 +376,8 @@ export default function Libraries() {
         </div>
       )}
 
-      {/* Drop zone (admin only) */}
-      {isAdmin && (
+      {/* Drop zone (content managers) */}
+      {canManageContent && (
         <div
           onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
           onDragLeave={() => setDragging(false)}
@@ -410,7 +409,7 @@ export default function Libraries() {
         <div className="rounded-xl border border-dashed border-border/50 py-12 flex flex-col items-center gap-2 text-muted-foreground/50">
           <FolderOpen size={28} />
           <p className="text-sm">Aucune vidéo dans cette bibliothèque</p>
-          {!isAdmin && <p className="text-xs">Demandez à un administrateur d'en ajouter</p>}
+          {!canManageContent && <p className="text-xs">Demandez à un administrateur d'en ajouter</p>}
         </div>
       ) : (
         <div className="space-y-2">
@@ -438,7 +437,7 @@ export default function Libraries() {
               >
                 {previewLoading === v.id ? <Loader2 size={13} className="animate-spin" /> : <Play size={13} />}
               </button>
-              {isAdmin && (
+              {canManageContent && (
                 <button
                   onClick={() => handleDelete(v)}
                   className="p-2 rounded text-muted-foreground/40 hover:text-destructive hover:bg-destructive/10 transition-colors"

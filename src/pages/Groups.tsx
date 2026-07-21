@@ -10,8 +10,7 @@ interface Headset { id: string; name: string; desired_manifest_version?: number;
 interface Member { group_id: string; headset_id: string; }
 
 export default function Groups() {
-  const { role } = useAuth();
-  const isAdmin = role === "admin";
+  const { canManageContent } = useAuth();
   const [groups, setGroups] = useState<Group[]>([]);
   const [headsets, setHeadsets] = useState<Headset[]>([]);
   const [members, setMembers] = useState<Member[]>([]);
@@ -41,7 +40,7 @@ export default function Groups() {
     const { error } = await supabase.from("headset_groups").insert({ name: newName.trim() });
     if (error) {
       toast.error(isPermissionError(error)
-        ? "Création refusée : droits administrateur requis."
+        ? "Création refusée : droits insuffisants."
         : error.message);
       return;
     }
@@ -55,7 +54,7 @@ export default function Groups() {
     const { error } = await supabase.from("headset_groups").delete().eq("id", id);
     if (error) {
       toast.error(isPermissionError(error)
-        ? "Suppression refusée : droits administrateur requis."
+        ? "Suppression refusée : droits insuffisants."
         : error.message);
       return;
     }
@@ -112,7 +111,7 @@ export default function Groups() {
     if (mutationError) {
       console.error("[GroupDebug] mutation rejected", mutationError);
       toast.error(isPermissionError(mutationError)
-        ? "Modification non enregistrée : droits administrateur requis."
+        ? "Modification non enregistrée : droits insuffisants."
         : `Échec : ${mutationError.message}`);
       setBusyMember(null);
       return;
@@ -165,7 +164,7 @@ export default function Groups() {
         <p className="text-sm text-muted-foreground">Regroupez les casques par lieu, client ou usage.</p>
       </div>
 
-      {isAdmin && (
+      {canManageContent && (
         <div className="flex gap-2">
           <input
             value={newName}
@@ -197,7 +196,7 @@ export default function Groups() {
                     <p className="font-semibold">{g.name}</p>
                     <p className="text-xs text-muted-foreground">{groupMembers.length} casque{groupMembers.length !== 1 ? "s" : ""}</p>
                   </div>
-                  {isAdmin && (
+                  {canManageContent && (
                     <div className="flex items-center gap-2">
                       <button onClick={() => setEditing(isEditing ? null : g.id)} className="text-xs text-[hsl(var(--vr-violet))] hover:underline">
                         {isEditing ? "Fermer" : "Gérer les membres"}

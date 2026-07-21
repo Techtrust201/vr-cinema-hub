@@ -60,14 +60,14 @@ Deno.serve(async (req) => {
     getSecretKey(),
   );
 
-  const { data: roles } = await admin
-    .from("user_roles")
-    .select("role")
-    .eq("user_id", userData.user.id)
-    .eq("role", "admin");
-
-  if (!roles || roles.length === 0) {
-    return new Response(JSON.stringify({ error: "Forbidden: admin only" }), {
+  const { data: actorRole, error: roleErr } = await admin.rpc("get_user_role", {
+    _user_id: userData.user.id,
+  });
+  if (
+    roleErr ||
+    (actorRole !== "owner" && actorRole !== "admin" && actorRole !== "operator")
+  ) {
+    return new Response(JSON.stringify({ error: "Forbidden: content managers only" }), {
       status: 403,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

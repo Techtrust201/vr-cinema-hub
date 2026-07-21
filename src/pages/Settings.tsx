@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { useAuth, type AppRole } from "@/hooks/useAuth";
+import { useAuth } from "@/hooks/useAuth";
+import { type AppRole, roleLabel } from "@/lib/permissions";
 import { supabase } from "@/integrations/supabase/client";
 import {
   LogOut,
@@ -28,14 +29,16 @@ type AuditRow = {
   target_user_id: string | null;
 };
 
-const ROLE_LABEL: Record<AppRole, string> = {
-  owner: "Owner",
-  admin: "Admin",
-  operator: "Operator",
-};
-
 export default function Settings() {
-  const { user, role, signOut } = useAuth();
+  const {
+    user,
+    role,
+    signOut,
+    canManageMembers,
+    canManageSecurity,
+    canTransferOwnership,
+    isOwner,
+  } = useAuth();
   const [tab, setTab] = useState<"account" | "users" | "security" | "org" | "about">(
     "account",
   );
@@ -45,8 +48,6 @@ export default function Settings() {
   const [inviteRole, setInviteRole] = useState<AppRole>("operator");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
-
-  const canManageMembers = role === "owner" || role === "admin";
 
   async function loadMembers() {
     if (!canManageMembers) return;
@@ -59,7 +60,7 @@ export default function Settings() {
   }
 
   async function loadAudit() {
-    if (role !== "owner" && role !== "admin") return;
+    if (!canManageMembers && !canManageSecurity) return;
     const { data, error } = await supabase
       .from("organization_audit_logs")
       .select("id,action,old_role,new_role,created_at,actor_user_id,target_user_id")
@@ -167,7 +168,7 @@ export default function Settings() {
               <p className="text-xs text-muted-foreground">Connecté en tant que</p>
               <p className="text-sm font-medium truncate">{user?.email ?? "—"}</p>
               <p className="text-xs text-muted-foreground mt-0.5">
-                Rôle : {role ? ROLE_LABEL[role] : "—"}
+                Rôle : {roleLabel(role)}
               </p>
             </div>
           </div>
@@ -203,9 +204,11 @@ export default function Settings() {
                     onChange={(e) => setInviteRole(e.target.value as AppRole)}
                     className="rounded-lg border border-border/60 bg-background px-3 py-2 text-sm"
                   >
-                    {role === "owner" && <option value="owner">Owner</option>}
-                    <option value="admin">Admin</option>
-                    <option value="operator">Operator</option>
+                    {canTransferOwnership && (
+                      <option value="owner">Propriétaire</option>
+                    )}
+                    <option value="admin">Administrateur</option>
+                    <option value="operator">Opérateur</option>
                   </select>
                   <button
                     type="button"
@@ -217,8 +220,8 @@ export default function Settings() {
                   </button>
                 </div>
                 <p className="text-[11px] text-muted-foreground">
-                  Alexandre owner : inviter avec le rôle Owner (transfert). TechTrust doit
-                  rester admin après transfert.
+                  Transfert de propriété réservé au propriétaire. TechTrust doit rester
+                  administrateur après transfert vers Alexandre.
                 </p>
               </div>
 
@@ -246,9 +249,11 @@ export default function Settings() {
                         }
                         className="rounded-md border border-border/60 bg-background px-2 py-1 text-xs"
                       >
-                        {role === "owner" && <option value="owner">Owner</option>}
-                        <option value="admin">Admin</option>
-                        <option value="operator">Operator</option>
+                        {canTransferOwnership && (
+                          <option value="owner">Propriétaire</option>
+                        )}
+                        <option value="admin">Administrateur</option>
+                        <option value="operator">Opérateur</option>
                       </select>
                     </li>
                   ))}
@@ -267,24 +272,35 @@ export default function Settings() {
       {tab === "security" && (
         <section className="rounded-xl border border-border/60 bg-[hsl(var(--vr-surface))] p-5 space-y-3">
           <h2 className="text-sm font-semibold">Journal d&apos;audit</h2>
-          <ul className="space-y-2 text-xs">
-            {audit.map((a) => (
-              <li
-                key={a.id}
-                className="rounded-lg border border-border/50 px-3 py-2 text-muted-foreground"
-              >
-                <span className="text-foreground font-medium">{a.action}</span>
-                {" · "}
-                {a.old_role ?? "—"} → {a.new_role ?? "—"}
-                <div className="mt-0.5 opacity-80">
-                  {new Date(a.created_at).toLocaleString("fr-FR")}
-                </div>
-              </li>
-            ))}
-            {audit.length === 0 && (
-              <li className="text-muted-foreground">Aucun événement visible.</li>
-            )}
-          </ul>
+          {!canManageMembers && !canManageSecurity ? (
+            <p className="text-sm text-muted-foreground">
+              Accès sécurité réservé au propriétaire et aux administrateurs.
+            </p>
+          ) : (
+            <ul className="space-y-2 text-xs">
+              {audit.map((a) => (
+                <li
+                  key={a.id}
+                  className="rounded-lg border border-border/50 px-3 py-2 text-muted-foreground"
+                >
+                  <span className="text-foreground font-medium">{a.action}</span>
+                  {" · "}
+                  {a.old_role ?? "—"} → {a.new_role ?? "—"}
+                  <div className="mt-0.5 opacity-80">
+                    {new Date(a.created_at).toLocaleString("fr-FR")}
+                  </div>
+                </li>
+              ))}
+              {audit.length === 0 && (
+                <li className="text-muted-foreground">Aucun événement visible.</li>
+              )}
+              {isOwner && (
+                <li className="text-muted-foreground pt-1">
+                  En tant que propriétaire, les événements de transfert sont visibles.
+                </li>
+              )}
+            </ul>
+          )}
         </section>
       )}
 
