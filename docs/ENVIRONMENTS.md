@@ -24,9 +24,8 @@ Le dashboard et le backend sont **indépendants**.
 | Profil | DashboardPublicUrl | BackendApiUrl | Project ref | Quest package | Statut |
 |--------|-------------------|---------------|-------------|---------------|--------|
 | **DEVELOPMENT** | `http://127.0.0.1:5173` | `https://fllhnbeukuwrvserebqn.supabase.co` | `fllhnbeukuwrvserebqn` | `com.techtrust.vrcinemaquest.staging` | Actif (labo) |
-| **PRODUCTION VERCEL (actuel)** | `https://vr-cinema-hub.vercel.app` | `https://eanocqzhvlpgppccfppi.supabase.co` | `eanocqzhvlpgppccfppi` (Lovable) | `com.techtrust.vrcinemaquest` | Actif côté client |
-| **STAGING VERCEL** | preview branch `cutover/new-supabase-production` | `https://fllhnbeukuwrvserebqn.supabase.co` | `fllhnbeukuwrvserebqn` | `.staging` | **À préparer** |
-| **PRODUCTION (cible cutover)** | `https://vr-cinema-hub.vercel.app` | `https://fllhnbeukuwrvserebqn.supabase.co` *(ou projet prod dédié)* | à valider | package prod | **Interdit sans accord** |
+| **PRODUCTION VERCEL** | `https://vr-cinema-hub.vercel.app` | `https://fllhnbeukuwrvserebqn.supabase.co` | `fllhnbeukuwrvserebqn` | `com.techtrust.vrcinemaquest` | Cible active post-cutover |
+| **LegacyReadOnly** | — | `https://eanocqzhvlpgppccfppi.supabase.co` | `eanocqzhvlpgppccfppi` | — | Rollback seulement, jamais sélectionné |
 
 ## Utilisateurs — où ils existent
 
@@ -36,14 +35,10 @@ Le dashboard et le backend sont **indépendants**.
 | `contact@tech-trust.fr` / TechTrust | À vérifier | Oui — seul compte staging (admin, puis owner bootstrap si migration appliquée) |
 | Données vidéos historiques | Oui | Non (jeu E2E/QA seulement) |
 
-## Plan cutover (pas encore exécuté)
+## Cutover
 
-1. Préparer / déployer une **preview Vercel staging** pointant vers `fllhnbeukuwrvserebqn`.
-2. Configurer Auth redirect allowlist : origines Vercel staging + prod (pas d’URL arbitraire).
-3. Inviter Alexandre sur le **nouveau** backend (mot de passe non copié depuis Lovable).
-4. Migrer ou re-uploader le contenu nécessaire (pas de sync aveugle de secrets).
-5. Valider E2E sur preview Vercel + Quest staging.
-6. **Cutover** `vr-cinema-hub.vercel.app` → nouveau backend **uniquement après accord**.
+Autorisé : `main` web → Vercel production → Supabase `fllhnbeukuwrvserebqn`.  
+L’ancien projet Lovable reste documenté uniquement comme **LegacyReadOnly**.
 
 ## Unity
 
