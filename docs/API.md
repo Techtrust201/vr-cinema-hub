@@ -1,6 +1,6 @@
 # API Casques (OTA) — Documentation
 
-Base URL : `https://eanocqzhvlpgppccfppi.supabase.co/functions/v1`
+Base URL : `https://fllhnbeukuwrvserebqn.supabase.co/functions/v1`
 
 Tous les endpoints attendent `Content-Type: application/json` et l'en-tête `apikey: <VITE_SUPABASE_PUBLISHABLE_KEY>` (clé publiable, OK en clair dans l'app Unity).
 
