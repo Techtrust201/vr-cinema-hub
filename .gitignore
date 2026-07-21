@@ -43,3 +43,4 @@ supabase/.branches/
 # Local env backups — never commit
 .env.backup*
 *.backup-pre-cutover*
+.vercel
