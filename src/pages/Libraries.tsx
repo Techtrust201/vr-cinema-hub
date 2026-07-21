@@ -7,6 +7,7 @@ import {
   FileVideo, Download, CheckCircle2, XCircle, Play, X,
 } from "lucide-react";
 import { toast } from "sonner";
+import { isMovLike, resolveVideoContentType, sanitizeStorageFileName } from "@/lib/videoMime";
 
 type LibraryType = "location" | "animation";
 type VrFormat = "360_mono" | "180_mono" | "360_stereo" | "180_stereo" | "flat";
@@ -168,13 +169,29 @@ export default function Libraries() {
     const { tempId, file, projection, stereo_mode } = item;
     removePending(tempId);
     setUploads((u) => ({ ...u, [tempId]: { id: tempId, name: file.name, progress: 0, status: "uploading" } }));
+    let path: string | null = null;
     try {
-      const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
-      const path = `${activeLib}/${crypto.randomUUID()}-${safeName}`;
+      const contentType = resolveVideoContentType(file);
+      if (!contentType.startsWith("video/")) {
+        throw new Error(
+          `Type MIME non supporté (${file.type || "inconnu"}). Utilisez MP4, MOV, M4V, WebM ou MKV.`,
+        );
+      }
+      if (isMovLike(file)) {
+        toast.message(
+          "Certains codecs MOV ne sont pas compatibles avec le Quest. Un MP4 H.264/AAC est recommandé.",
+        );
+      }
+      const safeName = sanitizeStorageFileName(file.name);
+      path = `${activeLib}/${crypto.randomUUID()}-${safeName}`;
       const sha256 = await sha256Hex(file);
       const { error: upErr } = await supabase.storage
         .from("videos")
-        .upload(path, file, { cacheControl: "3600", upsert: false });
+        .upload(path, file, {
+          cacheControl: "3600",
+          upsert: false,
+          contentType,
+        });
       if (upErr) throw upErr;
       setUploads((u) => ({ ...u, [tempId]: { ...u[tempId], progress: 95 } }));
       const { error: dbErr } = await supabase.from("videos").insert({
@@ -189,6 +206,7 @@ export default function Libraries() {
       });
       if (dbErr) {
         await supabase.storage.from("videos").remove([path]);
+        path = null;
         throw dbErr;
       }
       setUploads((u) => ({ ...u, [tempId]: { ...u[tempId], progress: 100, status: "done" } }));
@@ -196,6 +214,9 @@ export default function Libraries() {
       setTimeout(() => setUploads((u) => { const { [tempId]: _, ...rest } = u; return rest; }), 2500);
       fetchVideos();
     } catch (err: any) {
+      if (path) {
+        await supabase.storage.from("videos").remove([path]).catch(() => undefined);
+      }
       setUploads((u) => ({ ...u, [tempId]: { ...u[tempId], status: "error", error: err.message } }));
       toast.error(`${file.name}: ${err.message}`);
     }
