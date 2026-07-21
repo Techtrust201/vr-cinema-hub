@@ -93,6 +93,30 @@ export default function Settings() {
     await loadAudit();
   }
 
+  async function removeMember(targetUserId: string, label: string) {
+    if (
+      !confirm(
+        `Retirer l'accès de ${label} ? L'utilisateur ne pourra plus se connecter tant qu'il n'aura pas de rôle.`,
+      )
+    ) {
+      return;
+    }
+    setBusy(true);
+    setMessage(null);
+    const { error } = await supabase.rpc("remove_my_org_member_role", {
+      _target_user_id: targetUserId,
+      _action: "remove",
+    });
+    setBusy(false);
+    if (error) {
+      setMessage(error.message);
+      return;
+    }
+    setMessage("Accès retiré.");
+    await loadMembers();
+    await loadAudit();
+  }
+
   async function inviteMember() {
     setBusy(true);
     setMessage(null);
@@ -241,20 +265,37 @@ export default function Settings() {
                           {m.email}
                         </p>
                       </div>
-                      <select
-                        disabled={busy || m.user_id === user?.id}
-                        value={m.role ?? "operator"}
-                        onChange={(e) =>
-                          void changeRole(m.user_id, e.target.value as AppRole)
-                        }
-                        className="rounded-md border border-border/60 bg-background px-2 py-1 text-xs"
-                      >
-                        {canTransferOwnership && (
-                          <option value="owner">Propriétaire</option>
+                      <div className="flex items-center gap-2">
+                        <select
+                          disabled={busy || m.user_id === user?.id}
+                          value={m.role ?? "operator"}
+                          onChange={(e) =>
+                            void changeRole(m.user_id, e.target.value as AppRole)
+                          }
+                          className="rounded-md border border-border/60 bg-background px-2 py-1 text-xs"
+                        >
+                          {canTransferOwnership && (
+                            <option value="owner">Propriétaire</option>
+                          )}
+                          <option value="admin">Administrateur</option>
+                          <option value="operator">Opérateur</option>
+                        </select>
+                        {m.user_id !== user?.id && (
+                          <button
+                            type="button"
+                            disabled={busy}
+                            onClick={() =>
+                              void removeMember(
+                                m.user_id,
+                                m.display_name || m.email || "ce membre",
+                              )
+                            }
+                            className="rounded-md border border-destructive/40 px-2 py-1 text-[11px] text-destructive disabled:opacity-50"
+                          >
+                            Retirer
+                          </button>
                         )}
-                        <option value="admin">Administrateur</option>
-                        <option value="operator">Opérateur</option>
-                      </select>
+                      </div>
                     </li>
                   ))}
                   {members.length === 0 && (
@@ -308,9 +349,10 @@ export default function Settings() {
         <section className="rounded-xl border border-border/60 bg-[hsl(var(--vr-surface))] p-5 space-y-2 text-sm">
           <h2 className="text-sm font-semibold">Organisation</h2>
           <p className="text-muted-foreground text-xs leading-relaxed">
-            Backend autonome : projet Supabase <code>fllhnbeukuwrvserebqn</code>.
-            Le domaine de production Vercel reste sur l&apos;ancien backend jusqu&apos;à
-            autorisation de cutover.
+            Production : projet Supabase <code>fllhnbeukuwrvserebqn</code>{" "}
+            (Vercel <code>vr-cinema-hub.vercel.app</code>). Les secrets techniques
+            (mots de passe, tokens, device_token, service_role) ne sont jamais
+            exposés dans cette interface.
           </p>
           <ul className="text-xs text-muted-foreground space-y-1.5">
             <li>• Owner : gouvernance et transfert de propriété</li>
