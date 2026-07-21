@@ -2,8 +2,9 @@
 import { createClient } from '@supabase/supabase-js';
 import type { Database } from './types';
 
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
-const SUPABASE_PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+// Trim env values: Vercel/dotenv can inject trailing newlines that break Realtime (%0A).
+const SUPABASE_URL = String(import.meta.env.VITE_SUPABASE_URL ?? "").trim();
+const SUPABASE_PUBLISHABLE_KEY = String(import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ?? "").trim();
 
 // Import the supabase client like this:
 // import { supabase } from "@/integrations/supabase/client";
