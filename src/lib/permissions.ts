@@ -13,6 +13,11 @@ export type RolePermissions = {
   canTransferOwnership: boolean;
 };
 
+/**
+ * Owner is the org superuser: full content, members, security, and ownership.
+ * Backend mirrors this via can_manage_content / is_admin_or_owner / is_owner
+ * and has_role(..., 'admin') inheritance for owner.
+ */
 export function getPermissions(role: AppRole | null): RolePermissions {
   const isOwner = role === "owner";
   const isAdmin = role === "admin";
