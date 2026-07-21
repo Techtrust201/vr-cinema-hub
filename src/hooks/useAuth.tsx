@@ -2,7 +2,8 @@ import { createContext, useContext, useEffect, useState, ReactNode } from "react
 import type { Session, User } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 
-type Role = "admin" | "operator" | null;
+export type AppRole = "owner" | "admin" | "operator";
+type Role = AppRole | null;
 
 interface AuthContextValue {
   user: User | null;
@@ -55,7 +56,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const { data: rpcRole, error: rpcErr } = await supabase.rpc("get_user_role", {
       _user_id: uid,
     });
-    if (!rpcErr && (rpcRole === "admin" || rpcRole === "operator" || rpcRole === null)) {
+    if (
+      !rpcErr &&
+      (rpcRole === "owner" || rpcRole === "admin" || rpcRole === "operator" || rpcRole === null)
+    ) {
       setRole(rpcRole as Role);
       return;
     }
@@ -71,7 +75,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return;
     }
     // Never invent a default operator role client-side.
-    setRole((data?.role as Role) ?? null);
+    const r = data?.role;
+    setRole(r === "owner" || r === "admin" || r === "operator" ? r : null);
   }
 
   const signOut = async () => {

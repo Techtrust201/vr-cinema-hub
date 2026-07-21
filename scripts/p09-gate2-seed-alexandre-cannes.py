@@ -48,6 +48,14 @@ FIXTURES = [
         "stereo_mode": "mono",
         "storage_path": "alexandre-cannes/360-mono.mp4",
     },
+    {
+        "file": "34f154f1-36fe-400a-b9f5-a65c45942b23-test-360-mono.mp4",
+        "name": "ALEXANDRE-360-MONO-QUICK-TEST",
+        "format": "360_mono",
+        "projection": "360",
+        "stereo_mode": "mono",
+        "storage_path": "alexandre-cannes/360-mono-quick-test.mp4",
+    },
 ]
 
 GROUP_NAME = "ALEXANDRE-CANNES"

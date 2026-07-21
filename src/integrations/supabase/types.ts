@@ -588,6 +588,39 @@ export type Database = {
           },
         ]
       }
+      organization_audit_logs: {
+        Row: {
+          id: string
+          actor_user_id: string | null
+          target_user_id: string | null
+          action: string
+          old_role: Database["public"]["Enums"]["app_role"] | null
+          new_role: Database["public"]["Enums"]["app_role"] | null
+          metadata: Json
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          actor_user_id?: string | null
+          target_user_id?: string | null
+          action: string
+          old_role?: Database["public"]["Enums"]["app_role"] | null
+          new_role?: Database["public"]["Enums"]["app_role"] | null
+          metadata?: Json
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          actor_user_id?: string | null
+          target_user_id?: string | null
+          action?: string
+          old_role?: Database["public"]["Enums"]["app_role"] | null
+          new_role?: Database["public"]["Enums"]["app_role"] | null
+          metadata?: Json
+          created_at?: string
+        }
+        Relationships: []
+      }
       user_roles: {
         Row: {
           created_at: string
@@ -695,6 +728,41 @@ export type Database = {
         }
         Returns: Database["public"]["Enums"]["app_role"]
       }
+      change_my_org_member_role: {
+        Args: {
+          _target_user_id: string
+          _new_role: Database["public"]["Enums"]["app_role"]
+          _action?: string
+        }
+        Returns: Database["public"]["Enums"]["app_role"]
+      }
+      remove_my_org_member_role: {
+        Args: { _target_user_id: string; _action?: string }
+        Returns: undefined
+      }
+      list_organization_members: {
+        Args: Record<PropertyKey, never>
+        Returns: {
+          user_id: string
+          email: string | null
+          display_name: string | null
+          role: Database["public"]["Enums"]["app_role"] | null
+          created_at: string | null
+        }[]
+      }
+      apply_member_role_change: {
+        Args: {
+          _actor_user_id: string
+          _target_user_id: string
+          _new_role: Database["public"]["Enums"]["app_role"]
+          _action: string
+          _metadata?: Json
+        }
+        Returns: Database["public"]["Enums"]["app_role"]
+      }
+      is_owner: { Args: { _user_id: string }; Returns: boolean }
+      is_admin_or_owner: { Args: { _user_id: string }; Returns: boolean }
+      can_manage_content: { Args: { _user_id: string }; Returns: boolean }
       headsets_for_playlist: {
         Args: { _playlist_id: string }
         Returns: {
@@ -704,7 +772,7 @@ export type Database = {
     }
     Enums: {
       agent_platform: "windows" | "macos" | "linux"
-      app_role: "admin" | "operator"
+      app_role: "owner" | "admin" | "operator"
       assignment_target: "headset" | "group" | "all"
       headset_status: "pending" | "active" | "revoked"
       library_type: "location" | "animation"
@@ -852,7 +920,7 @@ export const Constants = {
   public: {
     Enums: {
       agent_platform: ["windows", "macos", "linux"],
-      app_role: ["admin", "operator"],
+      app_role: ["owner", "admin", "operator"],
       assignment_target: ["headset", "group", "all"],
       headset_status: ["pending", "active", "revoked"],
       library_type: ["location", "animation"],
