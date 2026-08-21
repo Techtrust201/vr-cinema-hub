@@ -1,33 +1,14 @@
-# Runbook opérations — VR Ultimate
+# Runbook opérations — VR Cinema Hub
 
-## Nouveau casque (résumé)
+> **Nouveau casque ?** → [`HEADSET_ONBOARDING.md`](./HEADSET_ONBOARDING.md) (guide complet Ubuntu A→Z).
 
-1. Mode développeur Quest → USB → accepter RSA  
-2. Installer APK `builds/VR-Cinema-Quest.apk`  
-3. Lancer l’app → code 6 chiffres  
-4. Dashboard → Casques → Appairer  
-5. Ajouter au groupe / assigner playlist  
-6. Vérifier **Application active** (&lt; 2 min)  
-7. Vérifier `desired == applied` après sync  
+## Déploiements backend
 
-## Casque « hors ligne » alors qu’il est allumé
-
-Cause normale : l’**application VR** n’a pas contacté le serveur récemment.  
-Allumer le casque ne suffit pas.
-
-Checklist :
-- App ouverte ?  
-- Wi‑Fi / Internet Quest ?  
-- Token valide (pas révoqué) ?  
-- Logs `[Heartbeat] Trigger=AppStart` ?
-
-## Déploiements à appliquer après ce chantier
-
-Migrations :
+Migrations casques (si pas encore appliquées) :
 - `20260717080000_headset_contact_observability.sql`
 - `20260717083000_atomic_pairing_token_claim.sql`
 
-Edge Functions :
+Edge Functions device :
 - `headset-heartbeat`
 - `headset-manifest`
 - `headset-report-sync`

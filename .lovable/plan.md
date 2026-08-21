@@ -1,4 +1,4 @@
-## Objectif
+# Objectif
 Ajouter un flux "Mot de passe oublié" complet au dashboard, en français, cohérent avec le style VR existant (violet/cyan, glass).
 
 ## Flux utilisateur
