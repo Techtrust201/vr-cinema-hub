@@ -1,9 +1,10 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { CheckCircle2, XCircle, Loader2, AlertTriangle, RefreshCw, Clock, WifiOff, Zap, Bug } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
+import { useLiveData } from "@/hooks/useLiveData";
 
 interface Headset {
   id: string;
@@ -75,43 +76,49 @@ function fmtBytes(b: number) {
   return `${(b / (1024 * 1024 * 1024)).toFixed(1)} GB`;
 }
 
+type SyncSnapshot = {
+  reports: SyncReport[];
+  headsets: Headset[];
+  playlists: Array<{ id: string; name: string }>;
+};
+
 export default function Sync() {
   const { canManageContent } = useAuth();
   const [tab, setTab] = useState<"state" | "history">("state");
-  const [reports, setReports] = useState<SyncReport[]>([]);
-  const [headsets, setHeadsets] = useState<Headset[]>([]);
-  const [loading, setLoading] = useState(true);
   const [forcing, setForcing] = useState<Record<string, boolean>>({});
   const [diagJson, setDiagJson] = useState<string | null>(null);
   const [diagLoading, setDiagLoading] = useState<string | null>(null);
-  const [playlists, setPlaylists] = useState<Array<{ id: string; name: string }>>([]);
   const [diagPlaylistId, setDiagPlaylistId] = useState<string>("");
 
-  const fetchAll = useCallback(async () => {
-    setLoading(true);
-    const [r, h, p] = await Promise.all([
-      supabase.from("sync_reports").select("*").order("started_at", { ascending: false }).limit(100),
-      supabase.from("headsets").select("id, name, status, last_seen_at, last_manifest_at, last_sync_at, last_sync_status, desired_manifest_version, applied_manifest_version").order("name"),
-      supabase.from("playlists").select("id, name").order("name"),
-    ]);
-    setReports((r.data ?? []) as SyncReport[]);
-    setHeadsets((h.data ?? []) as Headset[]);
-    setPlaylists((p.data ?? []) as Array<{ id: string; name: string }>);
-    setLoading(false);
-  }, []);
+  // Polling de secours : Realtime peut être bloqué (policy deny-all sur realtime.messages).
+  // Tables headsets/sync_reports restent dans la publication, mais on ne dépend pas uniquement de Realtime.
+  const {
+    data,
+    initialLoading,
+    refreshing,
+    error,
+    refresh,
+  } = useLiveData<SyncSnapshot>(
+    async (signal) => {
+      const [r, h, p] = await Promise.all([
+        supabase.from("sync_reports").select("*").order("started_at", { ascending: false }).limit(100).abortSignal(signal),
+        supabase.from("headsets").select("id, name, status, last_seen_at, last_manifest_at, last_sync_at, last_sync_status, desired_manifest_version, applied_manifest_version").order("name").abortSignal(signal),
+        supabase.from("playlists").select("id, name").order("name").abortSignal(signal),
+      ]);
+      const failure = r.error ?? h.error ?? p.error;
+      if (failure) throw new Error(failure.message);
+      return {
+        reports: (r.data ?? []) as SyncReport[],
+        headsets: (h.data ?? []) as Headset[],
+        playlists: (p.data ?? []) as Array<{ id: string; name: string }>,
+      };
+    },
+    { pollMs: 15_000, realtime: { channel: "sync-realtime", tables: ["sync_reports", "headsets"] } },
+  );
 
-  useEffect(() => {
-    fetchAll();
-    const ch = supabase
-      .channel("sync-realtime")
-      .on("postgres_changes", { event: "*", schema: "public", table: "sync_reports" }, () => fetchAll())
-      .on("postgres_changes", { event: "*", schema: "public", table: "headsets" }, () => fetchAll())
-      .subscribe();
-    // Polling de secours : Realtime peut être bloqué (policy deny-all sur realtime.messages).
-    // Tables headsets/sync_reports restent dans la publication, mais on ne dépend pas uniquement de Realtime.
-    const t = setInterval(() => fetchAll(), 15_000);
-    return () => { supabase.removeChannel(ch); clearInterval(t); };
-  }, [fetchAll]);
+  const reports = data?.reports ?? [];
+  const headsets = data?.headsets ?? [];
+  const playlists = data?.playlists ?? [];
 
   const headsetMap: Record<string, Headset> = {};
   for (const x of headsets) headsetMap[x.id] = x;
@@ -126,6 +133,7 @@ export default function Sync() {
       toast.error("Erreur: " + error.message);
     } else {
       toast.success(`Resync demandée pour ${h.name}`);
+      void refresh();
     }
   }
 
@@ -142,9 +150,8 @@ export default function Sync() {
       } else toast.error("Diag erreur : " + error.message);
       return;
     }
-    console.info("[SyncDiag] headset", h.name, data);
     setDiagJson(JSON.stringify(data, null, 2));
-    toast.success(`Diagnostic casque ${h.name} — voir console + panneau.`);
+    toast.success(`Diagnostic casque ${h.name} — voir le panneau ci-dessous.`);
   }
 
   async function runPlaylistDiag() {
@@ -161,7 +168,6 @@ export default function Sync() {
       } else toast.error("Diag erreur : " + error.message);
       return;
     }
-    console.info("[SyncDiag] playlist", diagPlaylistId, data);
     setDiagJson(JSON.stringify(data, null, 2));
     type PlaylistDiag = {
       impacted_headsets?: unknown[];
@@ -174,7 +180,7 @@ export default function Sync() {
     else toast.success(`${impacted.length} casque(s) impacté(s).`);
   }
 
-  if (loading) return <div className="p-6 text-muted-foreground flex items-center gap-2"><Loader2 className="animate-spin" size={16} /> Chargement…</div>;
+  if (initialLoading) return <div className="p-6 text-muted-foreground flex items-center gap-2"><Loader2 className="animate-spin" size={16} /> Chargement…</div>;
 
   const activeHeadsets = headsets.filter((h) => h.status === "active");
   const pendingCount = activeHeadsets.filter((h) => h.applied_manifest_version < h.desired_manifest_version).length;
@@ -186,10 +192,21 @@ export default function Sync() {
           <h1 className="text-2xl font-bold">Suivi des synchronisations</h1>
           <p className="text-sm text-muted-foreground">État réel des casques. Le statut "À jour" n'apparaît qu'après confirmation du casque.</p>
         </div>
-        <button onClick={fetchAll} className="px-3 py-2 text-sm rounded-lg border border-border/50 text-muted-foreground hover:text-foreground hover:bg-muted/40 transition flex items-center gap-2">
-          <RefreshCw size={14} /> Rafraîchir
+        <button
+          onClick={() => void refresh()}
+          disabled={refreshing}
+          className="px-3 py-2 text-sm rounded-lg border border-border/50 text-muted-foreground hover:text-foreground hover:bg-muted/40 transition flex items-center gap-2 disabled:opacity-60"
+        >
+          <RefreshCw size={14} className={refreshing ? "animate-spin" : undefined} /> Rafraîchir
         </button>
       </div>
+
+      {error && (
+        <div className="flex items-center gap-2 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+          <WifiOff size={13} />
+          Données peut-être obsolètes — dernière actualisation échouée ({error.message}).
+        </div>
+      )}
 
       <div className="flex items-center gap-1 border-b border-border/50">
         <TabButton active={tab === "state"} onClick={() => setTab("state")}>

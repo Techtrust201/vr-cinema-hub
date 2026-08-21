@@ -1,7 +1,9 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
-import { Headset, Plus, Battery, HardDrive, Wifi, WifiOff, Trash2, Loader2 } from "lucide-react";
+import { useLiveData } from "@/hooks/useLiveData";
+import { useConfirm } from "@/hooks/useConfirm";
+import { Headset, Plus, Battery, HardDrive, Wifi, WifiOff, Trash2, Loader2, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { isPermissionError } from "@/lib/supabaseErrors";
@@ -45,73 +47,77 @@ function contactTone(st: AppContactState) {
 
 export default function Headsets() {
   const { canManageContent } = useAuth();
-  const [list, setList] = useState<HeadsetRow[]>([]);
-  const [loading, setLoading] = useState(true);
   const [pairOpen, setPairOpen] = useState(false);
+  const { confirm, confirmDialog } = useConfirm();
 
-  const fetchList = useCallback(async () => {
-    setLoading(true);
-    const { data, error } = await supabase
-      .from("headsets")
-      .select("*")
-      .order("created_at", { ascending: false });
-    if (error) toast.error("Erreur: " + error.message);
-    else setList((data ?? []) as HeadsetRow[]);
-    setLoading(false);
-  }, []);
+  // Realtime may be denied by migration; poll as reliable fallback.
+  const { data, initialLoading, refreshing, error, refresh, mutate } = useLiveData<HeadsetRow[]>(
+    async (signal) => {
+      const { data, error } = await supabase
+        .from("headsets")
+        .select("*")
+        .order("created_at", { ascending: false })
+        .abortSignal(signal);
+      if (error) throw new Error(error.message);
+      return (data ?? []) as HeadsetRow[];
+    },
+    { pollMs: 15_000, realtime: { channel: "headsets-realtime", tables: ["headsets"] } },
+  );
 
-  useEffect(() => {
-    fetchList();
-    // Realtime may be denied by migration; poll as reliable fallback.
-    const poll = window.setInterval(() => { fetchList(); }, 15_000);
-    const ch = supabase
-      .channel("headsets-realtime")
-      .on("postgres_changes", { event: "*", schema: "public", table: "headsets" }, () => fetchList())
-      .subscribe();
-    return () => {
-      window.clearInterval(poll);
-      supabase.removeChannel(ch);
-    };
-  }, [fetchList]);
+  const list = data ?? [];
 
   async function revoke(id: string, name: string) {
-    if (!confirm(`Révoquer le casque "${name}" ? L'application VR ne pourra plus se synchroniser.`)) return;
-    const { data, error } = await supabase
+    const ok = await confirm({
+      title: `Révoquer « ${name} » ?`,
+      description: "L'application VR de ce casque ne pourra plus se synchroniser.",
+      confirmLabel: "Révoquer",
+      destructive: true,
+    });
+    if (!ok) return;
+
+    // Optimistic: the badge flips immediately, and rolls back if the write fails.
+    mutate((current) =>
+      (current ?? []).map((h) => (h.id === id ? { ...h, status: "revoked" as const } : h)),
+    );
+    const { data: updated, error } = await supabase
       .from("headsets")
       .update({ status: "revoked" })
       .eq("id", id)
       .select("id, status")
       .maybeSingle();
-    if (error) {
-      toast.error(isPermissionError(error)
-        ? "Révoquer nécessite des droits de gestion."
-        : error.message);
-      return;
-    }
-    if (!data || data.status !== "revoked") {
-      toast.error("Révocation non confirmée par la base.");
+    if (error || !updated || updated.status !== "revoked") {
+      void refresh();
+      toast.error(
+        error && isPermissionError(error)
+          ? "Révoquer nécessite des droits de gestion."
+          : (error?.message ?? "Révocation non confirmée par la base."),
+      );
       return;
     }
     toast.success("Casque révoqué");
-    fetchList();
   }
 
   async function remove(id: string, name: string) {
-    if (!confirm(`Supprimer définitivement "${name}" ?`)) return;
+    const ok = await confirm({
+      title: `Supprimer « ${name} » ?`,
+      description: "Cette suppression est définitive et retire le casque de la plateforme.",
+      confirmLabel: "Supprimer",
+      destructive: true,
+    });
+    if (!ok) return;
+
+    const previous = list;
+    mutate((current) => (current ?? []).filter((h) => h.id !== id));
     const { error } = await supabase.from("headsets").delete().eq("id", id);
     if (error) {
+      mutate(() => previous);
       toast.error(isPermissionError(error)
         ? "Suppression refusée : droits insuffisants."
         : error.message);
       return;
     }
-    const { data: stillThere } = await supabase.from("headsets").select("id").eq("id", id).maybeSingle();
-    if (stillThere) {
-      toast.error("Suppression non confirmée par la base.");
-      return;
-    }
     toast.success("Supprimé");
-    fetchList();
+    void refresh();
   }
 
   return (
@@ -123,17 +129,34 @@ export default function Headsets() {
             Statut = contact de l&apos;application VR avec le serveur (pas l&apos;alimentation physique du casque).
           </p>
         </div>
-        {canManageContent && (
+        <div className="flex items-center gap-2">
           <button
-            onClick={() => setPairOpen(true)}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-[hsl(var(--vr-violet))] text-white font-medium hover:opacity-90 transition"
+            onClick={() => void refresh()}
+            disabled={refreshing}
+            className="p-2 rounded-lg border border-border/50 text-muted-foreground hover:text-foreground hover:bg-muted/40 transition disabled:opacity-60"
+            title="Rafraîchir"
           >
-            <Plus size={16} /> Appairer un casque
+            <RefreshCw size={14} className={refreshing ? "animate-spin" : undefined} />
           </button>
-        )}
+          {canManageContent && (
+            <button
+              onClick={() => setPairOpen(true)}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-[hsl(var(--vr-violet))] text-white font-medium hover:opacity-90 transition"
+            >
+              <Plus size={16} /> Appairer un casque
+            </button>
+          )}
+        </div>
       </div>
 
-      {loading ? (
+      {error && (
+        <div className="flex items-center gap-2 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+          <WifiOff size={13} />
+          Données peut-être obsolètes — dernière actualisation échouée ({error.message}).
+        </div>
+      )}
+
+      {initialLoading ? (
         <div className="flex items-center justify-center py-12 text-muted-foreground">
           <Loader2 className="animate-spin mr-2" size={16} /> Chargement…
         </div>
@@ -204,7 +227,8 @@ export default function Headsets() {
         </div>
       )}
 
-      {pairOpen && <PairModal onClose={() => setPairOpen(false)} onDone={fetchList} />}
+      {pairOpen && <PairModal onClose={() => setPairOpen(false)} onDone={() => void refresh()} />}
+      {confirmDialog}
     </div>
   );
 }

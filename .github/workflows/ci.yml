@@ -21,6 +21,5 @@ jobs:
       - run: npm run build
       - run: npx tsc --noEmit -p tsconfig.app.json
       - run: npm run test
-      # lint may include pre-existing debt; keep non-blocking until cleaned
+      # The lint debt is cleared (0 errors), so regressions must fail the build.
       - run: npm run lint
-        continue-on-error: true

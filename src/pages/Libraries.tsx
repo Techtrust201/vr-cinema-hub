@@ -1,13 +1,17 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import { useLiveData } from "@/hooks/useLiveData";
+import { useConfirm } from "@/hooks/useConfirm";
 import { cn } from "@/lib/utils";
 import {
   Upload, MapPin, Clapperboard, FolderOpen, Trash2, Loader2,
-  FileVideo, Download, CheckCircle2, XCircle, Play, X,
+  FileVideo, Download, CheckCircle2, XCircle, Play, X, WifiOff,
 } from "lucide-react";
 import { toast } from "sonner";
 import { isMovLike, resolveVideoContentType, sanitizeStorageFileName } from "@/lib/videoMime";
+import { sha256HexOfBlob } from "@/lib/sha256";
+import { uploadFileWithProgress } from "@/lib/uploadWithProgress";
 
 type LibraryType = "location" | "animation";
 type VrFormat = "360_mono" | "180_mono" | "360_stereo" | "180_stereo" | "flat";
@@ -27,13 +31,24 @@ interface VideoRow {
   uploaded_by: string | null;
 }
 
+type UploadPhase = "hashing" | "uploading" | "saving";
+
 interface UploadProgress {
   id: string;
   name: string;
+  /** 0..100 within the current phase. */
   progress: number;
+  phase: UploadPhase;
   status: "uploading" | "done" | "error";
   error?: string;
+  controller?: AbortController;
 }
+
+const PHASE_LABELS: Record<UploadPhase, string> = {
+  hashing: "Empreinte",
+  uploading: "Envoi",
+  saving: "Enregistrement",
+};
 
 function detectFormat(name: string): VrFormat {
   const n = name.toLowerCase();
@@ -97,27 +112,27 @@ interface PendingUpload {
 export default function Libraries() {
   const { canManageContent } = useAuth();
   const [activeLib, setActiveLib] = useState<LibraryType>("location");
-  const [videos, setVideos] = useState<VideoRow[]>([]);
-  const [loading, setLoading] = useState(true);
   const [uploads, setUploads] = useState<Record<string, UploadProgress>>({});
   const [dragging, setDragging] = useState(false);
   const [pending, setPending] = useState<PendingUpload[]>([]);
   const fileRef = useRef<HTMLInputElement>(null);
   const [preview, setPreview] = useState<{ video: VideoRow; url: string } | null>(null);
   const [previewLoading, setPreviewLoading] = useState<string | null>(null);
+  const { confirm, confirmDialog } = useConfirm();
 
-  const fetchVideos = useCallback(async () => {
-    setLoading(true);
-    const { data, error } = await supabase
-      .from("videos")
-      .select("*")
-      .order("created_at", { ascending: false });
-    if (error) toast.error("Erreur de chargement: " + error.message);
-    else setVideos((data ?? []) as VideoRow[]);
-    setLoading(false);
-  }, []);
+  const { data, initialLoading, error: loadError, refresh, mutate } = useLiveData<VideoRow[]>(
+    async (signal) => {
+      const { data, error } = await supabase
+        .from("videos")
+        .select("*")
+        .order("created_at", { ascending: false })
+        .abortSignal(signal);
+      if (error) throw new Error(error.message);
+      return (data ?? []) as VideoRow[];
+    },
+  );
 
-  useEffect(() => { fetchVideos(); }, [fetchVideos]);
+  const videos = data ?? [];
 
   const handleFiles = (files: FileList | null) => {
     if (!files || !canManageContent) return;
@@ -152,12 +167,15 @@ export default function Libraries() {
     return isStereo ? "360_stereo" : "360_mono";
   };
 
-  const sha256Hex = async (file: File): Promise<string> => {
-    const buf = await file.arrayBuffer();
-    const digest = await crypto.subtle.digest("SHA-256", buf);
-    return Array.from(new Uint8Array(digest))
-      .map((b) => b.toString(16).padStart(2, "0"))
-      .join("");
+  const setUpload = (tempId: string, patch: Partial<UploadProgress>) =>
+    setUploads((u) => (u[tempId] ? { ...u, [tempId]: { ...u[tempId], ...patch } } : u));
+
+  const cancelUpload = (tempId: string) => {
+    setUploads((u) => {
+      u[tempId]?.controller?.abort();
+      const { [tempId]: _dropped, ...rest } = u;
+      return rest;
+    });
   };
 
   const confirmUpload = async (item: PendingUpload) => {
@@ -168,7 +186,12 @@ export default function Libraries() {
     }
     const { tempId, file, projection, stereo_mode } = item;
     removePending(tempId);
-    setUploads((u) => ({ ...u, [tempId]: { id: tempId, name: file.name, progress: 0, status: "uploading" } }));
+    const controller = new AbortController();
+    setUploads((u) => ({
+      ...u,
+      [tempId]: { id: tempId, name: file.name, progress: 0, phase: "hashing", status: "uploading", controller },
+    }));
+
     let path: string | null = null;
     try {
       const contentType = resolveVideoContentType(file);
@@ -184,16 +207,26 @@ export default function Libraries() {
       }
       const safeName = sanitizeStorageFileName(file.name);
       path = `${activeLib}/${crypto.randomUUID()}-${safeName}`;
-      const sha256 = await sha256Hex(file);
-      const { error: upErr } = await supabase.storage
-        .from("videos")
-        .upload(path, file, {
-          cacheControl: "3600",
-          upsert: false,
-          contentType,
-        });
-      if (upErr) throw upErr;
-      setUploads((u) => ({ ...u, [tempId]: { ...u[tempId], progress: 95 } }));
+
+      // Streamed so a multi-gigabyte file never lands in memory at once.
+      const sha256 = await sha256HexOfBlob(
+        file,
+        (fraction) => setUpload(tempId, { phase: "hashing", progress: Math.round(fraction * 100) }),
+        controller.signal,
+      );
+
+      setUpload(tempId, { phase: "uploading", progress: 0 });
+      await uploadFileWithProgress({
+        bucket: "videos",
+        path,
+        file,
+        contentType,
+        onProgress: (fraction) =>
+          setUpload(tempId, { phase: "uploading", progress: Math.round(fraction * 100) }),
+        signal: controller.signal,
+      });
+
+      setUpload(tempId, { phase: "saving", progress: 100 });
       const { error: dbErr } = await supabase.from("videos").insert({
         name: file.name,
         library: activeLib,
@@ -207,32 +240,54 @@ export default function Libraries() {
       if (dbErr) {
         await supabase.storage.from("videos").remove([path]);
         path = null;
-        throw dbErr;
+        throw new Error(dbErr.message);
       }
-      setUploads((u) => ({ ...u, [tempId]: { ...u[tempId], progress: 100, status: "done" } }));
+      setUpload(tempId, { progress: 100, status: "done", controller: undefined });
       toast.success(`${file.name} uploadée`);
-      setTimeout(() => setUploads((u) => { const { [tempId]: _, ...rest } = u; return rest; }), 2500);
-      fetchVideos();
-    } catch (err: any) {
+      setTimeout(() => setUploads((u) => { const { [tempId]: _dropped, ...rest } = u; return rest; }), 2500);
+      void refresh();
+    } catch (err) {
+      // Never leave an orphan object behind in Storage.
       if (path) {
         await supabase.storage.from("videos").remove([path]).catch(() => undefined);
       }
-      setUploads((u) => ({ ...u, [tempId]: { ...u[tempId], status: "error", error: err.message } }));
-      toast.error(`${file.name}: ${err.message}`);
+      const aborted = err instanceof DOMException && err.name === "AbortError";
+      if (aborted) {
+        setUploads((u) => { const { [tempId]: _dropped, ...rest } = u; return rest; });
+        toast.message(`${file.name} : upload annulé`);
+        return;
+      }
+      const message = err instanceof Error ? err.message : "Erreur inconnue";
+      setUpload(tempId, { status: "error", error: message, controller: undefined });
+      toast.error(`${file.name}: ${message}`);
     }
   };
 
   const handleDelete = async (v: VideoRow) => {
-    if (!confirm(`Supprimer "${v.name}" définitivement ?`)) return;
-    const { error: stErr } = await supabase.storage.from("videos").remove([v.storage_path]);
-    if (stErr && !stErr.message.includes("not found")) {
-      toast.error("Storage: " + stErr.message);
+    const ok = await confirm({
+      title: `Supprimer « ${v.name} » ?`,
+      description: "La vidéo est retirée de la bibliothèque et du stockage. Action définitive.",
+      confirmLabel: "Supprimer",
+      destructive: true,
+    });
+    if (!ok) return;
+
+    // The database row goes first: a leftover row pointing at a missing object
+    // makes headsets fail their sync, whereas an orphan object is only wasted space.
+    const previous = videos;
+    mutate((current) => (current ?? []).filter((row) => row.id !== v.id));
+    const { error: dbErr } = await supabase.from("videos").delete().eq("id", v.id);
+    if (dbErr) {
+      mutate(() => previous);
+      toast.error(dbErr.message);
       return;
     }
-    const { error: dbErr } = await supabase.from("videos").delete().eq("id", v.id);
-    if (dbErr) { toast.error(dbErr.message); return; }
+    const { error: stErr } = await supabase.storage.from("videos").remove([v.storage_path]);
+    if (stErr && !stErr.message.includes("not found")) {
+      toast.warning(`Vidéo supprimée, mais le fichier stocké subsiste : ${stErr.message}`);
+      return;
+    }
     toast.success("Vidéo supprimée");
-    fetchVideos();
   };
 
   const handleDownload = async (v: VideoRow) => {
@@ -314,11 +369,31 @@ export default function Libraries() {
                 {u.status === "done" && <CheckCircle2 size={13} className="text-[hsl(140_70%_55%)]" />}
                 {u.status === "error" && <XCircle size={13} className="text-destructive" />}
                 <span className="text-xs font-medium truncate flex-1">{u.name}</span>
+                {u.status === "uploading" && (
+                  <span className="text-[10px] text-muted-foreground">{PHASE_LABELS[u.phase]}</span>
+                )}
                 <span className="text-[10px] text-muted-foreground tabular-nums">{u.progress}%</span>
+                {u.status === "uploading" && (
+                  <button
+                    onClick={() => cancelUpload(u.id)}
+                    className="p-0.5 rounded text-muted-foreground/60 hover:text-destructive transition-colors"
+                    title="Annuler"
+                  >
+                    <X size={12} />
+                  </button>
+                )}
               </div>
               {u.status !== "error" ? (
                 <div className="h-1 rounded-full bg-background overflow-hidden">
-                  <div className="h-full bg-[hsl(var(--vr-violet))] transition-all" style={{ width: `${u.progress}%` }} />
+                  <div
+                    className={cn(
+                      "h-full transition-all",
+                      u.phase === "hashing"
+                        ? "bg-[hsl(var(--vr-cyan))]"
+                        : "bg-[hsl(var(--vr-violet))]",
+                    )}
+                    style={{ width: `${u.progress}%` }}
+                  />
                 </div>
               ) : (
                 <p className="text-[10px] text-destructive">{u.error}</p>
@@ -421,8 +496,15 @@ export default function Libraries() {
         </div>
       )}
 
+      {loadError && (
+        <div className="flex items-center gap-2 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+          <WifiOff size={13} />
+          Liste peut-être obsolète — dernière actualisation échouée ({loadError.message}).
+        </div>
+      )}
+
       {/* Videos list */}
-      {loading ? (
+      {initialLoading ? (
         <div className="flex items-center justify-center py-12 text-muted-foreground">
           <Loader2 size={18} className="animate-spin" />
         </div>
@@ -510,6 +592,7 @@ export default function Libraries() {
           </div>
         </div>
       )}
+      {confirmDialog}
     </div>
   );
 }

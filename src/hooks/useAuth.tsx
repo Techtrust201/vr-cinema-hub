@@ -1,4 +1,13 @@
-import { createContext, useContext, useEffect, useState, ReactNode } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import type { Session, User } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 import { getPermissions, type AppRole, type RolePermissions } from "@/lib/permissions";
@@ -6,10 +15,18 @@ import { getPermissions, type AppRole, type RolePermissions } from "@/lib/permis
 export type { AppRole };
 type Role = AppRole | null;
 
+/**
+ * Distinguishes "the server told us this account has no role" from "we could not
+ * reach the server". Conflating the two used to lock legitimate admins out of
+ * the app behind the "Compte non autorisé" screen on any network blip.
+ */
+export type RoleStatus = "loading" | "resolved" | "unreachable";
+
 interface AuthContextValue extends RolePermissions {
   user: User | null;
   session: Session | null;
   role: Role;
+  roleStatus: RoleStatus;
   loading: boolean;
   signOut: () => Promise<void>;
   /** Re-fetch role from get_user_role / user_roles (no inventing defaults). */
@@ -22,103 +39,181 @@ const AuthContext = createContext<AuthContextValue>({
   user: null,
   session: null,
   role: null,
+  roleStatus: "loading",
   loading: true,
   signOut: async () => {},
   refreshRole: async () => {},
   ...emptyPermissions,
 });
 
+function isRole(value: unknown): value is AppRole {
+  return value === "owner" || value === "admin" || value === "operator";
+}
+
+/** Transport-level failures deserve a retry; an authoritative empty answer does not. */
+function isTransientError(error: { message?: string; code?: string } | null): boolean {
+  if (!error) return false;
+  const message = (error.message ?? "").toLowerCase();
+  return (
+    message.includes("failed to fetch") ||
+    message.includes("networkerror") ||
+    message.includes("load failed") ||
+    message.includes("timeout") ||
+    message.includes("aborted") ||
+    error.code === "500" ||
+    error.code === "502" ||
+    error.code === "503" ||
+    error.code === "504"
+  );
+}
+
+const RETRY_DELAYS_MS = [400, 1200, 3000];
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [user, setUser] = useState<User | null>(null);
   const [role, setRole] = useState<Role>(null);
+  const [roleStatus, setRoleStatus] = useState<RoleStatus>("loading");
   const [loading, setLoading] = useState(true);
 
-  async function fetchRole(uid: string) {
-    // Prefer deterministic RPC when available; fall back to single-row select.
-    // Role is always read from user_roles / get_user_role — never from JWT claims.
-    const { data: rpcRole, error: rpcErr } = await supabase.rpc("get_user_role", {
-      _user_id: uid,
-    });
-    if (
-      !rpcErr &&
-      (rpcRole === "owner" || rpcRole === "admin" || rpcRole === "operator" || rpcRole === null)
-    ) {
-      setRole(rpcRole as Role);
-      return;
-    }
+  // getSession() and the INITIAL_SESSION event both fire on every page load.
+  // Sharing the in-flight promise deduplicates the RPC *and* keeps the second
+  // caller awaiting it, so `loading` cannot flip to false mid-fetch.
+  const inFlight = useRef<{ uid: string; promise: Promise<void> } | null>(null);
+  const mounted = useRef(true);
 
-    const { data, error } = await supabase
+  /**
+   * Reads the role once, from user_roles / get_user_role only — never from JWT
+   * claims — and reports whether the answer is authoritative.
+   */
+  const readRole = useCallback(async (uid: string): Promise<{ role: Role; reachable: boolean }> => {
+    const rpc = await supabase.rpc("get_user_role", { _user_id: uid });
+    if (!rpc.error && (isRole(rpc.data) || rpc.data === null)) {
+      return { role: isRole(rpc.data) ? rpc.data : null, reachable: true };
+    }
+    if (isTransientError(rpc.error)) return { role: null, reachable: false };
+
+    const row = await supabase
       .from("user_roles")
       .select("role")
       .eq("user_id", uid)
       .maybeSingle();
 
-    if (error) {
-      setRole(null);
-      return;
-    }
+    if (row.error) return { role: null, reachable: !isTransientError(row.error) };
     // Never invent a default operator role client-side.
-    const r = data?.role;
-    setRole(r === "owner" || r === "admin" || r === "operator" ? r : null);
-  }
+    return { role: isRole(row.data?.role) ? row.data.role : null, reachable: true };
+  }, []);
+
+  const fetchRole = useCallback(
+    (uid: string): Promise<void> => {
+      if (inFlight.current?.uid === uid) return inFlight.current.promise;
+
+      const promise = (async () => {
+        for (let attempt = 0; ; attempt++) {
+          const { role: nextRole, reachable } = await readRole(uid);
+          if (!mounted.current) return;
+
+          if (reachable) {
+            setRole(nextRole);
+            setRoleStatus("resolved");
+            return;
+          }
+          if (attempt >= RETRY_DELAYS_MS.length) {
+            // Keep any previously known role instead of downgrading to "no access".
+            setRoleStatus("unreachable");
+            return;
+          }
+          await new Promise((r) => setTimeout(r, RETRY_DELAYS_MS[attempt]));
+          if (!mounted.current) return;
+        }
+      })().finally(() => {
+        if (inFlight.current?.uid === uid) inFlight.current = null;
+      });
+
+      inFlight.current = { uid, promise };
+      return promise;
+    },
+    [readRole],
+  );
 
   useEffect(() => {
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, newSession) => {
-      setSession(newSession);
-      setUser(newSession?.user ?? null);
-      if (!newSession?.user) {
-        setRole(null);
-      } else {
-        setTimeout(() => fetchRole(newSession.user.id), 0);
-      }
-    });
+    mounted.current = true;
 
-    supabase.auth.getSession().then(({ data: { session: s } }) => {
-      setSession(s);
-      setUser(s?.user ?? null);
-      if (s?.user) {
-        fetchRole(s.user.id).finally(() => setLoading(false));
-      } else {
+    const applySession = (next: Session | null) => {
+      setSession(next);
+      setUser(next?.user ?? null);
+      if (!next?.user) {
+        setRole(null);
+        setRoleStatus("resolved");
+        return null;
+      }
+      return next.user.id;
+    };
+
+    const { data: sub } = supabase.auth.onAuthStateChange((event, newSession) => {
+      // TOKEN_REFRESHED fires roughly hourly and carries no role change, so
+      // re-reading the role there is pure overhead.
+      const uid = applySession(newSession);
+      if (uid && event !== "TOKEN_REFRESHED") {
+        void fetchRole(uid).finally(() => {
+          if (mounted.current) setLoading(false);
+        });
+      } else if (!uid) {
         setLoading(false);
       }
     });
 
-    return () => sub.subscription.unsubscribe();
-  }, []);
+    void supabase.auth
+      .getSession()
+      .then(({ data: { session: s } }) => {
+        const uid = applySession(s);
+        if (!uid) return;
+        return fetchRole(uid);
+      })
+      .finally(() => {
+        if (mounted.current) setLoading(false);
+      });
 
-  const signOut = async () => {
+    return () => {
+      mounted.current = false;
+      sub.subscription.unsubscribe();
+    };
+  }, [fetchRole]);
+
+  const signOut = useCallback(async () => {
     await supabase.auth.signOut();
     setSession(null);
     setUser(null);
     setRole(null);
-  };
+    setRoleStatus("resolved");
+  }, []);
 
-  const refreshRole = async () => {
+  const refreshRole = useCallback(async () => {
     if (!user) {
       setRole(null);
+      setRoleStatus("resolved");
       return;
     }
+    setRoleStatus("loading");
     await fetchRole(user.id);
-  };
+  }, [user, fetchRole]);
 
-  const permissions = getPermissions(role);
-
-  return (
-    <AuthContext.Provider
-      value={{
-        user,
-        session,
-        role,
-        loading,
-        signOut,
-        refreshRole,
-        ...permissions,
-      }}
-    >
-      {children}
-    </AuthContext.Provider>
+  // A fresh object here would re-render every consumer on any unrelated change.
+  const value = useMemo<AuthContextValue>(
+    () => ({
+      user,
+      session,
+      role,
+      roleStatus,
+      loading,
+      signOut,
+      refreshRole,
+      ...getPermissions(role),
+    }),
+    [user, session, role, roleStatus, loading, signOut, refreshRole],
   );
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
 export const useAuth = () => useContext(AuthContext);

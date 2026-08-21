@@ -40,8 +40,10 @@ Deno.serve(async (req) => {
     getSecretKey(),
   );
 
+  type PairingCode = { code: string; pairing_secret: string; expires_at: string };
+
   // Try a few times in case of (extremely unlikely) code collision.
-  let inserted: any = null;
+  let inserted: PairingCode | null = null;
   let lastError: unknown = null;
   for (let attempt = 0; attempt < 5; attempt++) {
     const code = gen6digit();
@@ -64,7 +66,7 @@ Deno.serve(async (req) => {
     }
     lastError = error;
     // 23505 = unique_violation → retry with a new code
-    if ((error as any).code !== "23505") break;
+    if ((error as { code?: string }).code !== "23505") break;
   }
 
   if (!inserted) {

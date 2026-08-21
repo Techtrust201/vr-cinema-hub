@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/hooks/useAuth";
+import { useConfirm } from "@/hooks/useConfirm";
 import { type AppRole, roleLabel } from "@/lib/permissions";
 import { supabase } from "@/integrations/supabase/client";
 import {
@@ -17,6 +18,12 @@ type Member = {
   display_name: string | null;
   role: AppRole | null;
   created_at: string | null;
+};
+
+/** Shape returned by the invite-org-member edge function. */
+type InviteResponse = {
+  error?: string;
+  invited?: boolean;
 };
 
 type AuditRow = {
@@ -48,8 +55,9 @@ export default function Settings() {
   const [inviteRole, setInviteRole] = useState<AppRole>("operator");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const { confirm, confirmDialog } = useConfirm();
 
-  async function loadMembers() {
+  const loadMembers = useCallback(async () => {
     if (!canManageMembers) return;
     const { data, error } = await supabase.rpc("list_organization_members");
     if (error) {
@@ -57,9 +65,9 @@ export default function Settings() {
       return;
     }
     setMembers((data as Member[]) ?? []);
-  }
+  }, [canManageMembers]);
 
-  async function loadAudit() {
+  const loadAudit = useCallback(async () => {
     if (!canManageMembers && !canManageSecurity) return;
     const { data, error } = await supabase
       .from("organization_audit_logs")
@@ -67,13 +75,12 @@ export default function Settings() {
       .order("created_at", { ascending: false })
       .limit(30);
     if (!error) setAudit((data as AuditRow[]) ?? []);
-  }
+  }, [canManageMembers, canManageSecurity]);
 
   useEffect(() => {
     if (tab === "users") void loadMembers();
     if (tab === "security") void loadAudit();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab, role]);
+  }, [tab, loadMembers, loadAudit]);
 
   async function changeRole(targetUserId: string, newRole: AppRole) {
     setBusy(true);
@@ -94,13 +101,14 @@ export default function Settings() {
   }
 
   async function removeMember(targetUserId: string, label: string) {
-    if (
-      !confirm(
-        `Retirer l'accès de ${label} ? L'utilisateur ne pourra plus se connecter tant qu'il n'aura pas de rôle.`,
-      )
-    ) {
-      return;
-    }
+    const ok = await confirm({
+      title: `Retirer l'accès de ${label} ?`,
+      description:
+        "L'utilisateur restera authentifiable mais n'aura plus aucun rôle, donc plus aucun accès à la plateforme.",
+      confirmLabel: "Retirer l'accès",
+      destructive: true,
+    });
+    if (!ok) return;
     setBusy(true);
     setMessage(null);
     const { error } = await supabase.rpc("remove_my_org_member_role", {
@@ -118,18 +126,24 @@ export default function Settings() {
   }
 
   async function inviteMember() {
+    const email = inviteEmail.trim();
+    if (!email) {
+      setMessage("Renseignez une adresse email.");
+      return;
+    }
     setBusy(true);
     setMessage(null);
-    const { data, error } = await supabase.functions.invoke("invite-org-member", {
-      body: { email: inviteEmail.trim(), role: inviteRole },
-    });
+    const { data, error } = await supabase.functions.invoke<InviteResponse>(
+      "invite-org-member",
+      { body: { email, role: inviteRole } },
+    );
     setBusy(false);
     if (error) {
       setMessage(error.message);
       return;
     }
     if (data?.error) {
-      setMessage(String(data.error));
+      setMessage(data.error);
       return;
     }
     setInviteEmail("");
@@ -379,6 +393,7 @@ export default function Settings() {
           </ul>
         </section>
       )}
+      {confirmDialog}
     </div>
   );
 }

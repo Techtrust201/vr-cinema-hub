@@ -1,10 +1,11 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
-import { ListVideo, Plus, Trash2, Loader2, Check, Globe2, Headset as HeadsetIcon, FolderTree } from "lucide-react";
+import { useLiveData } from "@/hooks/useLiveData";
+import { useConfirm } from "@/hooks/useConfirm";
+import { ListVideo, Plus, Trash2, Loader2, Check, Globe2, Headset as HeadsetIcon, FolderTree, WifiOff } from "lucide-react";
 import { toast } from "sonner";
 import { isPermissionError } from "@/lib/supabaseErrors";
-import { computeScopeUnionDiff } from "@/lib/assignmentDiff";
 
 interface Playlist { id: string; name: string; description: string | null; }
 interface Video { id: string; name: string; }
@@ -18,242 +19,214 @@ interface Assignment {
   target_id: string | null;
 }
 
+type PlaylistsSnapshot = {
+  playlists: Playlist[];
+  videos: Video[];
+  pvideos: PlaylistVideo[];
+  headsets: Headset[];
+  groups: Group[];
+  assignments: Assignment[];
+};
+
 export default function Playlists() {
   const { canManageContent } = useAuth();
-  const [playlists, setPlaylists] = useState<Playlist[]>([]);
-  const [videos, setVideos] = useState<Video[]>([]);
-  const [pvideos, setPvideos] = useState<PlaylistVideo[]>([]);
-  const [headsets, setHeadsets] = useState<Headset[]>([]);
-  const [groups, setGroups] = useState<Group[]>([]);
-  const [assignments, setAssignments] = useState<Assignment[]>([]);
-  const [loading, setLoading] = useState(true);
   const [newName, setNewName] = useState("");
   const [editing, setEditing] = useState<string | null>(null);
+  const [busy, setBusy] = useState<Record<string, true>>({});
+  const { confirm, confirmDialog } = useConfirm();
 
-  const fetchAll = useCallback(async () => {
-    setLoading(true);
-    const [p, v, pv, h, g, a] = await Promise.all([
-      supabase.from("playlists").select("*").order("name"),
-      supabase.from("videos").select("id, name").order("name"),
-      supabase.from("playlist_videos").select("*"),
-      supabase.from("headsets").select("id, name").eq("status", "active").order("name"),
-      supabase.from("headset_groups").select("id, name").order("name"),
-      supabase.from("assignments").select("*"),
-    ]);
-    setPlaylists((p.data ?? []) as Playlist[]);
-    setVideos((v.data ?? []) as Video[]);
-    setPvideos((pv.data ?? []) as PlaylistVideo[]);
-    setHeadsets((h.data ?? []) as Headset[]);
-    setGroups((g.data ?? []) as Group[]);
-    setAssignments((a.data ?? []) as Assignment[]);
-    setLoading(false);
-  }, []);
+  const { data, initialLoading, error, refresh, mutate } = useLiveData<PlaylistsSnapshot>(
+    async (signal) => {
+      const [p, v, pv, h, g, a] = await Promise.all([
+        supabase.from("playlists").select("*").order("name").abortSignal(signal),
+        supabase.from("videos").select("id, name").order("name").abortSignal(signal),
+        supabase.from("playlist_videos").select("*").abortSignal(signal),
+        supabase.from("headsets").select("id, name").eq("status", "active").order("name").abortSignal(signal),
+        supabase.from("headset_groups").select("id, name").order("name").abortSignal(signal),
+        supabase.from("assignments").select("*").abortSignal(signal),
+      ]);
+      const failure = p.error ?? v.error ?? pv.error ?? h.error ?? g.error ?? a.error;
+      if (failure) throw new Error(failure.message);
+      return {
+        playlists: (p.data ?? []) as Playlist[],
+        videos: (v.data ?? []) as Video[],
+        pvideos: (pv.data ?? []) as PlaylistVideo[],
+        headsets: (h.data ?? []) as Headset[],
+        groups: (g.data ?? []) as Group[],
+        assignments: (a.data ?? []) as Assignment[],
+      };
+    },
+  );
 
-  useEffect(() => { fetchAll(); }, [fetchAll]);
+  const playlists = data?.playlists ?? [];
+  const videos = data?.videos ?? [];
+  const pvideos = data?.pvideos ?? [];
+  const headsets = data?.headsets ?? [];
+  const groups = data?.groups ?? [];
+  const assignments = data?.assignments ?? [];
+
+  const withBusy = async (key: string, action: () => Promise<void>) => {
+    if (busy[key]) return;
+    setBusy((s) => ({ ...s, [key]: true }));
+    try {
+      await action();
+    } finally {
+      setBusy((s) => {
+        const { [key]: _dropped, ...rest } = s;
+        return rest;
+      });
+    }
+  };
 
   async function createPlaylist() {
-    if (!newName.trim()) return;
-    const { error } = await supabase.from("playlists").insert({ name: newName.trim() });
-    if (error) toast.error(error.message);
-    else { setNewName(""); toast.success("Playlist créée"); fetchAll(); }
+    const name = newName.trim();
+    if (!name) return;
+    const { error } = await supabase.from("playlists").insert({ name });
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
+    setNewName("");
+    toast.success("Playlist créée");
+    void refresh();
   }
 
   async function deletePlaylist(id: string, name: string) {
-    if (!confirm(`Supprimer la playlist "${name}" ?`)) return;
+    const ok = await confirm({
+      title: `Supprimer la playlist « ${name} » ?`,
+      description: "Les vidéos restent en bibliothèque, seule la playlist et ses assignations sont supprimées.",
+      confirmLabel: "Supprimer",
+      destructive: true,
+    });
+    if (!ok) return;
+
+    const previous = data;
+    mutate((current) =>
+      current
+        ? {
+            ...current,
+            playlists: current.playlists.filter((p) => p.id !== id),
+            pvideos: current.pvideos.filter((x) => x.playlist_id !== id),
+            assignments: current.assignments.filter((a) => a.playlist_id !== id),
+          }
+        : current,
+    );
     const { error } = await supabase.from("playlists").delete().eq("id", id);
-    if (error) toast.error(error.message); else { toast.success("Supprimée"); fetchAll(); }
+    if (error) {
+      mutate(() => previous);
+      toast.error(error.message);
+      return;
+    }
+    toast.success("Supprimée");
   }
 
+  /**
+   * One write per click. This used to fire two diagnose_playlist_impact RPCs, a
+   * confirmation read and a full six-query refetch around every checkbox, which
+   * is what made the page feel frozen for seconds at a time. Manifest bumping is
+   * enforced by database triggers and auditable from the Sync page's Diag panel.
+   */
   async function toggleVideo(playlistId: string, videoId: string, present: boolean) {
-    const playlist = playlists.find((p) => p.id === playlistId);
-    const video = videos.find((v) => v.id === videoId);
-    const op = present ? "delete" : "insert";
-    console.info("[PlaylistDebug] toggling", {
-      playlist_id: playlistId, playlist_name: playlist?.name,
-      video_id: videoId, video_name: video?.name, op,
+    await withBusy(`v:${playlistId}:${videoId}`, async () => {
+      const previous = data;
+      const nextPosition =
+        Math.max(0, ...pvideos.filter((x) => x.playlist_id === playlistId).map((x) => x.position)) + 1;
+
+      mutate((current) => {
+        if (!current) return current;
+        const pvideos = present
+          ? current.pvideos.filter((x) => !(x.playlist_id === playlistId && x.video_id === videoId))
+          : [...current.pvideos, { playlist_id: playlistId, video_id: videoId, position: nextPosition }];
+        return { ...current, pvideos };
+      });
+
+      const query = present
+        ? supabase.from("playlist_videos").delete().match({ playlist_id: playlistId, video_id: videoId })
+        : supabase.from("playlist_videos").insert({ playlist_id: playlistId, video_id: videoId, position: nextPosition });
+      const { error } = await query;
+
+      if (error) {
+        mutate(() => previous);
+        toast.error(isPermissionError(error)
+          ? "Modification non enregistrée : droits insuffisants."
+          : `Échec : ${error.message}`);
+        return;
+      }
+      toast.success(present ? "Vidéo retirée" : "Vidéo ajoutée");
     });
-
-    // 1. Snapshot impacted headsets BEFORE
-    const beforeRes = await supabase.rpc("diagnose_playlist_impact", { _playlist_id: playlistId });
-    if (beforeRes.error) {
-      console.warn("[PlaylistDebug] diag before error", beforeRes.error);
-      if (isPermissionError(beforeRes.error)) {
-        toast.error("Diagnostic refusé : droits insuffisants.");
-      } else {
-        toast.error(`Diagnostic indisponible : ${beforeRes.error.message}. Mutation annulée.`);
-      }
-      return;
-    }
-    type ImpactRow = { headset_id: string; headset_name?: string; desired?: number; desired_manifest_version?: number };
-    const beforeImpacted = ((beforeRes.data as { impacted_headsets?: ImpactRow[] } | null)?.impacted_headsets) ?? [];
-    console.info("[PlaylistDebug] impacted_headsets_before", beforeImpacted);
-
-    // 2. Mutation
-    let mutationError: { code?: string; message?: string } | null = null;
-    if (present) {
-      const { error } = await supabase
-        .from("playlist_videos").delete()
-        .match({ playlist_id: playlistId, video_id: videoId });
-      mutationError = error;
-    } else {
-      const max = Math.max(0, ...pvideos.filter((x) => x.playlist_id === playlistId).map((x) => x.position));
-      const { error } = await supabase
-        .from("playlist_videos")
-        .insert({ playlist_id: playlistId, video_id: videoId, position: max + 1 });
-      mutationError = error;
-    }
-
-    if (mutationError) {
-      console.error("[PlaylistDebug] mutation rejected", mutationError);
-      if (isPermissionError(mutationError)) {
-        toast.error("Modification non enregistrée : droits insuffisants.");
-      } else {
-        toast.error(`Échec : ${mutationError.message}`);
-      }
-      return;
-    }
-
-    // 3. Refetch ciblé pour confirmer
-    const { data: row } = await supabase
-      .from("playlist_videos").select("*")
-      .eq("playlist_id", playlistId).eq("video_id", videoId).maybeSingle();
-    const db_confirmed = present ? row === null : row !== null;
-    console.info("[PlaylistDebug] mutation result", { op, success: true, db_confirmed, row_after: row });
-    if (!db_confirmed) {
-      toast.error("Mutation non confirmée par la base — réessayer.");
-      console.warn("[PlaylistDebug] db_confirmed=false");
-      return;
-    }
-
-    // 4. Snapshot AFTER + diff bumped/not_bumped
-    const afterRes = await supabase.rpc("diagnose_playlist_impact", { _playlist_id: playlistId });
-    if (afterRes.error) {
-      console.warn("[PlaylistDebug] diag after error", afterRes.error);
-      toast.warning(`Mutation OK mais diagnostic after indisponible : ${afterRes.error.message}`);
-      fetchAll();
-      return;
-    }
-    const afterImpacted = ((afterRes.data as { impacted_headsets?: ImpactRow[] } | null)?.impacted_headsets) ?? [];
-    console.info("[PlaylistDebug] impacted_headsets_after", afterImpacted);
-
-    const beforeMap = new Map<string, number>(
-      beforeImpacted.map((h) => [h.headset_id, h.desired ?? h.desired_manifest_version ?? 0]),
-    );
-    const bumped: Array<{ id: string; name: string; before: number; after: number }> = [];
-    const not_bumped: Array<{ id: string; name: string; desired: number }> = [];
-    for (const h of afterImpacted) {
-      const afterDesired = h.desired ?? h.desired_manifest_version ?? 0;
-      const before = beforeMap.get(h.headset_id) ?? 0;
-      if (afterDesired > before) {
-        bumped.push({ id: h.headset_id, name: h.headset_name ?? h.headset_id, before, after: afterDesired });
-      } else {
-        not_bumped.push({ id: h.headset_id, name: h.headset_name ?? h.headset_id, desired: afterDesired });
-      }
-    }
-    console.info("[PlaylistDebug] bumped_headsets", bumped);
-    console.info("[PlaylistDebug] not_bumped_headsets", not_bumped);
-
-    if (not_bumped.length > 0) {
-      toast.warning(`Sync incomplète : ${not_bumped.length} casque(s) impacté(s) n'ont pas bumpé. Voir console.`);
-    } else if (afterImpacted.length === 0) {
-      toast.success(
-        present
-          ? "Vidéo retirée (aucun casque assigné à cette playlist)."
-          : "Vidéo ajoutée (aucun casque assigné à cette playlist).",
-      );
-    } else {
-      toast.success(
-        `${present ? "Vidéo retirée" : "Vidéo ajoutée"} — ${bumped.length} casque(s) à resynchroniser.`,
-      );
-    }
-    fetchAll();
   }
 
   async function toggleAssignment(playlistId: string, targetType: "headset" | "group" | "all", targetId: string | null) {
-    const existing = assignments.find((a) =>
-      a.playlist_id === playlistId && a.target_type === targetType && a.target_id === targetId,
-    );
-    const playlist = playlists.find((p) => p.id === playlistId);
-    console.info("[PlaylistDebug] toggleAssignment", {
-      playlist_id: playlistId, playlist_name: playlist?.name,
-      target_type: targetType, target_id: targetId, op: existing ? "delete" : "insert",
-    });
-    const beforeRes = await supabase.rpc("diagnose_playlist_impact", { _playlist_id: playlistId });
-    if (beforeRes.error) {
-      console.warn("[PlaylistDebug] assignment diag before error", beforeRes.error);
-      if (isPermissionError(beforeRes.error)) {
-        toast.error("Diagnostic refusé : droits insuffisants.");
-      } else {
-        toast.error(`Diagnostic indisponible : ${beforeRes.error.message}. Mutation annulée.`);
-      }
-      return;
-    }
-    const beforeImpacted = ((beforeRes.data as { impacted_headsets?: Array<{ headset_id: string; desired_manifest_version?: number }> })?.impacted_headsets) ?? [];
-    console.info("[PlaylistDebug] impacted_headsets_before", beforeImpacted);
+    await withBusy(`a:${playlistId}:${targetType}:${targetId ?? "all"}`, async () => {
+      const existing = assignments.find((a) =>
+        a.playlist_id === playlistId && a.target_type === targetType && a.target_id === targetId,
+      );
 
-    let mutationError: { code?: string; message?: string } | null = null;
-    if (existing) {
-      const { error } = await supabase.from("assignments").delete().eq("id", existing.id);
-      mutationError = error;
-    } else {
-      const itemsForPl = pvideos.filter((x) => x.playlist_id === playlistId);
-      if (itemsForPl.length === 0) {
-        toast.warning("Cette playlist est vide — ajoute au moins une vidéo avant de la diffuser.");
+      if (!existing && pvideos.filter((x) => x.playlist_id === playlistId).length === 0) {
+        toast.warning("Cette playlist est vide — ajoutez au moins une vidéo avant de la diffuser.");
         return;
       }
-      const { error } = await supabase
+
+      const previous = data;
+      if (existing) {
+        mutate((current) =>
+          current
+            ? { ...current, assignments: current.assignments.filter((a) => a.id !== existing.id) }
+            : current,
+        );
+        const { error } = await supabase.from("assignments").delete().eq("id", existing.id);
+        if (error) {
+          mutate(() => previous);
+          toast.error(isPermissionError(error)
+            ? "Modification non enregistrée : droits insuffisants."
+            : `Échec : ${error.message}`);
+          return;
+        }
+        toast.success("Assignation retirée");
+        return;
+      }
+
+      // The row id is generated server-side, so the inserted row is returned and
+      // reconciled in the same round-trip rather than triggering a full refetch.
+      const optimisticId = `optimistic-${crypto.randomUUID()}`;
+      mutate((current) =>
+        current
+          ? {
+              ...current,
+              assignments: [
+                ...current.assignments,
+                { id: optimisticId, playlist_id: playlistId, target_type: targetType, target_id: targetId },
+              ],
+            }
+          : current,
+      );
+      const { data: inserted, error } = await supabase
         .from("assignments")
-        .insert({ playlist_id: playlistId, target_type: targetType, target_id: targetId });
-      mutationError = error;
-    }
-
-    if (mutationError) {
-      console.error("[PlaylistDebug] assignment rejected", mutationError);
-      if (isPermissionError(mutationError)) {
-        toast.error("Modification non enregistrée : droits insuffisants.");
-      } else {
-        toast.error(`Échec : ${mutationError.message}`);
+        .insert({ playlist_id: playlistId, target_type: targetType, target_id: targetId })
+        .select("id, playlist_id, target_type, target_id")
+        .maybeSingle();
+      if (error || !inserted) {
+        mutate(() => previous);
+        toast.error(error && isPermissionError(error)
+          ? "Modification non enregistrée : droits insuffisants."
+          : `Échec : ${error?.message ?? "assignation non confirmée"}`);
+        return;
       }
-      return;
-    }
-
-    const afterRes = await supabase.rpc("diagnose_playlist_impact", { _playlist_id: playlistId });
-    if (afterRes.error) {
-      console.warn("[PlaylistDebug] assignment diag after error", afterRes.error);
-      toast.warning(`Assignation OK mais diagnostic after indisponible : ${afterRes.error.message}`);
-      fetchAll();
-      return;
-    }
-    const afterImpacted = ((afterRes.data as { impacted_headsets?: Array<{ headset_id: string; desired_manifest_version?: number }> })?.impacted_headsets) ?? [];
-    console.info("[PlaylistDebug] impacted_headsets_after", afterImpacted);
-
-    const scopeDiff = computeScopeUnionDiff(beforeImpacted, afterImpacted);
-    console.info("[PlaylistDebug] scope_union_diff", scopeDiff);
-
-    const beforeDesired = new Map(beforeImpacted.map((h) => [h.headset_id, h.desired_manifest_version ?? 0]));
-    const removed = scopeDiff.filter((d) => d.scope === "removed_from_scope");
-    if (removed.length > 0) {
-      const ids = removed.map((r) => r.headset_id);
-      const { data: bumpedRows } = await supabase
-        .from("headsets")
-        .select("id, desired_manifest_version")
-        .in("id", ids);
-      for (const row of bumpedRows ?? []) {
-        const before = beforeDesired.get(row.id) ?? 0;
-        console.info("[PlaylistDebug] removed_headset_bump", {
-          headset_id: row.id,
-          desired_before: before,
-          desired_after: row.desired_manifest_version,
-          bumped: (row.desired_manifest_version ?? 0) > before,
-        });
-      }
-    }
-
-    toast.success(existing ? "Assignation retirée" : "Assignation ajoutée");
-    fetchAll();
+      mutate((current) =>
+        current
+          ? {
+              ...current,
+              assignments: current.assignments.map((a) =>
+                a.id === optimisticId ? (inserted as Assignment) : a,
+              ),
+            }
+          : current,
+      );
+      toast.success("Assignation ajoutée");
+    });
   }
 
-  if (loading) return <div className="p-6 text-muted-foreground flex items-center gap-2"><Loader2 className="animate-spin" size={16} /> Chargement…</div>;
+  if (initialLoading) return <div className="p-6 text-muted-foreground flex items-center gap-2"><Loader2 className="animate-spin" size={16} /> Chargement…</div>;
 
   return (
     <div className="p-6 space-y-6">
@@ -261,6 +234,13 @@ export default function Playlists() {
         <h1 className="text-2xl font-bold">Playlists</h1>
         <p className="text-sm text-muted-foreground">Regroupez les vidéos puis assignez-les aux casques ou groupes.</p>
       </div>
+
+      {error && (
+        <div className="flex items-center gap-2 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+          <WifiOff size={13} />
+          Données peut-être obsolètes — dernière actualisation échouée ({error.message}).
+        </div>
+      )}
 
       {canManageContent && (
         <div className="flex gap-2">
@@ -319,14 +299,18 @@ export default function Playlists() {
                           <p className="text-xs text-muted-foreground">Aucune vidéo en bibliothèque.</p>
                         ) : videos.map((v) => {
                           const present = items.some((i) => i.video_id === v.id);
+                          const pending = busy[`v:${pl.id}:${v.id}`] === true;
                           return (
                             <button
                               key={v.id}
+                              disabled={pending}
                               onClick={() => toggleVideo(pl.id, v.id, present)}
-                              className="w-full flex items-center justify-between px-3 py-2 rounded text-sm hover:bg-muted/40 transition"
+                              className="w-full flex items-center justify-between px-3 py-2 rounded text-sm hover:bg-muted/40 transition disabled:opacity-60"
                             >
                               <span className="truncate">{v.name}</span>
-                              {present && <Check size={14} className="text-[hsl(140_70%_55%)]" />}
+                              {pending
+                                ? <Loader2 size={14} className="animate-spin text-muted-foreground" />
+                                : present && <Check size={14} className="text-[hsl(140_70%_55%)]" />}
                             </button>
                           );
                         })}
@@ -341,6 +325,7 @@ export default function Playlists() {
                           icon={<Globe2 size={14} />}
                           label="Tous les casques"
                           active={assigns.some((a) => a.target_type === "all")}
+                          pending={busy[`a:${pl.id}:all:all`] === true}
                           onClick={() => toggleAssignment(pl.id, "all", null)}
                         />
                         {groups.length > 0 && <p className="text-[10px] text-muted-foreground/60 mt-2 mb-1">GROUPES</p>}
@@ -350,6 +335,7 @@ export default function Playlists() {
                             icon={<FolderTree size={14} />}
                             label={g.name}
                             active={assigns.some((a) => a.target_type === "group" && a.target_id === g.id)}
+                            pending={busy[`a:${pl.id}:group:${g.id}`] === true}
                             onClick={() => toggleAssignment(pl.id, "group", g.id)}
                           />
                         ))}
@@ -360,6 +346,7 @@ export default function Playlists() {
                             icon={<HeadsetIcon size={14} />}
                             label={h.name}
                             active={assigns.some((a) => a.target_type === "headset" && a.target_id === h.id)}
+                            pending={busy[`a:${pl.id}:headset:${h.id}`] === true}
                             onClick={() => toggleAssignment(pl.id, "headset", h.id)}
                           />
                         ))}
@@ -372,18 +359,22 @@ export default function Playlists() {
           })}
         </div>
       )}
+      {confirmDialog}
     </div>
   );
 }
 
-function TargetRow({ icon, label, active, onClick }: { icon: React.ReactNode; label: string; active: boolean; onClick: () => void }) {
+function TargetRow({ icon, label, active, pending, onClick }: { icon: React.ReactNode; label: string; active: boolean; pending: boolean; onClick: () => void }) {
   return (
     <button
       onClick={onClick}
-      className="w-full flex items-center justify-between px-3 py-2 rounded text-sm hover:bg-muted/40 transition"
+      disabled={pending}
+      className="w-full flex items-center justify-between px-3 py-2 rounded text-sm hover:bg-muted/40 transition disabled:opacity-60"
     >
       <span className="flex items-center gap-2"><span className="text-muted-foreground">{icon}</span>{label}</span>
-      {active && <Check size={14} className="text-[hsl(140_70%_55%)]" />}
+      {pending
+        ? <Loader2 size={14} className="animate-spin text-muted-foreground" />
+        : active && <Check size={14} className="text-[hsl(140_70%_55%)]" />}
     </button>
   );
 }

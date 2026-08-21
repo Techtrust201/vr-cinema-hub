@@ -19,8 +19,8 @@ export default function ForgotPassword() {
       if (error) throw error;
       setSent(true);
       toast.success("Email envoyé");
-    } catch (err: any) {
-      toast.error(err.message ?? "Erreur lors de l'envoi");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Erreur lors de l'envoi");
     } finally {
       setLoading(false);
     }
