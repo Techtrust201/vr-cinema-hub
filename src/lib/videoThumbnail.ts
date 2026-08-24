@@ -6,15 +6,39 @@
  * à l'envoi. Un format exotique échoue proprement : la vidéo est alors enregistrée sans
  * miniature, et le casque affiche sa vignette de repli.
  *
- * Le cadrage dépend de la projection. Une vidéo 360 est stockée en équirectangulaire : la
- * réduire entièrement donne une image très déformée et illisible. On conserve donc la bande
- * centrale, qui correspond à l'horizon et concentre l'essentiel de la scène.
+ * Le cadrage dépend du format, et en trois temps.
+ *
+ * D'abord le relief : une vidéo stéréo empile deux points de vue dans la même image. Cadrer
+ * sans en tenir compte donne une miniature à cheval sur les deux, c'est-à-dire le bas d'un œil
+ * surmonté du haut de l'autre.
+ *
+ * Ensuite l'encodage. Une source équirectangulaire réduite en entier est illisible, tant elle
+ * est étirée aux pôles : on garde la bande centrale, qui correspond à l'horizon et concentre
+ * l'essentiel de la scène. Une source en cubemap, elle, n'est pas une image continue mais une
+ * grille de six faces : on isole la face avant, qui est précisément la vue vers l'avant.
+ *
+ * Enfin la géométrie, qui décide de la largeur utile pour une source équirectangulaire.
  */
 
 export type ThumbnailProjection = "flat" | "180" | "360";
+export type ThumbnailStereo = "mono" | "top_bottom" | "side_by_side";
+export type ThumbnailSourceLayout = "equirectangular" | "equiangular_cubemap";
+
+export interface ThumbnailFormat {
+  projection: ThumbnailProjection;
+  stereo: ThumbnailStereo;
+  sourceLayout: ThumbnailSourceLayout;
+}
 
 export interface ThumbnailResult {
   blob: Blob;
+  width: number;
+  height: number;
+}
+
+interface Rect {
+  x: number;
+  y: number;
   width: number;
   height: number;
 }
@@ -35,7 +59,7 @@ const TIMEOUT_MS = 20000;
  */
 export async function generateVideoThumbnail(
   file: File,
-  projection: ThumbnailProjection,
+  format: ThumbnailFormat,
 ): Promise<ThumbnailResult | null> {
   const objectUrl = URL.createObjectURL(file);
   const video = document.createElement("video");
@@ -53,7 +77,7 @@ export async function generateVideoThumbnail(
     context.fillStyle = "#0f1319";
     context.fillRect(0, 0, TARGET_WIDTH, TARGET_HEIGHT);
 
-    const source = computeSourceRect(frame.width, frame.height, projection);
+    const source = computeSourceRect(frame.width, frame.height, format);
     context.drawImage(
       video,
       source.x,
@@ -80,39 +104,100 @@ export async function generateVideoThumbnail(
   }
 }
 
+const TARGET_RATIO = TARGET_WIDTH / TARGET_HEIGHT;
+
 /**
- * Zone de la vidéo à conserver. Pour une projection immersive, on garde une bande horizontale
- * centrée : au-delà de l'horizon, une équirectangulaire n'est plus interprétable une fois
- * réduite. Pour une vidéo plate, on remplit le cadre en recadrant le débord.
+ * Portion de l'image occupée par un seul point de vue.
+ *
+ * En relief, l'image livrée contient les deux yeux empilés. Un cadrage qui l'ignore tombe à
+ * cheval sur leur frontière et donne une miniature coupée en deux.
+ */
+function singleEyeRect(width: number, height: number, stereo: ThumbnailStereo): Rect {
+  switch (stereo) {
+    case "top_bottom":
+      return { x: 0, y: 0, width, height: height / 2 };
+    case "side_by_side":
+      return { x: 0, y: 0, width: width / 2, height };
+    default:
+      return { x: 0, y: 0, width, height };
+  }
+}
+
+/**
+ * Face avant d'un cubemap équi-angulaire : la case centrale de la rangée du haut.
+ *
+ * La grille 3x2 porte en haut gauche/avant/droite, en bas bas/arrière/haut. La face avant est
+ * donc exactement la vue vers l'avant, ce qui en fait la meilleure miniature possible — plus
+ * lisible encore que la bande d'horizon d'une équirectangulaire, qui couvre 360 degrés.
+ */
+function cubemapFrontFace(atlas: Rect): Rect {
+  const faceWidth = atlas.width / 3;
+  const faceHeight = atlas.height / 2;
+
+  // Chaque face porte deux pixels de remplissage sur ses bords, destinés au filtrage. Les
+  // écarter évite de laisser paraître un liseré du voisin.
+  const padX = (2 / 3840) * atlas.width;
+  const padY = (2 / 2160) * atlas.height;
+
+  const innerWidth = faceWidth - 2 * padX;
+  const innerHeight = faceHeight - 2 * padY;
+
+  // La face est presque carrée, la miniature est en 16:9 : on prélève une bande centrée.
+  const bandHeight = Math.min(innerHeight, innerWidth / TARGET_RATIO);
+
+  return {
+    x: atlas.x + faceWidth + padX,
+    y: atlas.y + padY + (innerHeight - bandHeight) / 2,
+    width: innerWidth,
+    height: bandHeight,
+  };
+}
+
+/** Bande d'horizon d'une source équirectangulaire. */
+function equirectBand(atlas: Rect, projection: ThumbnailProjection): Rect {
+  // Une 360 fait le tour complet : n'en garder qu'une part donne une vue à peu près naturelle.
+  // Une 180 tient déjà dans la largeur du cadre.
+  const usableWidth = projection === "360" ? atlas.width * 0.55 : atlas.width;
+  const bandHeight = Math.min(atlas.height, usableWidth / TARGET_RATIO);
+
+  return {
+    x: atlas.x + (atlas.width - usableWidth) / 2,
+    y: atlas.y + (atlas.height - bandHeight) / 2,
+    width: usableWidth,
+    height: bandHeight,
+  };
+}
+
+/** Remplissage du cadre par recadrage du débord, pour une image plate. */
+function coverCrop(atlas: Rect): Rect {
+  if (atlas.width / atlas.height > TARGET_RATIO) {
+    const cropped = atlas.height * TARGET_RATIO;
+    return { x: atlas.x + (atlas.width - cropped) / 2, y: atlas.y, width: cropped, height: atlas.height };
+  }
+  const cropped = atlas.width / TARGET_RATIO;
+  return { x: atlas.x, y: atlas.y + (atlas.height - cropped) / 2, width: atlas.width, height: cropped };
+}
+
+/**
+ * Zone de la vidéo à conserver pour la miniature : un seul œil, puis la portion la plus
+ * parlante de cet œil compte tenu de son encodage et de sa géométrie.
  */
 export function computeSourceRect(
   width: number,
   height: number,
-  projection: ThumbnailProjection,
-) {
-  const targetRatio = TARGET_WIDTH / TARGET_HEIGHT;
-
-  if (projection === "flat") {
-    const sourceRatio = width / height;
-    if (sourceRatio > targetRatio) {
-      const cropped = height * targetRatio;
-      return { x: (width - cropped) / 2, y: 0, width: cropped, height };
-    }
-    const cropped = width / targetRatio;
-    return { x: 0, y: (height - cropped) / 2, width, height: cropped };
+  format: ThumbnailFormat,
+): Rect {
+  // Une image plate n'a ni relief ni encodage sphérique : la traiter autrement recadrerait la
+  // moitié d'une vidéo dont les deux moitiés se ressemblent par hasard.
+  if (format.projection === "flat") {
+    return coverCrop({ x: 0, y: 0, width, height });
   }
 
-  // Projections immersives : on part de la largeur utile puis on prend la hauteur voulue autour
-  // de l'équateur de l'image. Le 180 occupe déjà la totalité de la largeur du cadre source.
-  const usableWidth = projection === "360" ? width * 0.55 : width;
-  const bandHeight = Math.min(height, usableWidth / targetRatio);
+  const atlas = singleEyeRect(width, height, format.stereo);
 
-  return {
-    x: (width - usableWidth) / 2,
-    y: (height - bandHeight) / 2,
-    width: usableWidth,
-    height: bandHeight,
-  };
+  return format.sourceLayout === "equiangular_cubemap"
+    ? cubemapFrontFace(atlas)
+    : equirectBand(atlas, format.projection);
 }
 
 function captureFrame(

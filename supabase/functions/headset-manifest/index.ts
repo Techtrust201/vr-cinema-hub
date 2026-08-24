@@ -174,6 +174,7 @@ Deno.serve(async (req) => {
       format: string | null;
       projection: string | null;
       stereo_mode: string | null;
+      source_layout: string | null;
       updated_at: string | null;
       sha256: string | null;
     } | null;
@@ -183,7 +184,7 @@ Deno.serve(async (req) => {
   if (playlistIds.length > 0) {
     const { data: pvideos, error: pvErr } = await supabase
       .from("playlist_videos")
-      .select("playlist_id, video_id, position, videos(id, name, storage_path, thumbnail_url, size_bytes, duration_seconds, format, projection, stereo_mode, updated_at, sha256)")
+      .select("playlist_id, video_id, position, videos(id, name, storage_path, thumbnail_url, size_bytes, duration_seconds, format, projection, stereo_mode, source_layout, updated_at, sha256)")
       .in("playlist_id", playlistIds)
       .order("position", { ascending: true });
     if (pvErr) {
@@ -270,6 +271,9 @@ Deno.serve(async (req) => {
       file_extension,
       projection: v.projection,
       stereo_mode: v.stereo_mode,
+      // Le casque en a besoin pour savoir comment les pixels recouvrent la sphère : un cubemap
+      // lu comme une mappemonde s'afficherait disloqué.
+      source_layout: v.source_layout,
       legacy_format: v.format,
       format: v.format,
       size_bytes: v.size_bytes,

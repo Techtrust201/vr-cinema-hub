@@ -654,6 +654,7 @@ export type Database = {
           projection: Database["public"]["Enums"]["video_projection"]
           sha256: string | null
           size_bytes: number
+          source_layout: Database["public"]["Enums"]["video_source_layout"]
           stereo_mode: Database["public"]["Enums"]["video_stereo_mode"]
           storage_path: string
           thumbnail_url: string | null
@@ -671,6 +672,7 @@ export type Database = {
           projection?: Database["public"]["Enums"]["video_projection"]
           sha256?: string | null
           size_bytes?: number
+          source_layout?: Database["public"]["Enums"]["video_source_layout"]
           stereo_mode?: Database["public"]["Enums"]["video_stereo_mode"]
           storage_path: string
           thumbnail_url?: string | null
@@ -688,6 +690,7 @@ export type Database = {
           projection?: Database["public"]["Enums"]["video_projection"]
           sha256?: string | null
           size_bytes?: number
+          source_layout?: Database["public"]["Enums"]["video_source_layout"]
           stereo_mode?: Database["public"]["Enums"]["video_stereo_mode"]
           storage_path?: string
           thumbnail_url?: string | null
@@ -790,6 +793,7 @@ export type Database = {
         | "no_change"
         | "pending"
       video_projection: "360" | "180" | "flat"
+      video_source_layout: "equirectangular" | "equiangular_cubemap"
       video_stereo_mode: "mono" | "top_bottom" | "side_by_side" | "unknown"
       vr_format: "360_mono" | "180_mono" | "360_stereo" | "180_stereo" | "flat"
     }
@@ -940,6 +944,7 @@ export const Constants = {
         "pending",
       ],
       video_projection: ["360", "180", "flat"],
+      video_source_layout: ["equirectangular", "equiangular_cubemap"],
       video_stereo_mode: ["mono", "top_bottom", "side_by_side", "unknown"],
       vr_format: ["360_mono", "180_mono", "360_stereo", "180_stereo", "flat"],
     },

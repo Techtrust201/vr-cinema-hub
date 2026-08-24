@@ -13,11 +13,13 @@ import { isMovLike, resolveVideoContentType, sanitizeStorageFileName } from "@/l
 import { sha256HexOfBlob } from "@/lib/sha256";
 import { uploadFileWithProgress } from "@/lib/uploadWithProgress";
 import { generateVideoThumbnail } from "@/lib/videoThumbnail";
+import { detectVideoFormat } from "@/lib/detectVideoFormat";
 
 type LibraryType = "location" | "animation";
 type VrFormat = "360_mono" | "180_mono" | "360_stereo" | "180_stereo" | "flat";
 type Projection = "360" | "180" | "flat";
 type StereoMode = "mono" | "top_bottom" | "side_by_side" | "unknown";
+type SourceLayout = "equirectangular" | "equiangular_cubemap";
 
 interface VideoRow {
   id: string;
@@ -26,6 +28,7 @@ interface VideoRow {
   format: VrFormat;
   projection: Projection;
   stereo_mode: StereoMode;
+  source_layout: SourceLayout;
   size_bytes: number;
   storage_path: string;
   thumbnail_url: string | null;
@@ -104,12 +107,24 @@ const STEREO_LABELS: Record<StereoMode, string> = {
   side_by_side: "Side by Side",
   unknown: "Stéréo (inconnu)",
 };
+const SOURCE_LAYOUT_LABELS: Record<SourceLayout, string> = {
+  equirectangular: "Équirectangulaire (standard)",
+  equiangular_cubemap: "Cubemap équi-angulaire (YouTube)",
+};
 
 interface PendingUpload {
   tempId: string;
   file: File;
   projection: Projection;
   stereo_mode: StereoMode;
+  source_layout: SourceLayout;
+  /**
+   * L'analyse de l'image court en fond, la vidéo n'attend pas pour s'afficher. Ce que
+   * l'analyse propose ne remplace jamais une valeur déjà choisie à la main.
+   */
+  analysis: "running" | "done";
+  analysisNote?: string;
+  touched?: boolean;
 }
 
 const THUMBNAIL_URL_TTL_SECONDS = 3600;
@@ -189,17 +204,57 @@ export default function Libraries() {
       file,
       projection: suggestProjection(file.name),
       stereo_mode: suggestStereo(file.name),
+      source_layout: "equirectangular",
+      analysis: "running",
     }));
     setPending((p) => [...p, ...next]);
+    next.forEach(analysePending);
+  };
+
+  /**
+   * Examine quelques images de la vidéo pour proposer son encodage et son relief.
+   *
+   * Ces informations ne figurent dans aucune métadonnée des fichiers livrés par les
+   * producteurs de contenu : sans cette analyse, il faudrait les connaître de tête, et une
+   * erreur ne se verrait qu'une fois le casque sur la tête.
+   */
+  const analysePending = async (item: PendingUpload) => {
+    const detected = await detectVideoFormat(item.file);
+    setPending((p) =>
+      p.map((it) => {
+        if (it.tempId !== item.tempId) return it;
+        // Un réglage déjà corrigé à la main fait foi : l'analyse arrive après coup et ne doit
+        // pas défaire le choix de l'opérateur.
+        if (it.touched) {
+          return { ...it, analysis: "done", analysisNote: detected.explanation };
+        }
+        const merged: PendingUpload = {
+          ...it,
+          source_layout: detected.sourceLayout,
+          stereo_mode: detected.stereoMode,
+          analysis: "done",
+          analysisNote: detected.explanation,
+        };
+        // Une image plate n'a ni relief ni encodage sphérique, quoi qu'ait mesuré l'analyse.
+        if (merged.projection === "flat") {
+          merged.stereo_mode = "mono";
+          merged.source_layout = "equirectangular";
+        }
+        return merged;
+      }),
+    );
   };
 
   const updatePending = (tempId: string, patch: Partial<PendingUpload>) => {
     setPending((p) =>
       p.map((it) => {
         if (it.tempId !== tempId) return it;
-        const merged = { ...it, ...patch };
-        // Enforce: flat ⇒ mono
-        if (merged.projection === "flat") merged.stereo_mode = "mono";
+        const merged = { ...it, ...patch, touched: true };
+        // Enforce: flat ⇒ mono, et pas d'encodage sphérique sur une image plate
+        if (merged.projection === "flat") {
+          merged.stereo_mode = "mono";
+          merged.source_layout = "equirectangular";
+        }
         return merged;
       }),
     );
@@ -232,12 +287,18 @@ export default function Libraries() {
    */
   const uploadThumbnail = async (
     file: File,
-    projection: Projection,
+    item: Pick<PendingUpload, "projection" | "stereo_mode" | "source_layout">,
     videoPath: string,
     signal: AbortSignal,
   ): Promise<string | null> => {
     try {
-      const thumbnail = await generateVideoThumbnail(file, projection);
+      const thumbnail = await generateVideoThumbnail(file, {
+        projection: item.projection,
+        // Le relief décide de quel œil provient la miniature, l'encodage décide de quelle
+        // portion de l'image : sans eux, le cadrage tombe à cheval sur une frontière.
+        stereo: item.stereo_mode === "unknown" ? "mono" : item.stereo_mode,
+        sourceLayout: item.source_layout,
+      });
       if (!thumbnail) {
         console.warn("[thumbnail] génération impossible pour", file.name);
         return null;
@@ -274,7 +335,7 @@ export default function Libraries() {
       toast.error("Précisez le mode stéréo (mono / top_bottom / side_by_side) avant d'uploader.");
       return;
     }
-    const { tempId, file, projection, stereo_mode } = item;
+    const { tempId, file, projection, stereo_mode, source_layout } = item;
     removePending(tempId);
     const controller = new AbortController();
     setUploads((u) => ({
@@ -321,7 +382,12 @@ export default function Libraries() {
       // génération n'empêche donc rien. Le casque et le dashboard retombent sur une vignette
       // générée à partir du titre.
       setUpload(tempId, { phase: "thumbnail", progress: 0 });
-      thumbnailPath = await uploadThumbnail(file, projection, path, controller.signal);
+      thumbnailPath = await uploadThumbnail(
+        file,
+        { projection, stereo_mode, source_layout },
+        path,
+        controller.signal,
+      );
       setUpload(tempId, { phase: "thumbnail", progress: 100 });
 
       setUpload(tempId, { phase: "saving", progress: 100 });
@@ -331,6 +397,7 @@ export default function Libraries() {
         format: legacyFormatFor(projection, stereo_mode),
         projection,
         stereo_mode,
+        source_layout,
         size_bytes: file.size,
         storage_path: path,
         thumbnail_url: thumbnailPath,
@@ -553,7 +620,28 @@ export default function Libraries() {
                       ))}
                     </select>
                   </label>
+                  <label className="text-[10px] text-muted-foreground space-y-1 col-span-2">
+                    <span>Encodage de la source</span>
+                    <select
+                      value={it.source_layout}
+                      disabled={isFlat}
+                      onChange={(e) => updatePending(it.tempId, { source_layout: e.target.value as SourceLayout })}
+                      className="w-full rounded bg-background border border-border/60 px-2 py-1.5 text-xs text-foreground disabled:opacity-50"
+                    >
+                      {(["equirectangular", "equiangular_cubemap"] as SourceLayout[]).map((s) => (
+                        <option key={s} value={s}>{SOURCE_LAYOUT_LABELS[s]}</option>
+                      ))}
+                    </select>
+                  </label>
                 </div>
+                {it.analysis === "running" ? (
+                  <p className="text-[10px] text-muted-foreground flex items-center gap-1.5">
+                    <Loader2 size={10} className="animate-spin" />
+                    Analyse de l'image en cours pour proposer l'encodage et le relief…
+                  </p>
+                ) : it.analysisNote ? (
+                  <p className="text-[10px] text-muted-foreground">{it.analysisNote}</p>
+                ) : null}
                 {stereoUnknown && (
                   <p className="text-[10px] text-amber-500">
                     Précisez le mode stéréo (top/bottom ou side-by-side) avant d'uploader.
@@ -640,7 +728,10 @@ export default function Libraries() {
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-medium truncate">{v.name}</p>
                 <p className="text-[10px] text-muted-foreground mt-0.5">
-                  {PROJECTION_LABELS[v.projection] ?? v.projection} • {STEREO_LABELS[v.stereo_mode] ?? v.stereo_mode} • {fmtSize(v.size_bytes)} • ajoutée le {new Date(v.created_at).toLocaleDateString("fr-FR")}
+                  {PROJECTION_LABELS[v.projection] ?? v.projection} • {STEREO_LABELS[v.stereo_mode] ?? v.stereo_mode}
+                  {/* L'encodage n'est signalé que s'il sort de l'ordinaire : le mentionner à
+                      chaque ligne noierait l'information utile. */}
+                  {v.source_layout === "equiangular_cubemap" && " • Cubemap"} • {fmtSize(v.size_bytes)} • ajoutée le {new Date(v.created_at).toLocaleDateString("fr-FR")}
                 </p>
               </div>
               <button
