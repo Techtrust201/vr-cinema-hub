@@ -1,0 +1,29 @@
+# Vercel only reads this file, never .gitignore, so anything heavy left out
+# here gets uploaded on every deploy. The Unity project alone is ~11 GB and
+# stalls the upload indefinitely.
+
+node_modules
+.git
+
+# Nested independent Unity project — built and shipped as an APK, not by Vite
+vr-cinema-quest-app-unity/
+
+# Local media fixtures and dumps
+videos-alex/
+vr-ultimate-videos/
+
+# Vercel runs its own build
+dist
+dist-ssr
+
+# Not reachable from the Vite entry point
+remotion/
+scripts/
+docs/
+.lovable/
+supabase/
+
+# Local env files — production values come from the project settings
+.env.local*
+.env.*.local
+.env.backup*
