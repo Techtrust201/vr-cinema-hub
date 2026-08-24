@@ -6,7 +6,7 @@ import { useConfirm } from "@/hooks/useConfirm";
 import { cn } from "@/lib/utils";
 import {
   Upload, MapPin, Clapperboard, FolderOpen, Trash2, Loader2,
-  FileVideo, Download, CheckCircle2, XCircle, Play, X, WifiOff,
+  FileVideo, Download, CheckCircle2, XCircle, Play, X, WifiOff, AlertTriangle,
 } from "lucide-react";
 import { toast } from "sonner";
 import { isMovLike, resolveVideoContentType, sanitizeStorageFileName } from "@/lib/videoMime";
@@ -56,16 +56,13 @@ const PHASE_LABELS: Record<UploadPhase, string> = {
   saving: "Enregistrement",
 };
 
-function detectFormat(name: string): VrFormat {
-  const n = name.toLowerCase();
-  const is180 = n.includes("180");
-  const isStereo = n.includes("sbs") || n.includes("3d") || n.includes("stereo") || n.includes("_ou");
-  if (is180 && isStereo) return "180_stereo";
-  if (is180) return "180_mono";
-  if (isStereo) return "360_stereo";
-  return "360_mono";
-}
-
+/**
+ * Indices tirés du nom du fichier.
+ *
+ * Ce ne sont que des valeurs d'attente, affichées le temps que l'analyse de l'image se
+ * prononce, et conservées uniquement si elle n'a rien pu mesurer. Un nom de fichier se
+ * trompe dès qu'il est sobre : « notre-dame.mp4 » ne dit pas que la vidéo est plate.
+ */
 function suggestProjection(name: string): Projection {
   const n = name.toLowerCase();
   if (n.includes("180")) return "180";
@@ -107,10 +104,31 @@ const STEREO_LABELS: Record<StereoMode, string> = {
   side_by_side: "Side by Side",
   unknown: "Stéréo (inconnu)",
 };
-const SOURCE_LAYOUT_LABELS: Record<SourceLayout, string> = {
-  equirectangular: "Équirectangulaire (standard)",
-  equiangular_cubemap: "Cubemap équi-angulaire (YouTube)",
-};
+
+/**
+ * Libellés du formulaire d'envoi, en français courant.
+ *
+ * Les termes du métier — équirectangulaire, cubemap équi-angulaire, top/bottom — ne disent
+ * rien à qui n'a pas produit la vidéo. Ils sont ici remplacés par ce que le spectateur voit,
+ * seul angle qui permette de reconnaître une erreur de réglage.
+ */
+const PROJECTION_CHOICES: Array<{ value: Projection; label: string; hint: string }> = [
+  { value: "360", label: "Tout autour du spectateur", hint: "Il peut se retourner et regarder derrière lui." },
+  { value: "180", label: "La moitié devant le spectateur", hint: "L'image couvre son champ de vision, mais pas ses arrières." },
+  { value: "flat", label: "Un écran devant le spectateur", hint: "Comme au cinéma : une image rectangulaire posée devant lui." },
+];
+
+const STEREO_CHOICES: Array<{ value: StereoMode; label: string; hint: string }> = [
+  { value: "mono", label: "Sans relief", hint: "Les deux yeux voient la même image." },
+  { value: "top_bottom", label: "En relief, les deux yeux superposés", hint: "L'image contient deux vues empilées, l'une au-dessus de l'autre." },
+  { value: "side_by_side", label: "En relief, les deux yeux côte à côte", hint: "L'image contient deux vues juxtaposées, l'une à côté de l'autre." },
+  { value: "unknown", label: "En relief, disposition à préciser", hint: "À remplacer par l'une des deux dispositions ci-dessus avant d'envoyer." },
+];
+
+const SOURCE_LAYOUT_CHOICES: Array<{ value: SourceLayout; label: string; hint: string }> = [
+  { value: "equirectangular", label: "Encodage courant", hint: "Le cas de très loin le plus répandu." },
+  { value: "equiangular_cubemap", label: "Encodage en faces de cube", hint: "Celui de YouTube. Skybox le nomme « Youtube » dans ses réglages d'export." },
+];
 
 interface PendingUpload {
   tempId: string;
@@ -123,8 +141,21 @@ interface PendingUpload {
    * l'analyse propose ne remplace jamais une valeur déjà choisie à la main.
    */
   analysis: "running" | "done";
+  /** Vrai quand les images examinées ont donné un verdict franc et unanime. */
+  recognised?: boolean;
   analysisNote?: string;
   touched?: boolean;
+  /** Réglages dépliés à la demande : l'essentiel doit tenir en une phrase. */
+  showSettings?: boolean;
+  /**
+   * Aperçu rendu avec les réglages retenus. C'est lui qui rend une erreur visible avant
+   * l'envoi : un mauvais encodage donne une grille de faces, un mauvais relief une image
+   * coupée en deux.
+   */
+  previewUrl?: string;
+  /** Le même contenu que l'aperçu : c'est lui qui sera envoyé comme vignette. */
+  previewBlob?: Blob;
+  previewState: "idle" | "running" | "failed";
 }
 
 const THUMBNAIL_URL_TTL_SECONDS = 3600;
@@ -202,66 +233,131 @@ export default function Libraries() {
     const next: PendingUpload[] = Array.from(files).map((file) => ({
       tempId: `up-${Date.now()}-${Math.random()}`,
       file,
+      // Valeurs d'attente, le temps que l'analyse de l'image se prononce. Le nom du fichier
+      // est un indice commode mais peu sûr : il n'est retenu que si l'analyse échoue.
       projection: suggestProjection(file.name),
       stereo_mode: suggestStereo(file.name),
       source_layout: "equirectangular",
       analysis: "running",
+      previewState: "idle",
     }));
     setPending((p) => [...p, ...next]);
     next.forEach(analysePending);
   };
 
   /**
-   * Examine quelques images de la vidéo pour proposer son encodage et son relief.
+   * Examine quelques images de la vidéo pour en proposer le format.
    *
-   * Ces informations ne figurent dans aucune métadonnée des fichiers livrés par les
-   * producteurs de contenu : sans cette analyse, il faudrait les connaître de tête, et une
-   * erreur ne se verrait qu'une fois le casque sur la tête.
+   * Rien dans ces fichiers ne le déclare : ni boîte `sv3d`, ni boîte `st3d`. Sans cette
+   * analyse il faudrait le connaître de tête, et une erreur ne se verrait qu'une fois le
+   * casque sur la tête.
    */
   const analysePending = async (item: PendingUpload) => {
     const detected = await detectVideoFormat(item.file);
+    let retenu: PendingUpload | null = null;
+
     setPending((p) =>
       p.map((it) => {
         if (it.tempId !== item.tempId) return it;
+
         // Un réglage déjà corrigé à la main fait foi : l'analyse arrive après coup et ne doit
         // pas défaire le choix de l'opérateur.
-        if (it.touched) {
-          return { ...it, analysis: "done", analysisNote: detected.explanation };
-        }
-        const merged: PendingUpload = {
-          ...it,
-          source_layout: detected.sourceLayout,
-          stereo_mode: detected.stereoMode,
-          analysis: "done",
-          analysisNote: detected.explanation,
-        };
-        // Une image plate n'a ni relief ni encodage sphérique, quoi qu'ait mesuré l'analyse.
+        const merged: PendingUpload = it.touched
+          ? { ...it, analysis: "done", recognised: false, analysisNote: detected.explanation }
+          : {
+              ...it,
+              // La géométrie du nom de fichier n'est conservée que si l'analyse n'a rien pu
+              // mesurer : elle se trompe dès qu'un fichier est nommé sobrement.
+              projection: detected.confident ? detected.projection : it.projection,
+              stereo_mode: detected.confident ? detected.stereoMode : it.stereo_mode,
+              source_layout: detected.sourceLayout,
+              analysis: "done",
+              recognised: detected.confident,
+              analysisNote: detected.explanation,
+            };
+
         if (merged.projection === "flat") {
           merged.stereo_mode = "mono";
           merged.source_layout = "equirectangular";
         }
+        retenu = merged;
         return merged;
+      }),
+    );
+
+    if (retenu) refreshPreview(retenu);
+  };
+
+  /**
+   * Reconstruit l'aperçu avec les réglages courants.
+   *
+   * C'est ce qui permet de juger un réglage sans casque : une source en faces de cube lue
+   * comme une image ordinaire donne une grille reconnaissable, et un relief mal déclaré une
+   * image coupée en deux.
+   */
+  const refreshPreview = async (item: PendingUpload) => {
+    setPending((p) =>
+      p.map((it) => (it.tempId === item.tempId ? { ...it, previewState: "running" } : it)),
+    );
+
+    const thumbnail = await generateVideoThumbnail(item.file, {
+      projection: item.projection,
+      stereo: item.stereo_mode === "unknown" ? "mono" : item.stereo_mode,
+      sourceLayout: item.source_layout,
+    });
+    const url = thumbnail ? URL.createObjectURL(thumbnail.blob) : undefined;
+
+    setPending((p) =>
+      p.map((it) => {
+        if (it.tempId !== item.tempId) {
+          return it;
+        }
+        // Un aperçu plus récent a pu arriver entre-temps, ou l'entrée avoir été retirée :
+        // libérer l'ancien lien évite d'accumuler des images en mémoire.
+        if (it.previewUrl) URL.revokeObjectURL(it.previewUrl);
+        return {
+          ...it,
+          previewUrl: url,
+          previewBlob: thumbnail?.blob,
+          previewState: url ? "idle" : "failed",
+        };
       }),
     );
   };
 
   const updatePending = (tempId: string, patch: Partial<PendingUpload>) => {
+    // Déplier les réglages n'est pas une correction, et ne change pas l'aperçu : seul un
+    // changement de format compte, et régénérer coûte un décodage.
+    const changeLeFormat =
+      "projection" in patch || "stereo_mode" in patch || "source_layout" in patch;
+
+    let modifie: PendingUpload | null = null;
     setPending((p) =>
       p.map((it) => {
         if (it.tempId !== tempId) return it;
-        const merged = { ...it, ...patch, touched: true };
-        // Enforce: flat ⇒ mono, et pas d'encodage sphérique sur une image plate
+        const merged = { ...it, ...patch };
+        if (changeLeFormat) merged.touched = true;
+        // Le relief n'a pas de sens sur un écran, et l'encodage sphérique pas davantage.
         if (merged.projection === "flat") {
           merged.stereo_mode = "mono";
           merged.source_layout = "equirectangular";
         }
+        modifie = merged;
         return merged;
       }),
     );
+
+    if (modifie && changeLeFormat) refreshPreview(modifie);
   };
 
   const removePending = (tempId: string) =>
-    setPending((p) => p.filter((it) => it.tempId !== tempId));
+    setPending((p) =>
+      p.filter((it) => {
+        if (it.tempId !== tempId) return true;
+        if (it.previewUrl) URL.revokeObjectURL(it.previewUrl);
+        return false;
+      }),
+    );
 
   const legacyFormatFor = (projection: Projection, stereo: StereoMode): VrFormat => {
     if (projection === "flat") return "flat";
@@ -286,20 +382,24 @@ export default function Libraries() {
    * échoue : la miniature est un confort d'affichage, jamais une condition de réussite.
    */
   const uploadThumbnail = async (
-    file: File,
-    item: Pick<PendingUpload, "projection" | "stereo_mode" | "source_layout">,
+    item: PendingUpload,
     videoPath: string,
     signal: AbortSignal,
   ): Promise<string | null> => {
+    const { file } = item;
     try {
-      const thumbnail = await generateVideoThumbnail(file, {
+      // L'aperçu affiché dans le formulaire est déjà cette vignette, rendue avec les mêmes
+      // réglages : la réutiliser évite de décoder une seconde fois un fichier qui peut peser
+      // plusieurs gigaoctets.
+      const blob = item.previewBlob ?? (await generateVideoThumbnail(file, {
         projection: item.projection,
-        // Le relief décide de quel œil provient la miniature, l'encodage décide de quelle
+        // Le relief décide de quel œil provient la vignette, l'encodage décide de quelle
         // portion de l'image : sans eux, le cadrage tombe à cheval sur une frontière.
         stereo: item.stereo_mode === "unknown" ? "mono" : item.stereo_mode,
         sourceLayout: item.source_layout,
-      });
-      if (!thumbnail) {
+      }))?.blob;
+
+      if (!blob) {
         console.warn("[thumbnail] génération impossible pour", file.name);
         return null;
       }
@@ -308,7 +408,7 @@ export default function Libraries() {
       // et sa miniature reste évident depuis la console de stockage.
       const path = `${videoPath.replace(/\.[^./]+$/, "")}.jpg`;
 
-      const { error } = await supabase.storage.from("thumbnails").upload(path, thumbnail.blob, {
+      const { error } = await supabase.storage.from("thumbnails").upload(path, blob, {
         contentType: "image/jpeg",
         upsert: true,
       });
@@ -382,12 +482,7 @@ export default function Libraries() {
       // génération n'empêche donc rien. Le casque et le dashboard retombent sur une vignette
       // générée à partir du titre.
       setUpload(tempId, { phase: "thumbnail", progress: 0 });
-      thumbnailPath = await uploadThumbnail(
-        file,
-        { projection, stereo_mode, source_layout },
-        path,
-        controller.signal,
-      );
+      thumbnailPath = await uploadThumbnail(item, path, controller.signal);
       setUpload(tempId, { phase: "thumbnail", progress: 100 });
 
       setUpload(tempId, { phase: "saving", progress: 100 });
@@ -578,15 +673,20 @@ export default function Libraries() {
         </div>
       )}
 
-      {/* Pending uploads — confirm projection / stereo */}
+      {/* Vidéos déposées, en attente de confirmation du format */}
       {pending.length > 0 && (
         <div className="space-y-3">
           <p className="text-xs font-medium text-muted-foreground">
-            Confirmez le format VR avant upload ({pending.length})
+            {pending.length === 1 ? "Vidéo à envoyer" : `${pending.length} vidéos à envoyer`}
           </p>
           {pending.map((it) => {
             const isFlat = it.projection === "flat";
             const stereoUnknown = !isFlat && it.stereo_mode === "unknown";
+            const enCours = it.analysis === "running";
+            const projection = PROJECTION_CHOICES.find((c) => c.value === it.projection);
+            const stereo = STEREO_CHOICES.find((c) => c.value === it.stereo_mode);
+            const layout = SOURCE_LAYOUT_CHOICES.find((c) => c.value === it.source_layout);
+
             return (
               <div key={it.tempId} className="rounded-lg border border-[hsl(var(--vr-violet)_/_0.4)] bg-[hsl(var(--vr-surface)_/_0.5)] p-3 space-y-3">
                 <div className="flex items-center gap-2">
@@ -594,59 +694,121 @@ export default function Libraries() {
                   <span className="text-xs font-medium truncate flex-1">{it.file.name}</span>
                   <span className="text-[10px] text-muted-foreground">{fmtSize(it.file.size)}</span>
                 </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <label className="text-[10px] text-muted-foreground space-y-1">
-                    <span>Projection</span>
-                    <select
-                      value={it.projection}
-                      onChange={(e) => updatePending(it.tempId, { projection: e.target.value as Projection })}
-                      className="w-full rounded bg-background border border-border/60 px-2 py-1.5 text-xs text-foreground"
+
+                <div className="flex gap-3">
+                  {/* L'aperçu est rendu avec les réglages retenus : c'est lui qui rend une
+                      erreur visible sans avoir à mettre le casque. */}
+                  <div className="shrink-0 w-32 aspect-video rounded overflow-hidden bg-background border border-border/60 flex items-center justify-center">
+                    {it.previewUrl ? (
+                      <img src={it.previewUrl} alt="Aperçu de la vidéo avec les réglages retenus" className="w-full h-full object-cover" />
+                    ) : it.previewState === "running" || enCours ? (
+                      <Loader2 size={14} className="animate-spin text-muted-foreground/60" />
+                    ) : (
+                      <span className="text-[9px] text-muted-foreground/60 text-center px-2">
+                        Aperçu indisponible
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="flex-1 min-w-0 space-y-1.5">
+                    {enCours ? (
+                      <p className="text-[11px] text-muted-foreground flex items-center gap-1.5">
+                        <Loader2 size={11} className="animate-spin" />
+                        Lecture de la vidéo pour reconnaître son format…
+                      </p>
+                    ) : (
+                      <>
+                        <p className="text-[11px] flex items-start gap-1.5">
+                          {it.recognised ? (
+                            <CheckCircle2 size={12} className="text-[hsl(140_70%_55%)] mt-px shrink-0" />
+                          ) : (
+                            <AlertTriangle size={12} className="text-amber-500 mt-px shrink-0" />
+                          )}
+                          <span className={it.recognised ? "text-foreground" : "text-amber-500"}>
+                            {it.recognised
+                              ? "Format reconnu. Vérifie l'aperçu, puis envoie."
+                              : "Format à confirmer. Vérifie l'aperçu et les réglages."}
+                          </span>
+                        </p>
+                        <p className="text-[11px] text-foreground/90">
+                          {projection?.label}
+                          {!isFlat && stereo ? `, ${stereo.label.toLowerCase()}` : ""}
+                          {!isFlat && it.source_layout === "equiangular_cubemap" && layout
+                            ? `, ${layout.label.toLowerCase()}`
+                            : ""}
+                        </p>
+                        {it.analysisNote && (
+                          <p className="text-[10px] text-muted-foreground">{it.analysisNote}</p>
+                        )}
+                      </>
+                    )}
+                    <button
+                      onClick={() => updatePending(it.tempId, { showSettings: !it.showSettings })}
+                      className="text-[10px] text-[hsl(var(--vr-violet))] hover:underline"
                     >
-                      {(["360", "180", "flat"] as Projection[]).map((p) => (
-                        <option key={p} value={p}>{PROJECTION_LABELS[p]}</option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="text-[10px] text-muted-foreground space-y-1">
-                    <span>Stéréo</span>
-                    <select
-                      value={it.stereo_mode}
-                      disabled={isFlat}
-                      onChange={(e) => updatePending(it.tempId, { stereo_mode: e.target.value as StereoMode })}
-                      className="w-full rounded bg-background border border-border/60 px-2 py-1.5 text-xs text-foreground disabled:opacity-50"
-                    >
-                      {(["mono", "top_bottom", "side_by_side", "unknown"] as StereoMode[]).map((s) => (
-                        <option key={s} value={s}>{STEREO_LABELS[s]}</option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="text-[10px] text-muted-foreground space-y-1 col-span-2">
-                    <span>Encodage de la source</span>
-                    <select
-                      value={it.source_layout}
-                      disabled={isFlat}
-                      onChange={(e) => updatePending(it.tempId, { source_layout: e.target.value as SourceLayout })}
-                      className="w-full rounded bg-background border border-border/60 px-2 py-1.5 text-xs text-foreground disabled:opacity-50"
-                    >
-                      {(["equirectangular", "equiangular_cubemap"] as SourceLayout[]).map((s) => (
-                        <option key={s} value={s}>{SOURCE_LAYOUT_LABELS[s]}</option>
-                      ))}
-                    </select>
-                  </label>
+                      {it.showSettings ? "Masquer les réglages" : "Modifier les réglages"}
+                    </button>
+                  </div>
                 </div>
-                {it.analysis === "running" ? (
-                  <p className="text-[10px] text-muted-foreground flex items-center gap-1.5">
-                    <Loader2 size={10} className="animate-spin" />
-                    Analyse de l'image en cours pour proposer l'encodage et le relief…
-                  </p>
-                ) : it.analysisNote ? (
-                  <p className="text-[10px] text-muted-foreground">{it.analysisNote}</p>
-                ) : null}
+
+                {it.showSettings && (
+                  <div className="space-y-2 pt-1 border-t border-border/40">
+                    <label className="block text-[10px] text-muted-foreground space-y-1">
+                      <span>Ce que la vidéo montre</span>
+                      <select
+                        value={it.projection}
+                        onChange={(e) => updatePending(it.tempId, { projection: e.target.value as Projection })}
+                        className="w-full rounded bg-background border border-border/60 px-2 py-1.5 text-xs text-foreground"
+                      >
+                        {PROJECTION_CHOICES.map((c) => (
+                          <option key={c.value} value={c.value}>{c.label}</option>
+                        ))}
+                      </select>
+                      <span className="block text-[10px] text-muted-foreground/70">{projection?.hint}</span>
+                    </label>
+
+                    <label className="block text-[10px] text-muted-foreground space-y-1">
+                      <span>Relief</span>
+                      <select
+                        value={it.stereo_mode}
+                        disabled={isFlat}
+                        onChange={(e) => updatePending(it.tempId, { stereo_mode: e.target.value as StereoMode })}
+                        className="w-full rounded bg-background border border-border/60 px-2 py-1.5 text-xs text-foreground disabled:opacity-50"
+                      >
+                        {STEREO_CHOICES.map((c) => (
+                          <option key={c.value} value={c.value}>{c.label}</option>
+                        ))}
+                      </select>
+                      <span className="block text-[10px] text-muted-foreground/70">
+                        {isFlat ? "Sans objet sur un écran plat." : stereo?.hint}
+                      </span>
+                    </label>
+
+                    <label className="block text-[10px] text-muted-foreground space-y-1">
+                      <span>Encodage de l'image</span>
+                      <select
+                        value={it.source_layout}
+                        disabled={isFlat}
+                        onChange={(e) => updatePending(it.tempId, { source_layout: e.target.value as SourceLayout })}
+                        className="w-full rounded bg-background border border-border/60 px-2 py-1.5 text-xs text-foreground disabled:opacity-50"
+                      >
+                        {SOURCE_LAYOUT_CHOICES.map((c) => (
+                          <option key={c.value} value={c.value}>{c.label}</option>
+                        ))}
+                      </select>
+                      <span className="block text-[10px] text-muted-foreground/70">
+                        {isFlat ? "Sans objet sur un écran plat." : layout?.hint}
+                      </span>
+                    </label>
+                  </div>
+                )}
+
                 {stereoUnknown && (
                   <p className="text-[10px] text-amber-500">
-                    Précisez le mode stéréo (top/bottom ou side-by-side) avant d'uploader.
+                    Précise la disposition des deux yeux avant d'envoyer : superposés ou côte à côte.
                   </p>
                 )}
+
                 <div className="flex justify-end gap-2">
                   <button
                     onClick={() => removePending(it.tempId)}
@@ -656,10 +818,10 @@ export default function Libraries() {
                   </button>
                   <button
                     onClick={() => confirmUpload(it)}
-                    disabled={stereoUnknown}
+                    disabled={stereoUnknown || enCours}
                     className="text-[11px] px-3 py-1.5 rounded bg-[hsl(var(--vr-violet))] text-white font-medium hover:bg-[hsl(var(--vr-violet)_/_0.85)] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                   >
-                    Uploader
+                    Envoyer
                   </button>
                 </div>
               </div>
