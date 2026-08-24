@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useLiveData } from "@/hooks/useLiveData";
@@ -12,6 +12,7 @@ import { toast } from "sonner";
 import { isMovLike, resolveVideoContentType, sanitizeStorageFileName } from "@/lib/videoMime";
 import { sha256HexOfBlob } from "@/lib/sha256";
 import { uploadFileWithProgress } from "@/lib/uploadWithProgress";
+import { generateVideoThumbnail } from "@/lib/videoThumbnail";
 
 type LibraryType = "location" | "animation";
 type VrFormat = "360_mono" | "180_mono" | "360_stereo" | "180_stereo" | "flat";
@@ -27,11 +28,12 @@ interface VideoRow {
   stereo_mode: StereoMode;
   size_bytes: number;
   storage_path: string;
+  thumbnail_url: string | null;
   created_at: string;
   uploaded_by: string | null;
 }
 
-type UploadPhase = "hashing" | "uploading" | "saving";
+type UploadPhase = "hashing" | "uploading" | "thumbnail" | "saving";
 
 interface UploadProgress {
   id: string;
@@ -47,6 +49,7 @@ interface UploadProgress {
 const PHASE_LABELS: Record<UploadPhase, string> = {
   hashing: "Empreinte",
   uploading: "Envoi",
+  thumbnail: "Miniature",
   saving: "Enregistrement",
 };
 
@@ -109,6 +112,50 @@ interface PendingUpload {
   stereo_mode: StereoMode;
 }
 
+const THUMBNAIL_URL_TTL_SECONDS = 3600;
+
+/**
+ * Signe en un seul appel les miniatures des vidéos affichées. Le bucket est privé : sans URL
+ * signée, l'image ne peut pas s'afficher. Les liens sont conservés le temps de la visite ; leur
+ * durée de vie dépasse largement celle d'une consultation de la page.
+ */
+function useSignedThumbnails(videos: VideoRow[]): Record<string, string> {
+  const [urls, setUrls] = useState<Record<string, string>>({});
+
+  const paths = videos
+    .map((v) => v.thumbnail_url)
+    .filter((path): path is string => !!path);
+  // Une clé stable évite de resigner à chaque rendu : useLiveData renvoie un tableau neuf
+  // à chaque rafraîchissement, même quand son contenu est identique.
+  const key = paths.join("|");
+
+  useEffect(() => {
+    const missing = paths.filter((path) => !urls[path]);
+    if (missing.length === 0) return;
+
+    let cancelled = false;
+    void (async () => {
+      const { data, error } = await supabase.storage
+        .from("thumbnails")
+        .createSignedUrls(missing, THUMBNAIL_URL_TTL_SECONDS);
+      if (cancelled || error || !data) return;
+
+      const next: Record<string, string> = {};
+      for (const entry of data) {
+        if (entry.path && entry.signedUrl) next[entry.path] = entry.signedUrl;
+      }
+      setUrls((current) => ({ ...current, ...next }));
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key]);
+
+  return urls;
+}
+
 export default function Libraries() {
   const { canManageContent } = useAuth();
   const [activeLib, setActiveLib] = useState<LibraryType>("location");
@@ -133,6 +180,7 @@ export default function Libraries() {
   );
 
   const videos = data ?? [];
+  const thumbnailUrls = useSignedThumbnails(videos);
 
   const handleFiles = (files: FileList | null) => {
     if (!files || !canManageContent) return;
@@ -178,6 +226,48 @@ export default function Libraries() {
     });
   };
 
+  /**
+   * Produit et envoie la miniature. Retourne son chemin, ou null si la génération ou l'envoi
+   * échoue : la miniature est un confort d'affichage, jamais une condition de réussite.
+   */
+  const uploadThumbnail = async (
+    file: File,
+    projection: Projection,
+    videoPath: string,
+    signal: AbortSignal,
+  ): Promise<string | null> => {
+    try {
+      const thumbnail = await generateVideoThumbnail(file, projection);
+      if (!thumbnail) {
+        console.warn("[thumbnail] génération impossible pour", file.name);
+        return null;
+      }
+
+      // Même arborescence que la vidéo, avec l'extension image : le rapprochement entre un objet
+      // et sa miniature reste évident depuis la console de stockage.
+      const path = `${videoPath.replace(/\.[^./]+$/, "")}.jpg`;
+
+      const { error } = await supabase.storage.from("thumbnails").upload(path, thumbnail.blob, {
+        contentType: "image/jpeg",
+        upsert: true,
+      });
+      if (error) {
+        console.warn("[thumbnail] envoi impossible :", error.message);
+        return null;
+      }
+
+      if (signal.aborted) {
+        await supabase.storage.from("thumbnails").remove([path]).catch(() => undefined);
+        return null;
+      }
+
+      return path;
+    } catch (err) {
+      console.warn("[thumbnail] échec inattendu :", err);
+      return null;
+    }
+  };
+
   const confirmUpload = async (item: PendingUpload) => {
     // Block inconsistent uploads: stereo projection without known layout
     if (item.projection !== "flat" && item.stereo_mode === "unknown") {
@@ -193,6 +283,7 @@ export default function Libraries() {
     }));
 
     let path: string | null = null;
+    let thumbnailPath: string | null = null;
     try {
       const contentType = resolveVideoContentType(file);
       if (!contentType.startsWith("video/")) {
@@ -226,6 +317,13 @@ export default function Libraries() {
         signal: controller.signal,
       });
 
+      // Miniature après l'envoi de la vidéo : la vidéo est déjà en sécurité, un échec de
+      // génération n'empêche donc rien. Le casque et le dashboard retombent sur une vignette
+      // générée à partir du titre.
+      setUpload(tempId, { phase: "thumbnail", progress: 0 });
+      thumbnailPath = await uploadThumbnail(file, projection, path, controller.signal);
+      setUpload(tempId, { phase: "thumbnail", progress: 100 });
+
       setUpload(tempId, { phase: "saving", progress: 100 });
       const { error: dbErr } = await supabase.from("videos").insert({
         name: file.name,
@@ -235,6 +333,7 @@ export default function Libraries() {
         stereo_mode,
         size_bytes: file.size,
         storage_path: path,
+        thumbnail_url: thumbnailPath,
         sha256,
       });
       if (dbErr) {
@@ -250,6 +349,9 @@ export default function Libraries() {
       // Never leave an orphan object behind in Storage.
       if (path) {
         await supabase.storage.from("videos").remove([path]).catch(() => undefined);
+      }
+      if (thumbnailPath) {
+        await supabase.storage.from("thumbnails").remove([thumbnailPath]).catch(() => undefined);
       }
       const aborted = err instanceof DOMException && err.name === "AbortError";
       if (aborted) {
@@ -282,6 +384,12 @@ export default function Libraries() {
       toast.error(dbErr.message);
       return;
     }
+    if (v.thumbnail_url) {
+      // Une miniature orpheline n'occupe que quelques kilo-octets : son échec de suppression ne
+      // mérite pas d'alerter l'utilisateur.
+      await supabase.storage.from("thumbnails").remove([v.thumbnail_url]).catch(() => undefined);
+    }
+
     const { error: stErr } = await supabase.storage.from("videos").remove([v.storage_path]);
     if (stErr && !stErr.message.includes("not found")) {
       toast.warning(`Vidéo supprimée, mais le fichier stocké subsiste : ${stErr.message}`);
@@ -518,7 +626,17 @@ export default function Libraries() {
         <div className="space-y-2">
           {filtered.map((v) => (
             <div key={v.id} className="flex items-center gap-3 rounded-lg border border-border/60 bg-[hsl(var(--vr-surface)_/_0.5)] px-4 py-3 hover:border-[hsl(var(--vr-violet)_/_0.4)] transition-colors">
-              <FileVideo size={16} className="text-[hsl(var(--vr-violet))] shrink-0" />
+              {v.thumbnail_url && thumbnailUrls[v.thumbnail_url] ? (
+                <img
+                  src={thumbnailUrls[v.thumbnail_url]}
+                  alt=""
+                  className="h-9 w-16 shrink-0 rounded object-cover bg-black"
+                />
+              ) : (
+                <div className="h-9 w-16 shrink-0 rounded bg-[hsl(var(--vr-violet)_/_0.1)] flex items-center justify-center">
+                  <FileVideo size={16} className="text-[hsl(var(--vr-violet))]" />
+                </div>
+              )}
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-medium truncate">{v.name}</p>
                 <p className="text-[10px] text-muted-foreground mt-0.5">

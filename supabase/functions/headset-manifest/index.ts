@@ -168,6 +168,7 @@ Deno.serve(async (req) => {
       id: string;
       name: string;
       storage_path: string | null;
+      thumbnail_url: string | null;
       size_bytes: number | null;
       duration_seconds: number | null;
       format: string | null;
@@ -182,7 +183,7 @@ Deno.serve(async (req) => {
   if (playlistIds.length > 0) {
     const { data: pvideos, error: pvErr } = await supabase
       .from("playlist_videos")
-      .select("playlist_id, video_id, position, videos(id, name, storage_path, size_bytes, duration_seconds, format, projection, stereo_mode, updated_at, sha256)")
+      .select("playlist_id, video_id, position, videos(id, name, storage_path, thumbnail_url, size_bytes, duration_seconds, format, projection, stereo_mode, updated_at, sha256)")
       .in("playlist_id", playlistIds)
       .order("position", { ascending: true });
     if (pvErr) {
@@ -200,6 +201,30 @@ Deno.serve(async (req) => {
     headset_id: headset.id,
     playlist_video_rows: videoRows.length,
   }));
+
+  // Les miniatures sont signées en un seul appel. Signer dans la boucle doublerait le nombre
+  // d'allers-retours du manifeste, que chaque casque redemande à chaque vérification de sync.
+  // Un échec n'est jamais bloquant : la miniature n'est qu'un confort d'affichage.
+  const thumbnailUrls = new Map<string, string>();
+  const thumbnailPaths = [
+    ...new Set(
+      videoRows
+        .map((row) => row.videos?.thumbnail_url)
+        .filter((path): path is string => !!path),
+    ),
+  ];
+  if (thumbnailPaths.length > 0) {
+    const { data: signedThumbs, error: thumbErr } = await supabase
+      .storage
+      .from("thumbnails")
+      .createSignedUrls(thumbnailPaths, SIGNED_URL_TTL_SECONDS);
+    if (thumbErr) {
+      console.error("thumbnail signed urls failed", { count: thumbnailPaths.length, thumbErr });
+    }
+    for (const entry of signedThumbs ?? []) {
+      if (entry.path && entry.signedUrl) thumbnailUrls.set(entry.path, entry.signedUrl);
+    }
+  }
 
   // Dedup by video_id (first occurrence by playlist order + position wins).
   const seen = new Set<string>();
@@ -226,6 +251,8 @@ Deno.serve(async (req) => {
       download_url = signed.signedUrl;
     }
 
+    const thumbnail_url = v.thumbnail_url ? thumbnailUrls.get(v.thumbnail_url) ?? null : null;
+
     const pathLower = (v.storage_path ?? "").toLowerCase();
     const dot = pathLower.lastIndexOf(".");
     const ext = dot >= 0 ? pathLower.slice(dot + 1) : "";
@@ -237,6 +264,7 @@ Deno.serve(async (req) => {
       name: v.name,
       url: download_url,
       download_url,
+      thumbnail_url,
       order: row.position ?? 0,
       updated_at: v.updated_at ?? null,
       file_extension,
@@ -285,7 +313,7 @@ Deno.serve(async (req) => {
         payload: {
           ...payload,
           videos: videos.map((v) => {
-            const { url: _u, download_url: _d, ...rest } = v;
+            const { url: _u, download_url: _d, thumbnail_url: _t, ...rest } = v;
             return rest;
           }),
         },
