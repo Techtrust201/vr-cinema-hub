@@ -1,23 +1,26 @@
-import { supabase, SUPABASE_PUBLISHABLE_KEY } from "@/integrations/supabase/client";
+import { Upload } from "tus-js-client";
+import { supabase, SUPABASE_PUBLISHABLE_KEY, SUPABASE_URL } from "@/integrations/supabase/client";
+
+/** Seuil officiel Supabase : au-delà, un PUT unique est fragile. Le chunk TUS doit rester 6 Mo. */
+export const TUS_CHUNK_BYTES = 6 * 1024 * 1024;
+
+function resumableEndpoint(): string {
+  const ref = new URL(SUPABASE_URL).hostname.split(".")[0];
+  return `https://${ref}.storage.supabase.co/storage/v1/upload/resumable`;
+}
 
 /**
- * Uploads a file to Storage while reporting real byte-level progress.
+ * Envoie un fichier vers Storage avec une vraie barre de progression.
  *
- * supabase.storage.upload() exposes no progress events, so the previous UI faked
- * it by jumping 0 → 95 → 100 %: on a multi-gigabyte VR video the bar sat at 0 %
- * for the entire transfer and looked like a freeze. A signed upload URL driven by
- * XMLHttpRequest gives genuine `upload.onprogress` events, and the browser
- * streams the file from disk instead of buffering it in memory.
- *
- * Falls back to the SDK path (correct, just progress-less) if a signed URL cannot
- * be obtained, so upload reliability never depends on this optimisation.
+ * Les films VR pèsent des centaines de mégaoctets : un PUT unique expire ou coupe
+ * la connexion. Au-delà de 6 Mo on passe par TUS (reprisable, par paquets de 6 Mo).
+ * En dessous, une URL signée + XHR suffit (miniatures, petits tests).
  */
 export async function uploadFileWithProgress(options: {
   bucket: string;
   path: string;
   file: File;
   contentType: string;
-  /** Seconds, as accepted by Storage's cacheControl. */
   cacheControl?: string;
   onProgress?: (fraction: number) => void;
   signal?: AbortSignal;
@@ -33,6 +36,87 @@ export async function uploadFileWithProgress(options: {
   } = options;
 
   if (signal?.aborted) throw new DOMException("Upload annulé", "AbortError");
+
+  if (file.size >= TUS_CHUNK_BYTES) {
+    await uploadResumable({ bucket, path, file, contentType, cacheControl, onProgress, signal });
+    return;
+  }
+
+  await uploadSignedPut({ bucket, path, file, contentType, cacheControl, onProgress, signal });
+}
+
+async function uploadResumable(options: {
+  bucket: string;
+  path: string;
+  file: File;
+  contentType: string;
+  cacheControl: string;
+  onProgress?: (fraction: number) => void;
+  signal?: AbortSignal;
+}): Promise<void> {
+  const { data: sessionData } = await supabase.auth.getSession();
+  const accessToken = sessionData.session?.access_token;
+  if (!accessToken) throw new Error("Session expirée — reconnectez-vous pour envoyer la vidéo.");
+
+  const { bucket, path, file, contentType, cacheControl, onProgress, signal } = options;
+
+  await new Promise<void>((resolve, reject) => {
+    const upload = new Upload(file, {
+      endpoint: resumableEndpoint(),
+      retryDelays: [0, 3000, 5000, 10000, 20000],
+      chunkSize: TUS_CHUNK_BYTES,
+      uploadDataDuringCreation: true,
+      removeFingerprintOnSuccess: true,
+      headers: {
+        authorization: `Bearer ${accessToken}`,
+        apikey: SUPABASE_PUBLISHABLE_KEY,
+        "x-upsert": "false",
+      },
+      metadata: {
+        bucketName: bucket,
+        objectName: path,
+        contentType,
+        cacheControl,
+      },
+      onError: (error) => reject(error),
+      onProgress: (sent, total) => {
+        if (total > 0) onProgress?.(sent / total);
+      },
+      onSuccess: () => {
+        onProgress?.(1);
+        resolve();
+      },
+    });
+
+    const onAbort = () => {
+      void upload.abort(true).then(
+        () => reject(new DOMException("Upload annulé", "AbortError")),
+        reject,
+      );
+    };
+    signal?.addEventListener("abort", onAbort, { once: true });
+
+    void upload.findPreviousUploads().then((previous) => {
+      if (signal?.aborted) {
+        onAbort();
+        return;
+      }
+      if (previous.length) upload.resumeFromPreviousUpload(previous[0]);
+      upload.start();
+    }, reject);
+  });
+}
+
+async function uploadSignedPut(options: {
+  bucket: string;
+  path: string;
+  file: File;
+  contentType: string;
+  cacheControl: string;
+  onProgress?: (fraction: number) => void;
+  signal?: AbortSignal;
+}): Promise<void> {
+  const { bucket, path, file, contentType, cacheControl, onProgress, signal } = options;
 
   const signed = await supabase.storage.from(bucket).createSignedUploadUrl(path);
   const signedUrl = signed.data?.signedUrl;

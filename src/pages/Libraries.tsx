@@ -15,6 +15,7 @@ import { sha256HexOfBlob } from "@/lib/sha256";
 import { uploadFileWithProgress } from "@/lib/uploadWithProgress";
 import { generateVideoThumbnail, prepareImageThumbnail, IMAGE_THUMBNAIL_MAX_BYTES } from "@/lib/videoThumbnail";
 import { detectVideoFormat } from "@/lib/detectVideoFormat";
+import { inferFormatFromFilename } from "@/lib/inferVideoFormatFromName";
 
 type LibraryType = "location" | "animation";
 type VrFormat = "360_mono" | "180_mono" | "360_stereo" | "180_stereo" | "flat";
@@ -57,28 +58,6 @@ const PHASE_LABELS: Record<UploadPhase, string> = {
   thumbnail: "Miniature",
   saving: "Enregistrement",
 };
-
-/**
- * Indices tirés du nom du fichier.
- *
- * Ce ne sont que des valeurs d'attente, affichées le temps que l'analyse de l'image se
- * prononce, et conservées uniquement si elle n'a rien pu mesurer. Un nom de fichier se
- * trompe dès qu'il est sobre : « notre-dame.mp4 » ne dit pas que la vidéo est plate.
- */
-function suggestProjection(name: string): Projection {
-  const n = name.toLowerCase();
-  if (n.includes("180")) return "180";
-  if (n.includes("flat") || n.includes("2d")) return "flat";
-  return "360";
-}
-
-function suggestStereo(name: string): StereoMode {
-  const n = name.toLowerCase();
-  if (n.includes("sbs") || n.includes("side_by_side") || n.includes("side-by-side")) return "side_by_side";
-  if (n.includes("tb") || n.includes("top_bottom") || n.includes("top-bottom") || n.includes("_ou")) return "top_bottom";
-  if (n.includes("stereo") || n.includes("3d")) return "unknown";
-  return "mono";
-}
 
 function fmtSize(bytes: number) {
   if (bytes < 1024) return `${bytes} B`;
@@ -248,19 +227,21 @@ export default function Libraries() {
 
   const handleFiles = (files: FileList | null) => {
     if (!files || !canManageContent) return;
-    const next: PendingUpload[] = Array.from(files).map((file) => ({
-      tempId: `up-${Date.now()}-${Math.random()}`,
-      file,
-      // Valeurs d'attente, le temps que l'analyse de l'image se prononce. Le nom du fichier
-      // est un indice commode mais peu sûr : il n'est retenu que si l'analyse échoue.
-      projection: suggestProjection(file.name),
-      stereo_mode: suggestStereo(file.name),
-      source_layout: "equirectangular",
-      analysis: "running",
-      previewState: "idle",
-    }));
+    const next: PendingUpload[] = Array.from(files).map((file) => {
+      const hinted = inferFormatFromFilename(file.name);
+      return {
+        tempId: `up-${Date.now()}-${Math.random()}`,
+        file,
+        projection: hinted.projection,
+        stereo_mode: hinted.stereoMode,
+        source_layout: hinted.sourceLayout,
+        analysis: "running" as const,
+        previewState: "idle" as const,
+      };
+    });
     setPending((p) => [...p, ...next]);
-    next.forEach(analysePending);
+    // Un film 8K + trois 4K en parallèle gèlent l'onglet : on les traite l'un après l'autre.
+    void next.reduce((chain, item) => chain.then(() => analysePending(item)), Promise.resolve());
   };
 
   /**
@@ -272,6 +253,7 @@ export default function Libraries() {
    */
   const analysePending = async (item: PendingUpload) => {
     const detected = await detectVideoFormat(item.file);
+    const hinted = inferFormatFromFilename(item.file.name);
     let retenu: PendingUpload | null = null;
 
     setPending((p) =>
@@ -284,14 +266,16 @@ export default function Libraries() {
           ? { ...it, analysis: "done", recognised: false, analysisNote: detected.explanation }
           : {
               ...it,
-              // La géométrie du nom de fichier n'est conservée que si l'analyse n'a rien pu
-              // mesurer : elle se trompe dès qu'un fichier est nommé sobrement.
-              projection: detected.confident ? detected.projection : it.projection,
-              stereo_mode: detected.confident ? detected.stereoMode : it.stereo_mode,
-              source_layout: detected.sourceLayout,
+              projection: detected.confident ? detected.projection : hinted.projection,
+              stereo_mode: detected.confident ? detected.stereoMode : hinted.stereoMode,
+              source_layout: detected.confident ? detected.sourceLayout : hinted.sourceLayout,
               analysis: "done",
-              recognised: detected.confident,
-              analysisNote: detected.explanation,
+              recognised: detected.confident || hinted.named,
+              analysisNote: detected.confident
+                ? detected.explanation
+                : hinted.named
+                  ? "Réglages lus dans le nom du fichier (export Skybox). Le casque n'a pas besoin que le navigateur décode la vidéo."
+                  : detected.explanation,
             };
 
         if (merged.projection === "flat") {
@@ -303,7 +287,24 @@ export default function Libraries() {
       }),
     );
 
-    if (retenu) refreshPreview(retenu);
+    if (!retenu) return;
+
+    const pret = retenu;
+    const stereoOk = pret.projection === "flat" || pret.stereo_mode !== "unknown";
+    if (!pret.touched && stereoOk && (detected.confident || hinted.named)) {
+      const thumbnail = await generateVideoThumbnail(pret.file, {
+        projection: pret.projection,
+        stereo: pret.stereo_mode === "unknown" ? "mono" : pret.stereo_mode,
+        sourceLayout: pret.source_layout,
+      });
+      pret.previewBlob = thumbnail?.blob;
+      pret.previewDurationSeconds = thumbnail?.durationSeconds ?? null;
+      toast.message(`Envoi de ${pret.file.name}…`);
+      await confirmUpload(pret);
+      return;
+    }
+
+    await refreshPreview(retenu);
   };
 
   /**
@@ -511,7 +512,7 @@ export default function Libraries() {
       }
       if (isMovLike(file)) {
         toast.message(
-          "Certains codecs MOV ne sont pas compatibles avec le Quest. Un MP4 H.264/AAC est recommandé.",
+          "Aperçu navigateur parfois impossible en HEVC — le Quest 3 lit ce format. L'envoi continue.",
         );
       }
       const safeName = sanitizeStorageFileName(file.name);
@@ -1019,6 +1020,7 @@ export default function Libraries() {
           </p>
           <p className="text-[10px] text-muted-foreground/40">
             mp4, mov, mkv • bibliothèque <strong>{activeLib === "location" ? "Location" : "Animations"}</strong>
+            {" "}• format Skybox lu tout seul, envoi automatique
           </p>
         </div>
       )}
