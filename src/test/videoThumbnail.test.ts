@@ -156,3 +156,17 @@ describe("computeSourceRect", () => {
     });
   });
 });
+
+describe("prepareImageThumbnail", () => {
+  it("refuse un fichier qui n'est pas une image", async () => {
+    const { prepareImageThumbnail } = await import("@/lib/videoThumbnail");
+    const file = new File([new Uint8Array([1, 2, 3])], "notes.txt", { type: "text/plain" });
+    expect(await prepareImageThumbnail(file)).toBeNull();
+  });
+
+  it("refuse une image trop lourde pour le bucket", async () => {
+    const { prepareImageThumbnail, IMAGE_THUMBNAIL_MAX_BYTES } = await import("@/lib/videoThumbnail");
+    const file = new File([new Uint8Array(IMAGE_THUMBNAIL_MAX_BYTES + 1)], "huge.png", { type: "image/png" });
+    expect(await prepareImageThumbnail(file)).toBeNull();
+  });
+});

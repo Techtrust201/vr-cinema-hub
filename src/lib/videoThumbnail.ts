@@ -47,6 +47,8 @@ interface Rect {
 const TARGET_WIDTH = 640;
 const TARGET_HEIGHT = 360; // 16:9, format des vignettes de la bibliothèque
 const JPEG_QUALITY = 0.82;
+/** Aligné sur la limite du bucket `thumbnails` (5 MiB). */
+export const IMAGE_THUMBNAIL_MAX_BYTES = 5 * 1024 * 1024;
 
 // Les premières images sont souvent noires ou dans un fondu d'ouverture : on se place un peu
 // après le début, tout en restant dans les premières secondes pour ne pas attendre.
@@ -55,14 +57,16 @@ const SEEK_MAX_SECONDS = 12;
 const TIMEOUT_MS = 20000;
 
 /**
- * Extrait une miniature JPEG. Retourne null si le navigateur ne parvient pas à décoder la
- * vidéo : l'échec n'est jamais bloquant pour l'envoi.
+ * Extrait une miniature JPEG. `source` est le fichier local à l'envoi, ou une URL signée
+ * pour régénérer la vignette d'une vidéo déjà stockée. Retourne null si le navigateur ne
+ * parvient pas à décoder : l'échec n'est jamais bloquant pour l'envoi.
  */
 export async function generateVideoThumbnail(
-  file: File,
+  source: File | string,
   format: ThumbnailFormat,
 ): Promise<ThumbnailResult | null> {
-  const objectUrl = URL.createObjectURL(file);
+  const objectUrl = typeof source === "string" ? source : URL.createObjectURL(source);
+  const createdUrl = typeof source === "string" ? null : objectUrl;
   const video = document.createElement("video");
 
   try {
@@ -78,13 +82,13 @@ export async function generateVideoThumbnail(
     context.fillStyle = "#0f1319";
     context.fillRect(0, 0, TARGET_WIDTH, TARGET_HEIGHT);
 
-    const source = computeSourceRect(frame.width, frame.height, format);
+    const sourceRect = computeSourceRect(frame.width, frame.height, format);
     context.drawImage(
       video,
-      source.x,
-      source.y,
-      source.width,
-      source.height,
+      sourceRect.x,
+      sourceRect.y,
+      sourceRect.width,
+      sourceRect.height,
       0,
       0,
       TARGET_WIDTH,
@@ -101,8 +105,77 @@ export async function generateVideoThumbnail(
   } finally {
     video.removeAttribute("src");
     video.load();
-    URL.revokeObjectURL(objectUrl);
+    if (createdUrl) URL.revokeObjectURL(createdUrl);
   }
+}
+
+/**
+ * Recadre une image choisie par l'opérateur (JPEG, PNG, WebP) aux mêmes 640×16:9 que
+ * l'extraction automatique. C'est l'autre branche du choix : image fournie, ou frame extraite.
+ */
+export async function prepareImageThumbnail(file: File): Promise<ThumbnailResult | null> {
+  if (!file.type.startsWith("image/") || file.size === 0 || file.size > IMAGE_THUMBNAIL_MAX_BYTES) {
+    return null;
+  }
+
+  const still = await decodeStill(file);
+  if (!still) return null;
+
+  try {
+    const canvas = document.createElement("canvas");
+    canvas.width = TARGET_WIDTH;
+    canvas.height = TARGET_HEIGHT;
+    const context = canvas.getContext("2d");
+    if (!context) return null;
+
+    context.fillStyle = "#0f1319";
+    context.fillRect(0, 0, TARGET_WIDTH, TARGET_HEIGHT);
+
+    const source = coverCrop({ x: 0, y: 0, width: still.width, height: still.height });
+    context.drawImage(
+      still,
+      source.x,
+      source.y,
+      source.width,
+      source.height,
+      0,
+      0,
+      TARGET_WIDTH,
+      TARGET_HEIGHT,
+    );
+
+    const blob = await canvasToBlob(canvas);
+    if (!blob) return null;
+    return { blob, width: TARGET_WIDTH, height: TARGET_HEIGHT, durationSeconds: null };
+  } catch {
+    return null;
+  } finally {
+    still.close?.();
+  }
+}
+
+async function decodeStill(file: File): Promise<(CanvasImageSource & { width: number; height: number; close?: () => void }) | null> {
+  if (typeof createImageBitmap === "function") {
+    try {
+      return await createImageBitmap(file);
+    } catch {
+      return null;
+    }
+  }
+
+  return new Promise((resolve) => {
+    const url = URL.createObjectURL(file);
+    const image = new Image();
+    image.onload = () => {
+      URL.revokeObjectURL(url);
+      resolve(image);
+    };
+    image.onerror = () => {
+      URL.revokeObjectURL(url);
+      resolve(null);
+    };
+    image.src = url;
+  });
 }
 
 const TARGET_RATIO = TARGET_WIDTH / TARGET_HEIGHT;

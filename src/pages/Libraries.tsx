@@ -7,12 +7,13 @@ import { cn } from "@/lib/utils";
 import {
   Upload, MapPin, Clapperboard, FolderOpen, Trash2, Loader2,
   FileVideo, Download, CheckCircle2, XCircle, Play, X, WifiOff, AlertTriangle,
+  ImagePlus, RotateCcw,
 } from "lucide-react";
 import { toast } from "sonner";
 import { isMovLike, resolveVideoContentType, sanitizeStorageFileName } from "@/lib/videoMime";
 import { sha256HexOfBlob } from "@/lib/sha256";
 import { uploadFileWithProgress } from "@/lib/uploadWithProgress";
-import { generateVideoThumbnail } from "@/lib/videoThumbnail";
+import { generateVideoThumbnail, prepareImageThumbnail, IMAGE_THUMBNAIL_MAX_BYTES } from "@/lib/videoThumbnail";
 import { detectVideoFormat } from "@/lib/detectVideoFormat";
 
 type LibraryType = "location" | "animation";
@@ -168,6 +169,8 @@ interface PendingUpload {
   previewBlob?: Blob;
   previewDurationSeconds?: number | null;
   previewState: "idle" | "running" | "failed";
+  /** L'opérateur a fourni une image : un changement de format ne l'écrase plus. */
+  previewCustom?: boolean;
 }
 
 const THUMBNAIL_URL_TTL_SECONDS = 3600;
@@ -221,6 +224,9 @@ export default function Libraries() {
   const [dragging, setDragging] = useState(false);
   const [pending, setPending] = useState<PendingUpload[]>([]);
   const fileRef = useRef<HTMLInputElement>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
+  const thumbnailTargetRef = useRef<VideoRow | null>(null);
+  const [thumbBusy, setThumbBusy] = useState<string | null>(null);
   const [preview, setPreview] = useState<{ video: VideoRow; url: string } | null>(null);
   const [previewLoading, setPreviewLoading] = useState<string | null>(null);
   const { confirm, confirmDialog } = useConfirm();
@@ -307,10 +313,17 @@ export default function Libraries() {
    * comme une image ordinaire donne une grille reconnaissable, et un relief mal déclaré une
    * image coupée en deux.
    */
-  const refreshPreview = async (item: PendingUpload) => {
-    setPending((p) =>
-      p.map((it) => (it.tempId === item.tempId ? { ...it, previewState: "running" } : it)),
-    );
+  const refreshPreview = async (item: PendingUpload, opts?: { force?: boolean }) => {
+    let locked = false;
+    setPending((p) => {
+      const current = p.find((it) => it.tempId === item.tempId);
+      if (!opts?.force && current?.previewCustom) {
+        locked = true;
+        return p;
+      }
+      return p.map((it) => (it.tempId === item.tempId ? { ...it, previewState: "running" } : it));
+    });
+    if (locked) return;
 
     const thumbnail = await generateVideoThumbnail(item.file, {
       projection: item.projection,
@@ -324,6 +337,10 @@ export default function Libraries() {
         if (it.tempId !== item.tempId) {
           return it;
         }
+        if (!opts?.force && it.previewCustom) {
+          if (url) URL.revokeObjectURL(url);
+          return it;
+        }
         // Un aperçu plus récent a pu arriver entre-temps, ou l'entrée avoir été retirée :
         // libérer l'ancien lien évite d'accumuler des images en mémoire.
         if (it.previewUrl) URL.revokeObjectURL(it.previewUrl);
@@ -333,6 +350,29 @@ export default function Libraries() {
           previewBlob: thumbnail?.blob,
           previewDurationSeconds: thumbnail?.durationSeconds ?? it.previewDurationSeconds,
           previewState: url ? "idle" : "failed",
+          previewCustom: opts?.force ? false : it.previewCustom,
+        };
+      }),
+    );
+  };
+
+  const applyCustomPendingThumbnail = async (tempId: string, file: File) => {
+    const result = await prepareImageThumbnail(file);
+    if (!result) {
+      toast.error(`Image refusée — JPEG, PNG ou WebP, ${IMAGE_THUMBNAIL_MAX_BYTES / 1024 / 1024} Mo max.`);
+      return;
+    }
+    const url = URL.createObjectURL(result.blob);
+    setPending((p) =>
+      p.map((it) => {
+        if (it.tempId !== tempId) return it;
+        if (it.previewUrl) URL.revokeObjectURL(it.previewUrl);
+        return {
+          ...it,
+          previewUrl: url,
+          previewBlob: result.blob,
+          previewState: "idle",
+          previewCustom: true,
         };
       }),
     );
@@ -602,6 +642,68 @@ export default function Libraries() {
     setPreview({ video: v, url: data.signedUrl });
   };
 
+  const thumbnailFormatOf = (v: Pick<VideoRow, "projection" | "stereo_mode" | "source_layout">) => ({
+    projection: v.projection,
+    stereo: (v.stereo_mode === "unknown" ? "mono" : v.stereo_mode) as "mono" | "top_bottom" | "side_by_side",
+    sourceLayout: v.source_layout,
+  });
+
+  const persistThumbnailBlob = async (v: VideoRow, blob: Blob) => {
+    const base = v.storage_path.replace(/\.[^./]+$/, "");
+    const path = `${base}-${crypto.randomUUID().slice(0, 8)}.jpg`;
+    const { error: upErr } = await supabase.storage.from("thumbnails").upload(path, blob, {
+      contentType: "image/jpeg",
+      upsert: true,
+    });
+    if (upErr) throw new Error(upErr.message);
+
+    const { error: dbErr } = await supabase.from("videos").update({ thumbnail_url: path }).eq("id", v.id);
+    if (dbErr) {
+      await supabase.storage.from("thumbnails").remove([path]).catch(() => undefined);
+      throw new Error(dbErr.message);
+    }
+    if (v.thumbnail_url && v.thumbnail_url !== path) {
+      await supabase.storage.from("thumbnails").remove([v.thumbnail_url]).catch(() => undefined);
+    }
+    await refresh();
+  };
+
+  const handleCustomLibraryThumbnail = async (v: VideoRow, file: File) => {
+    setThumbBusy(v.id);
+    try {
+      const result = await prepareImageThumbnail(file);
+      if (!result) {
+        toast.error(`Image refusée — JPEG, PNG ou WebP, ${IMAGE_THUMBNAIL_MAX_BYTES / 1024 / 1024} Mo max.`);
+        return;
+      }
+      await persistThumbnailBlob(v, result.blob);
+      toast.success("Miniature mise à jour");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Miniature non enregistrée");
+    } finally {
+      setThumbBusy(null);
+    }
+  };
+
+  const handleRegenerateLibraryThumbnail = async (v: VideoRow) => {
+    setThumbBusy(v.id);
+    try {
+      const { data, error } = await supabase.storage.from("videos").createSignedUrl(v.storage_path, 3600);
+      if (error || !data) throw new Error(error?.message ?? "URL indisponible");
+      const result = await generateVideoThumbnail(data.signedUrl, thumbnailFormatOf(v));
+      if (!result) {
+        toast.error("Extraction impossible — le navigateur ne décode pas cette vidéo.");
+        return;
+      }
+      await persistThumbnailBlob(v, result.blob);
+      toast.success("Miniature extraite de la vidéo");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Miniature non extraite");
+    } finally {
+      setThumbBusy(null);
+    }
+  };
+
   const filtered = videos.filter((v) => v.library === activeLib);
 
   const tabs: { id: LibraryType; label: string; icon: typeof MapPin }[] = [
@@ -627,6 +729,19 @@ export default function Libraries() {
           </button>
         )}
         <input ref={fileRef} type="file" multiple accept="video/*" className="hidden" onChange={(e) => handleFiles(e.target.files)} />
+        <input
+          ref={imageInputRef}
+          type="file"
+          accept="image/jpeg,image/png,image/webp"
+          className="hidden"
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            const target = thumbnailTargetRef.current;
+            e.target.value = "";
+            thumbnailTargetRef.current = null;
+            if (file && target) void handleCustomLibraryThumbnail(target, file);
+          }}
+        />
       </div>
 
       {/* Tabs */}
@@ -722,16 +837,46 @@ export default function Libraries() {
                 <div className="flex gap-3">
                   {/* L'aperçu est rendu avec les réglages retenus : c'est lui qui rend une
                       erreur visible sans avoir à mettre le casque. */}
-                  <div className="shrink-0 w-32 aspect-video rounded overflow-hidden bg-background border border-border/60 flex items-center justify-center">
-                    {it.previewUrl ? (
-                      <img src={it.previewUrl} alt="Aperçu de la vidéo avec les réglages retenus" className="w-full h-full object-cover" />
-                    ) : it.previewState === "running" || enCours ? (
-                      <Loader2 size={14} className="animate-spin text-muted-foreground/60" />
-                    ) : (
-                      <span className="text-[9px] text-muted-foreground/60 text-center px-2">
-                        Aperçu indisponible
-                      </span>
-                    )}
+                  <div className="shrink-0 w-32 space-y-1.5">
+                    <div className="w-32 aspect-video rounded overflow-hidden bg-background border border-border/60 flex items-center justify-center">
+                      {it.previewUrl ? (
+                        <img src={it.previewUrl} alt="Aperçu de la vidéo avec les réglages retenus" className="w-full h-full object-cover" />
+                      ) : it.previewState === "running" || enCours ? (
+                        <Loader2 size={14} className="animate-spin text-muted-foreground/60" />
+                      ) : (
+                        <span className="text-[9px] text-muted-foreground/60 text-center px-2">
+                          Aperçu indisponible
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex flex-col gap-0.5">
+                      <label className="text-[10px] text-[hsl(var(--vr-violet))] hover:underline cursor-pointer">
+                        Choisir une image
+                        <input
+                          type="file"
+                          accept="image/jpeg,image/png,image/webp"
+                          className="hidden"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            e.target.value = "";
+                            if (file) void applyCustomPendingThumbnail(it.tempId, file);
+                          }}
+                        />
+                      </label>
+                      {it.previewCustom ? (
+                        <button
+                          type="button"
+                          onClick={() => void refreshPreview(it, { force: true })}
+                          className="text-[10px] text-muted-foreground hover:text-foreground text-left"
+                        >
+                          Reprendre une image de la vidéo
+                        </button>
+                      ) : (
+                        <span className="text-[10px] text-muted-foreground/70">
+                          Par défaut : extraite de la vidéo
+                        </span>
+                      )}
+                    </div>
                   </div>
 
                   <div className="flex-1 min-w-0 space-y-1.5">
@@ -930,6 +1075,29 @@ export default function Libraries() {
               >
                 <Download size={13} />
               </button>
+              {canManageContent && (
+                <>
+                  <button
+                    onClick={() => {
+                      thumbnailTargetRef.current = v;
+                      imageInputRef.current?.click();
+                    }}
+                    disabled={thumbBusy === v.id}
+                    className="p-2 rounded text-muted-foreground hover:text-[hsl(var(--vr-violet))] hover:bg-[hsl(var(--vr-violet)_/_0.1)] transition-colors disabled:opacity-50"
+                    title="Choisir une image pour la miniature"
+                  >
+                    {thumbBusy === v.id ? <Loader2 size={13} className="animate-spin" /> : <ImagePlus size={13} />}
+                  </button>
+                  <button
+                    onClick={() => void handleRegenerateLibraryThumbnail(v)}
+                    disabled={thumbBusy === v.id}
+                    className="p-2 rounded text-muted-foreground hover:text-[hsl(var(--vr-violet))] hover:bg-[hsl(var(--vr-violet)_/_0.1)] transition-colors disabled:opacity-50"
+                    title="Extraire la miniature depuis la vidéo"
+                  >
+                    <RotateCcw size={13} />
+                  </button>
+                </>
+              )}
               <button
                 onClick={() => handlePreview(v)}
                 disabled={previewLoading === v.id}
