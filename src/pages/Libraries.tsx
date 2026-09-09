@@ -32,6 +32,7 @@ interface VideoRow {
   size_bytes: number;
   storage_path: string;
   thumbnail_url: string | null;
+  duration_seconds: number | null;
   created_at: string;
   uploaded_by: string | null;
 }
@@ -83,6 +84,16 @@ function fmtSize(bytes: number) {
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+}
+
+function fmtDuration(seconds: number | null | undefined) {
+  if (seconds == null || !Number.isFinite(Number(seconds))) return null;
+  const total = Math.round(Number(seconds));
+  if (total < 0) return null;
+  const m = Math.floor(total / 60);
+  const r = total % 60;
+  if (m <= 0) return `${total} s`;
+  return `${m} min ${String(r).padStart(2, "0")} s`;
 }
 
 const FORMAT_LABELS: Record<VrFormat, string> = {
@@ -887,7 +898,9 @@ export default function Libraries() {
         </div>
       ) : (
         <div className="space-y-2">
-          {filtered.map((v) => (
+          {filtered.map((v) => {
+            const durationLabel = fmtDuration(v.duration_seconds);
+            return (
             <div key={v.id} className="flex items-center gap-3 rounded-lg border border-border/60 bg-[hsl(var(--vr-surface)_/_0.5)] px-4 py-3 hover:border-[hsl(var(--vr-violet)_/_0.4)] transition-colors">
               {v.thumbnail_url && thumbnailUrls[v.thumbnail_url] ? (
                 <img
@@ -903,6 +916,7 @@ export default function Libraries() {
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-medium truncate">{v.name}</p>
                 <p className="text-[10px] text-muted-foreground mt-0.5">
+                  {durationLabel ? `${durationLabel} • ` : ""}
                   {PROJECTION_LABELS[v.projection] ?? v.projection} • {STEREO_LABELS[v.stereo_mode] ?? v.stereo_mode}
                   {/* L'encodage n'est signalé que s'il sort de l'ordinaire : le mentionner à
                       chaque ligne noierait l'information utile. */}
@@ -934,7 +948,8 @@ export default function Libraries() {
                 </button>
               )}
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
 

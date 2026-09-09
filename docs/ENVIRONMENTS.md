@@ -49,6 +49,20 @@ Unity doit exposer séparément :
 
 Aucun appel device vers `vr-cinema-hub.vercel.app`.
 
+## Ce qui n'est pas encore isolé
+
+Le dashboard Vercel et l'APK production parlent au **même** projet Supabase `fllhnbeukuwrvserebqn`. L'APK staging (`com.techtrust.vrcinemaquest.staging`) aussi, via un `EnvironmentId` différent côté casque — ce n'est pas un backend séparé.
+
+Un vrai staging isolé (second projet Supabase, clés distinctes, données client intouchables) n'existe pas encore. Ne pas le créer pendant une séance client : c'est un cutover à part, avec un nouveau projet et un rebuild Unity `VR_BACKEND_STAGING`.
+
+Les secrets dashboard vivent dans `.env` local (ignoré par git) et dans Vercel. Copier `.env.example` pour un nouveau clone.
+
+## CI
+
+GitHub Actions (`.github/workflows/ci.yml`) couvre le dashboard : install, build, `tsc`, tests, lint.
+
+Il n'y a **pas** de CI APK : IL2CPP demande une licence Unity et une machine qui tient ~10 min / ~8 Go. Le binaire Quest se construit en local (`CommandLineBuild.BuildAndroidProduction`).
+
 
 ## Rôles (nouveau backend)
 

@@ -36,6 +36,7 @@ vr-ultimate-videos/
 
 # Supabase CLI local artifacts
 supabase/.branches/
+.env
 .env.local*
 .env.*.local
 .env.new-supabase.local

@@ -91,14 +91,16 @@ EOF
 
 resume_app() {
   local pkg=""
-  if adb shell pidof "$PKG_STAGING" >/dev/null 2>&1; then
-    pkg="$PKG_STAGING"
-  elif adb shell pidof "$PKG_PROD" >/dev/null 2>&1; then
+  # Les deux APK sont souvent sur le casque labo. Préférer la prod : c'est
+  # celle que le client lance. Staging seulement si la prod n'est pas là.
+  if adb shell pidof "$PKG_PROD" >/dev/null 2>&1; then
     pkg="$PKG_PROD"
-  elif adb shell pm path "$PKG_STAGING" >/dev/null 2>&1; then
+  elif adb shell pidof "$PKG_STAGING" >/dev/null 2>&1; then
     pkg="$PKG_STAGING"
+  elif adb shell pm path "$PKG_PROD" >/dev/null 2>&1; then
+    pkg="$PKG_PROD"
   else
-    pkg="$PKG_PROD"
+    pkg="$PKG_STAGING"
   fi
   adb shell am start -n "${pkg}/com.unity3d.player.UnityPlayerGameActivity" >/dev/null
   echo "  app   ${pkg}"
