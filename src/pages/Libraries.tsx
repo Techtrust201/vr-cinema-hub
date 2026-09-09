@@ -155,6 +155,7 @@ interface PendingUpload {
   previewUrl?: string;
   /** Le même contenu que l'aperçu : c'est lui qui sera envoyé comme vignette. */
   previewBlob?: Blob;
+  previewDurationSeconds?: number | null;
   previewState: "idle" | "running" | "failed";
 }
 
@@ -319,6 +320,7 @@ export default function Libraries() {
           ...it,
           previewUrl: url,
           previewBlob: thumbnail?.blob,
+          previewDurationSeconds: thumbnail?.durationSeconds ?? it.previewDurationSeconds,
           previewState: url ? "idle" : "failed",
         };
       }),
@@ -385,23 +387,27 @@ export default function Libraries() {
     item: PendingUpload,
     videoPath: string,
     signal: AbortSignal,
-  ): Promise<string | null> => {
+  ): Promise<{ path: string | null; durationSeconds: number | null }> => {
     const { file } = item;
     try {
       // L'aperçu affiché dans le formulaire est déjà cette vignette, rendue avec les mêmes
       // réglages : la réutiliser évite de décoder une seconde fois un fichier qui peut peser
       // plusieurs gigaoctets.
-      const blob = item.previewBlob ?? (await generateVideoThumbnail(file, {
-        projection: item.projection,
-        // Le relief décide de quel œil provient la vignette, l'encodage décide de quelle
-        // portion de l'image : sans eux, le cadrage tombe à cheval sur une frontière.
-        stereo: item.stereo_mode === "unknown" ? "mono" : item.stereo_mode,
-        sourceLayout: item.source_layout,
-      }))?.blob;
+      const generated = item.previewBlob
+        ? null
+        : await generateVideoThumbnail(file, {
+            projection: item.projection,
+            // Le relief décide de quel œil provient la vignette, l'encodage décide de quelle
+            // portion de l'image : sans eux, le cadrage tombe à cheval sur une frontière.
+            stereo: item.stereo_mode === "unknown" ? "mono" : item.stereo_mode,
+            sourceLayout: item.source_layout,
+          });
+      const blob = item.previewBlob ?? generated?.blob ?? null;
+      const durationSeconds = generated?.durationSeconds ?? item.previewDurationSeconds ?? null;
 
       if (!blob) {
         console.warn("[thumbnail] génération impossible pour", file.name);
-        return null;
+        return { path: null, durationSeconds };
       }
 
       // Même arborescence que la vidéo, avec l'extension image : le rapprochement entre un objet
@@ -414,18 +420,18 @@ export default function Libraries() {
       });
       if (error) {
         console.warn("[thumbnail] envoi impossible :", error.message);
-        return null;
+        return { path: null, durationSeconds };
       }
 
       if (signal.aborted) {
         await supabase.storage.from("thumbnails").remove([path]).catch(() => undefined);
-        return null;
+        return { path: null, durationSeconds };
       }
 
-      return path;
+      return { path, durationSeconds };
     } catch (err) {
       console.warn("[thumbnail] échec inattendu :", err);
-      return null;
+      return { path: null, durationSeconds: item.previewDurationSeconds ?? null };
     }
   };
 
@@ -482,7 +488,9 @@ export default function Libraries() {
       // génération n'empêche donc rien. Le casque et le dashboard retombent sur une vignette
       // générée à partir du titre.
       setUpload(tempId, { phase: "thumbnail", progress: 0 });
-      thumbnailPath = await uploadThumbnail(item, path, controller.signal);
+      const thumbnail = await uploadThumbnail(item, path, controller.signal);
+      thumbnailPath = thumbnail.path;
+      const durationSeconds = thumbnail.durationSeconds;
       setUpload(tempId, { phase: "thumbnail", progress: 100 });
 
       setUpload(tempId, { phase: "saving", progress: 100 });
@@ -496,6 +504,7 @@ export default function Libraries() {
         size_bytes: file.size,
         storage_path: path,
         thumbnail_url: thumbnailPath,
+        duration_seconds: durationSeconds != null ? Math.round(durationSeconds) : null,
         sha256,
       });
       if (dbErr) {
@@ -504,7 +513,11 @@ export default function Libraries() {
         throw new Error(dbErr.message);
       }
       setUpload(tempId, { progress: 100, status: "done", controller: undefined });
-      toast.success(`${file.name} uploadée`);
+      if (thumbnailPath) {
+        toast.success(`${file.name} uploadée`);
+      } else {
+        toast.warning(`${file.name} uploadée, sans miniature`);
+      }
       setTimeout(() => setUploads((u) => { const { [tempId]: _dropped, ...rest } = u; return rest; }), 2500);
       void refresh();
     } catch (err) {

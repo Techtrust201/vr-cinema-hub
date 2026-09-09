@@ -7,7 +7,7 @@ import { getSecretKey } from "../_shared/supabase-keys.ts";
 // `manifest_version` in headset-report-sync once it has fully applied it
 // (downloaded all files and refreshed its library).
 
-const SIGNED_URL_TTL_SECONDS = 15 * 60;
+const SIGNED_URL_TTL_SECONDS = 6 * 60 * 60;
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -231,6 +231,7 @@ Deno.serve(async (req) => {
   const seen = new Set<string>();
   type ManifestVideoOut = Record<string, unknown>;
   const videos: ManifestVideoOut[] = [];
+  let skippedUnsigned = 0;
   for (const row of videoRows) {
     const v = row.videos;
     if (!v || seen.has(v.id)) continue;
@@ -243,13 +244,15 @@ Deno.serve(async (req) => {
         .from("videos")
         .createSignedUrl(v.storage_path, SIGNED_URL_TTL_SECONDS);
       if (signErr || !signed?.signedUrl) {
-        console.error("signed url failed", { path: v.storage_path, signErr });
-        return new Response(JSON.stringify({ error: "Signed URL generation failed" }), {
-          status: 500,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
+        console.error("signed url failed", { path: v.storage_path, video_id: v.id, signErr });
+        skippedUnsigned += 1;
+        continue;
       }
       download_url = signed.signedUrl;
+    } else {
+      console.error("manifest video missing storage_path", { video_id: v.id });
+      skippedUnsigned += 1;
+      continue;
     }
 
     const thumbnail_url = v.thumbnail_url ? thumbnailUrls.get(v.thumbnail_url) ?? null : null;
@@ -282,11 +285,31 @@ Deno.serve(async (req) => {
     });
   }
 
+  if (seen.size > 0 && videos.length === 0) {
+    console.error("all manifest videos failed to sign", {
+      headset_id: headset.id,
+      skipped: skippedUnsigned,
+    });
+    return new Response(JSON.stringify({ error: "Signed URL generation failed" }), {
+      status: 500,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+
+  if (skippedUnsigned > 0) {
+    console.error("manifest omitted unsigned videos", {
+      headset_id: headset.id,
+      skipped: skippedUnsigned,
+      served: videos.length,
+    });
+  }
+
   console.log(JSON.stringify({
     fn: "headset-manifest",
     headset_id: headset.id,
     served_version: desiredVersion,
     final_videos: videos.length,
+    skipped_unsigned: skippedUnsigned,
     playlist_ids: playlistIds,
   }));
 

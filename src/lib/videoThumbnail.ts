@@ -34,6 +34,7 @@ export interface ThumbnailResult {
   blob: Blob;
   width: number;
   height: number;
+  durationSeconds: number | null;
 }
 
 interface Rect {
@@ -93,7 +94,7 @@ export async function generateVideoThumbnail(
     const blob = await canvasToBlob(canvas);
     if (!blob) return null;
 
-    return { blob, width: TARGET_WIDTH, height: TARGET_HEIGHT };
+    return { blob, width: TARGET_WIDTH, height: TARGET_HEIGHT, durationSeconds: frame.durationSeconds };
   } catch {
     // Décodage impossible : on renonce silencieusement, l'appelant enregistre sans miniature.
     return null;
@@ -203,11 +204,11 @@ export function computeSourceRect(
 function captureFrame(
   video: HTMLVideoElement,
   objectUrl: string,
-): Promise<{ width: number; height: number } | null> {
+): Promise<{ width: number; height: number; durationSeconds: number | null } | null> {
   return new Promise((resolve) => {
     let settled = false;
 
-    const finish = (value: { width: number; height: number } | null) => {
+    const finish = (value: { width: number; height: number; durationSeconds: number | null } | null) => {
       if (settled) return;
       settled = true;
       window.clearTimeout(timeout);
@@ -230,7 +231,8 @@ function captureFrame(
         finish(null);
         return;
       }
-      finish({ width: video.videoWidth, height: video.videoHeight });
+      const duration = Number.isFinite(video.duration) && video.duration > 0 ? video.duration : null;
+      finish({ width: video.videoWidth, height: video.videoHeight, durationSeconds: duration });
     };
 
     let seeking = false;

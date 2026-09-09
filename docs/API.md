@@ -14,7 +14,7 @@ Tous les endpoints attendent `Content-Type: application/json` et l'en-tête `api
                        ◄──  device_token (JWT 1 an) → stocker localement
 
  Boucle normale (toutes les 5 min) :
-    headset-manifest      ──►  liste des vidéos + URLs signées 15 min
+    headset-manifest      ──►  liste des vidéos + URLs signées 6 h
     [téléchargement HTTP des fichiers manquants]
     headset-report-sync (started) ──►  report_id
     [download…]
@@ -72,7 +72,7 @@ Réponse **200** :
   "playlist_id": "uuid|null",
   "generated_at": "2026-06-12T00:00:00Z",
   "updated_at": "2026-06-12T00:00:00Z",
-  "url_expires_in": 900,
+  "url_expires_in": 21600,
   "videos": [
     {
       "id": "uuid",
@@ -94,6 +94,8 @@ Réponse **200** :
 ```
 
 Réponse **304** : pas de body, headers `ETag: "<version>"`. Le casque garde son manifest local.
+
+Si une vidéo ne peut pas être signée (fichier storage manquant), elle est **omise** du tableau : les autres restent servies. HTTP **500** uniquement si **toutes** les vidéos assignées échouent.
 
 Réponse **405** : méthode autre que GET/POST/OPTIONS.
 

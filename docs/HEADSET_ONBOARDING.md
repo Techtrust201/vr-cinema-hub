@@ -28,6 +28,20 @@ Ce guide configure un casque Meta Quest (2, 3 ou Pro) pour **VR Cinema Hub** : i
 
 Le dashboard affiche le contact **de l’app VR Cinema Quest** avec le serveur, pas si le casque est physiquement allumé. Si l’app est fermée, le casque apparaît « hors ligne » même allumé.
 
+### Mode labo (casque posé, sans le porter)
+
+Horizon OS endort le Quest **~15 s** après que tu enlèves le casque : ADB coupe, Unity se suspend, la sync et les tests en cours sont perdus.
+
+Pour le labo / les sessions de dev :
+
+```bash
+/home/hugo/work/vr-cinema-hub/scripts/headset-unattended.sh enable
+```
+
+L’APK **staging** ignore le retrait par défaut. L’APK **production** a besoin du `enable` (fichier `unattended.flag`). Le script active les deux, et lance un keep-awake sur le Quest qui survit même si tu débranches le PC.
+
+Le casque peut rester sur la table (idéalement face vers le haut). Après un **redémarrage** du Quest, relancer `enable`. Pour retrouver la veille normale (y compris tests « retrait casque ») : `…/headset-unattended.sh disable`.
+
 ---
 
 ## 1. Préparer Ubuntu (ADB)
@@ -425,6 +439,11 @@ adb logcat -v time -s Unity:I | grep -E 'Heartbeat|Manifest|SyncReport|Error'
 
 # Dashboard local
 cd /home/hugo/work/vr-cinema-hub && npm run dev
+
+# Mode labo : casque utilisable sans le porter (survit à un aller aux toilettes)
+scripts/headset-unattended.sh enable
+scripts/headset-unattended.sh status
+scripts/headset-unattended.sh disable
 ```
 
 ---

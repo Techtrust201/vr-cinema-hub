@@ -181,14 +181,31 @@ Deno.serve(async (req) => {
 
   const device_token = await signDeviceToken(headset.id);
 
-  await admin
+  const { data: claimed, error: claimErr } = await admin
     .from("pairing_codes")
     .update({
       claimed_by_headset_id: headset.id,
       claimed_at: new Date().toISOString(),
       device_token,
     })
-    .eq("id", pairing.id);
+    .eq("id", pairing.id)
+    .is("claimed_by_headset_id", null)
+    .select("id")
+    .maybeSingle();
+
+  if (claimErr) {
+    console.error("pairing claim update failed", claimErr);
+    return new Response(JSON.stringify({ error: "Could not claim code" }), {
+      status: 500,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+  if (!claimed) {
+    return new Response(JSON.stringify({ error: "Code already used" }), {
+      status: 409,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
 
   return new Response(
     JSON.stringify({ headset_id: headset.id, name: headset.name }),
