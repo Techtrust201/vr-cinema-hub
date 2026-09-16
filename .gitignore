@@ -45,3 +45,5 @@ supabase/.branches/
 .env.backup*
 *.backup-pre-cutover*
 .vercel
+origin/.env
+origin/data/

@@ -1,6 +1,8 @@
 import { createClient } from "npm:@supabase/supabase-js@2.45.4";
 import { corsHeaders, extractBearer, verifyDeviceToken } from "../_shared/device-jwt.ts";
 import { getSecretKey } from "../_shared/supabase-keys.ts";
+import { signedDiskDownloadUrl } from "../_shared/disk-origin.ts";
+import { signedR2DownloadUrl } from "../_shared/r2.ts";
 
 // Called by the Quest app on every sync cycle.
 // v3: returns a versioned manifest. The headset MUST echo back the
@@ -8,6 +10,33 @@ import { getSecretKey } from "../_shared/supabase-keys.ts";
 // (downloaded all files and refreshed its library).
 
 const SIGNED_URL_TTL_SECONDS = 6 * 60 * 60;
+
+/**
+ * Une vidéo porte l'origine de ses octets (`videos.origin`), pas l'installation :
+ * une flotte peut donc être migrée vers R2 film par film, sans coupure et sans
+ * toucher aux casques déjà synchronisés.
+ */
+async function signedObjectUrl(origin: string | null | undefined, path: string): Promise<string | null> {
+  if (!path) return null;
+  if (origin === "r2") return await signedR2DownloadUrl(path, SIGNED_URL_TTL_SECONDS);
+  if (origin === "disk") return await signedDiskDownloadUrl(path, SIGNED_URL_TTL_SECONDS);
+  return null;
+}
+
+async function resolveThumbnailUrl(
+  v: { origin?: string | null; thumbnail_url: string | null },
+  storageSigned: Map<string, string>,
+): Promise<string | null> {
+  if (!v.thumbnail_url) return null;
+  if (v.thumbnail_url.startsWith("http://") || v.thumbnail_url.startsWith("https://")) {
+    return v.thumbnail_url;
+  }
+  const fromBucket = storageSigned.get(v.thumbnail_url);
+  if (fromBucket) return fromBucket;
+  // Les films hors bucket Storage (plafond 50 Mo en offre gratuite) rangent leur
+  // miniature à côté du mp4, dans la même origine.
+  return await signedObjectUrl(v.origin, v.thumbnail_url);
+}
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -168,6 +197,7 @@ Deno.serve(async (req) => {
       id: string;
       name: string;
       storage_path: string | null;
+      origin?: string | null;
       thumbnail_url: string | null;
       size_bytes: number | null;
       duration_seconds: number | null;
@@ -184,7 +214,7 @@ Deno.serve(async (req) => {
   if (playlistIds.length > 0) {
     const { data: pvideos, error: pvErr } = await supabase
       .from("playlist_videos")
-      .select("playlist_id, video_id, position, videos(id, name, storage_path, thumbnail_url, size_bytes, duration_seconds, format, projection, stereo_mode, source_layout, updated_at, sha256)")
+      .select("playlist_id, video_id, position, videos(id, name, storage_path, origin, thumbnail_url, size_bytes, duration_seconds, format, projection, stereo_mode, source_layout, updated_at, sha256)")
       .in("playlist_id", playlistIds)
       .order("position", { ascending: true });
     if (pvErr) {
@@ -238,7 +268,18 @@ Deno.serve(async (req) => {
     seen.add(v.id);
 
     let download_url: string | null = null;
-    if (v.storage_path) {
+    if (v.origin === "disk" || v.origin === "r2") {
+      download_url = await signedObjectUrl(v.origin, v.storage_path ?? "");
+      if (!download_url) {
+        console.error("object origin url failed", {
+          origin: v.origin,
+          path: v.storage_path,
+          video_id: v.id,
+        });
+        skippedUnsigned += 1;
+        continue;
+      }
+    } else if (v.storage_path) {
       const { data: signed, error: signErr } = await supabase
         .storage
         .from("videos")
@@ -255,7 +296,7 @@ Deno.serve(async (req) => {
       continue;
     }
 
-    const thumbnail_url = v.thumbnail_url ? thumbnailUrls.get(v.thumbnail_url) ?? null : null;
+    const thumbnail_url = await resolveThumbnailUrl(v, thumbnailUrls);
 
     const pathLower = (v.storage_path ?? "").toLowerCase();
     const dot = pathLower.lastIndexOf(".");

@@ -9,6 +9,35 @@ function resumableEndpoint(): string {
   return `https://${ref}.storage.supabase.co/storage/v1/upload/resumable`;
 }
 
+function tusStatus(error: unknown): number | undefined {
+  const response = (error as { originalResponse?: { getStatus?: () => number } } | undefined)
+    ?.originalResponse;
+  return response?.getStatus?.();
+}
+
+function tusBody(error: unknown): string {
+  const response = (error as { originalResponse?: { getBody?: () => string } } | undefined)
+    ?.originalResponse;
+  try {
+    return response?.getBody?.() ?? "";
+  } catch {
+    return "";
+  }
+}
+
+function mapTusError(error: unknown): Error {
+  const status = tusStatus(error);
+  const body = tusBody(error);
+  if (status === 413 || /maximum size exceeded/i.test(body)) {
+    return new Error(
+      "Fichier trop volumineux pour Storage. Le plan gratuit plafonne à 50 Mo par fichier. " +
+        "Passez le projet en Pro, puis montez la limite globale dans Storage → Settings.",
+    );
+  }
+  if (error instanceof Error) return error;
+  return new Error("Échec de l'envoi resumable.");
+}
+
 /**
  * Envoie un fichier vers Storage avec une vraie barre de progression.
  *
@@ -78,7 +107,12 @@ async function uploadResumable(options: {
         contentType,
         cacheControl,
       },
-      onError: (error) => reject(error),
+      onError: (error) => reject(mapTusError(error)),
+      onShouldRetry: (error) => {
+        const status = tusStatus(error);
+        // 413 = plafond du projet (50 Mo en plan gratuit). Réessayer ne sert à rien.
+        return status !== 413 && status !== 402 && status !== 401 && status !== 403;
+      },
       onProgress: (sent, total) => {
         if (total > 0) onProgress?.(sent / total);
       },

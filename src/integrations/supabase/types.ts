@@ -656,6 +656,7 @@ export type Database = {
           size_bytes: number
           source_layout: Database["public"]["Enums"]["video_source_layout"]
           stereo_mode: Database["public"]["Enums"]["video_stereo_mode"]
+          origin: string
           storage_path: string
           thumbnail_url: string | null
           updated_at: string
@@ -674,6 +675,7 @@ export type Database = {
           size_bytes?: number
           source_layout?: Database["public"]["Enums"]["video_source_layout"]
           stereo_mode?: Database["public"]["Enums"]["video_stereo_mode"]
+          origin?: string
           storage_path: string
           thumbnail_url?: string | null
           updated_at?: string
@@ -692,6 +694,7 @@ export type Database = {
           size_bytes?: number
           source_layout?: Database["public"]["Enums"]["video_source_layout"]
           stereo_mode?: Database["public"]["Enums"]["video_stereo_mode"]
+          origin?: string
           storage_path?: string
           thumbnail_url?: string | null
           updated_at?: string

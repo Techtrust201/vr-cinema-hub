@@ -8,6 +8,9 @@ export default defineConfig(({ mode }) => ({
   server: {
     host: "::",
     port: 8080,
+    watch: {
+      ignored: ["**/vr-cinema-quest-app-unity/**", "**/origin/data/**"],
+    },
     hmr: {
       overlay: false,
     },

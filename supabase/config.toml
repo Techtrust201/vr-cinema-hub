@@ -44,3 +44,6 @@ verify_jwt = true
 
 [functions.headset-force-resync]
 verify_jwt = true
+
+[functions.origin-upload-url]
+verify_jwt = true

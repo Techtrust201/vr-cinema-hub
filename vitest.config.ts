@@ -8,7 +8,12 @@ export default defineConfig({
     environment: "jsdom",
     globals: true,
     setupFiles: ["./src/test/setup.ts"],
-    include: ["src/**/*.{test,spec}.{ts,tsx}"],
+    include: [
+      "src/**/*.{test,spec}.{ts,tsx}",
+      // Le code partagé des Edge Functions signe les accès au stockage : il a
+      // besoin des mêmes garde-fous que le front, même s'il tourne sous Deno.
+      "supabase/functions/**/*.{test,spec}.ts",
+    ],
   },
   resolve: {
     alias: { "@": path.resolve(__dirname, "./src") },
