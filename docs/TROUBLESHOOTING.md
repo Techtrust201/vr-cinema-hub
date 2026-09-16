@@ -97,20 +97,26 @@ signature est cassé, ce qui écarte cette piste en quelques secondes.
 
 ### Une demande de permission apparaît au démarrage du casque
 
-L'application déclare la permission de suivi oculaire, héritée du rendu fovéal
-qu'elle utilise pour tenir la cadence en 4K. Elle ne s'en sert pas, mais Horizon
-OS la réclame malgré tout au premier lancement après une installation ou un
-redémarrage, par une fenêtre qui masque l'affichage.
+Le greffon OpenXR d'Unity réclame l'accès au suivi oculaire dès que le rendu
+fovéal est activé, sans vérifier que le casque en est capable. Le Quest 3 n'a
+pas de capteurs oculaires — la fenêtre s'affiche donc pour une fonction qui ne
+marchera jamais, et elle bloque le premier démarrage jusqu'à ce que quelqu'un
+enfile le casque et réponde.
 
-À accorder une fois par casque, au déploiement :
+Unity n'expose aucun réglage pour l'éviter : désactiver la fonction supprimerait
+aussi le rendu fovéal fixe, qui lui fonctionne et compense la résolution
+augmentée utilisée pour la netteté. En revanche, le greffon vérifie d'abord si
+l'autorisation est déjà donnée. L'accorder par câble pendant la préparation
+suffit donc à ne plus jamais voir la fenêtre, sans rien dégrader :
 
 ```bash
-adb shell pm grant com.techtrust.vrcinemaquest horizonos.permission.EYE_TRACKING
-adb shell pm grant com.techtrust.vrcinemaquest com.oculus.permission.EYE_TRACKING
+scripts/prepare-headset.sh
 ```
 
-Sans cela, la fenêtre revient à chaque démarrage à froid et quelqu'un doit la
-fermer dans le casque — ce qui ruine tout déploiement sans intervention.
+Le script installe l'application et accorde l'autorisation sur tous les casques
+branchés, puis vérifie ce que le système a réellement retenu. Sans cette étape,
+la fenêtre revient à chaque démarrage à froid et quelqu'un doit la fermer dans
+le casque — ce qui ruine tout déploiement sans intervention.
 
 ## Vérifier un casque sans le porter
 
