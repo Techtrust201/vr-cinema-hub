@@ -54,3 +54,13 @@ export function inferFormatFromFilename(name: string): InferredFormatFromName {
 
   return { projection, stereoMode, sourceLayout, named };
 }
+
+/**
+ * Nom Skybox (ou équivalent) et relief connu : on envoie sans attendre que le
+ * navigateur décode. Un 8K HEVC ou un VP9 4K gèlerait sinon l'onglet avant l'envoi.
+ */
+export function shouldAutoSend(inferred: InferredFormatFromName): boolean {
+  if (!inferred.named) return false;
+  if (inferred.projection === "flat") return true;
+  return inferred.stereoMode !== "unknown";
+}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { inferFormatFromFilename } from "./inferVideoFormatFromName";
+import { inferFormatFromFilename, shouldAutoSend } from "./inferVideoFormatFromName";
 
 describe("inferFormatFromFilename", () => {
   it("lit le cubemap YouTube 360 mono malgré « 2D single »", () => {
@@ -48,5 +48,18 @@ describe("inferFormatFromFilename", () => {
 
   it("ne prend pas un nom sobre pour argent comptant", () => {
     expect(inferFormatFromFilename("visite.mp4").named).toBe(false);
+    expect(shouldAutoSend(inferFormatFromFilename("visite.mp4"))).toBe(false);
+  });
+
+  it("envoie tout seul les quatre exports Skybox du client", () => {
+    const names = [
+      "1 - Paris (partenaire) - video VR paramétrée dans Skybox selon format 'Youtube', '2D single', 'VR360'.mp4",
+      "2 - Paris - video VR paramétrée dans Skybox selon format 'Ordinaire', '2D single', 'VR360'.mp4",
+      "3 - Sintra, video 360 paramétrée dans Skybox selon format 'Ordinaire', '3D haut bas', 'VR360'.mp4",
+      "4 - notre dame d'afrique - video 2D paramétrée dans Skybox selon format 'Ordinaire', '2D single', 'cinéma'.MOV",
+    ];
+    for (const name of names) {
+      expect(shouldAutoSend(inferFormatFromFilename(name))).toBe(true);
+    }
   });
 });

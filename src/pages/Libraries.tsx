@@ -7,15 +7,27 @@ import { cn } from "@/lib/utils";
 import {
   Upload, MapPin, Clapperboard, FolderOpen, Trash2, Loader2,
   FileVideo, Download, CheckCircle2, XCircle, Play, X, WifiOff, AlertTriangle,
-  ImagePlus, RotateCcw,
+  ImagePlus, RotateCcw, SlidersHorizontal,
 } from "lucide-react";
 import { toast } from "sonner";
 import { isMovLike, resolveVideoContentType, sanitizeStorageFileName } from "@/lib/videoMime";
 import { sha256HexOfBlob } from "@/lib/sha256";
 import { uploadFileWithProgress } from "@/lib/uploadWithProgress";
+import {
+  deleteFromObjectStore,
+  NoObjectStoreError,
+  objectStorePlaybackUrl,
+  uploadToObjectStore,
+  type ObjectOrigin,
+} from "@/lib/objectStore";
 import { generateVideoThumbnail, prepareImageThumbnail, IMAGE_THUMBNAIL_MAX_BYTES } from "@/lib/videoThumbnail";
-import { detectVideoFormat } from "@/lib/detectVideoFormat";
-import { inferFormatFromFilename } from "@/lib/inferVideoFormatFromName";
+import { detectVideoFormat, type DetectedFormat } from "@/lib/detectVideoFormat";
+import { probeVideoFile, type VideoProbe } from "@/lib/probeVideoFile";
+import {
+  inferFormatFromFilename,
+  shouldAutoSend,
+  type InferredFormatFromName,
+} from "@/lib/inferVideoFormatFromName";
 
 type LibraryType = "location" | "animation";
 type VrFormat = "360_mono" | "180_mono" | "360_stereo" | "180_stereo" | "flat";
@@ -33,6 +45,7 @@ interface VideoRow {
   source_layout: SourceLayout;
   size_bytes: number;
   storage_path: string;
+  origin?: "supabase" | ObjectOrigin;
   thumbnail_url: string | null;
   duration_seconds: number | null;
   created_at: string;
@@ -139,6 +152,12 @@ interface PendingUpload {
   /** Réglages dépliés à la demande : l'essentiel doit tenir en une phrase. */
   showSettings?: boolean;
   /**
+   * Compatibilité du codec avec le casque, établie avant l'envoi. Un format que
+   * le casque ne décode pas donnerait un écran noir sans aucun message : on le
+   * dit ici, tant que le fichier n'a pas encore traversé le réseau.
+   */
+  probe?: VideoProbe;
+  /**
    * Aperçu rendu avec les réglages retenus. C'est lui qui rend une erreur visible avant
    * l'envoi : un mauvais encodage donne une grille de faces, un mauvais relief une image
    * coupée en deux.
@@ -150,6 +169,42 @@ interface PendingUpload {
   previewState: "idle" | "running" | "failed";
   /** L'opérateur a fourni une image : un changement de format ne l'écrase plus. */
   previewCustom?: boolean;
+}
+
+function applyFormatAnalysis(
+  it: PendingUpload,
+  hinted: InferredFormatFromName,
+  detected: DetectedFormat | null,
+): PendingUpload {
+  const skyboxNote =
+    "Réglages lus dans le nom du fichier (export Skybox). Le casque n'a pas besoin que le navigateur décode la vidéo.";
+
+  const merged: PendingUpload = it.touched
+    ? {
+        ...it,
+        analysis: "done",
+        recognised: false,
+        analysisNote: detected?.explanation ?? skyboxNote,
+      }
+    : {
+        ...it,
+        projection: detected?.confident ? detected.projection : hinted.projection,
+        stereo_mode: detected?.confident ? detected.stereoMode : hinted.stereoMode,
+        source_layout: detected?.confident ? detected.sourceLayout : hinted.sourceLayout,
+        analysis: "done",
+        recognised: Boolean(detected?.confident) || hinted.named,
+        analysisNote: detected?.confident
+          ? detected.explanation
+          : hinted.named
+            ? skyboxNote
+            : detected?.explanation,
+      };
+
+  if (merged.projection === "flat") {
+    merged.stereo_mode = "mono";
+    merged.source_layout = "equirectangular";
+  }
+  return merged;
 }
 
 const THUMBNAIL_URL_TTL_SECONDS = 3600;
@@ -175,15 +230,34 @@ function useSignedThumbnails(videos: VideoRow[]): Record<string, string> {
 
     let cancelled = false;
     void (async () => {
-      const { data, error } = await supabase.storage
-        .from("thumbnails")
-        .createSignedUrls(missing, THUMBNAIL_URL_TTL_SECONDS);
-      if (cancelled || error || !data) return;
-
+      // Les films hors bucket Storage rangent leur miniature dans leur propre
+      // origine : il faut la signer là-bas, pas dans le bucket `thumbnails`.
+      const external = videos.filter(
+        (v) => (v.origin === "disk" || v.origin === "r2") && v.thumbnail_url && !urls[v.thumbnail_url],
+      );
+      const storagePaths = paths.filter((path) => !urls[path] && !external.some((v) => v.thumbnail_url === path));
       const next: Record<string, string> = {};
-      for (const entry of data) {
-        if (entry.path && entry.signedUrl) next[entry.path] = entry.signedUrl;
+
+      await Promise.all(external.map(async (v) => {
+        try {
+          next[v.thumbnail_url!] = await objectStorePlaybackUrl(v.thumbnail_url!, v.origin as ObjectOrigin);
+        } catch {
+          // Stockage injoignable : la carte reste sans image, comme avant.
+        }
+      }));
+
+      if (storagePaths.length > 0) {
+        const { data, error } = await supabase.storage
+          .from("thumbnails")
+          .createSignedUrls(storagePaths, THUMBNAIL_URL_TTL_SECONDS);
+        if (!error && data) {
+          for (const entry of data) {
+            if (entry.path && entry.signedUrl) next[entry.path] = entry.signedUrl;
+          }
+        }
       }
+
+      if (cancelled || Object.keys(next).length === 0) return;
       setUrls((current) => ({ ...current, ...next }));
     })();
 
@@ -202,12 +276,18 @@ export default function Libraries() {
   const [uploads, setUploads] = useState<Record<string, UploadProgress>>({});
   const [dragging, setDragging] = useState(false);
   const [pending, setPending] = useState<PendingUpload[]>([]);
+  const pendingRef = useRef(pending);
+  pendingRef.current = pending;
   const fileRef = useRef<HTMLInputElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
   const thumbnailTargetRef = useRef<VideoRow | null>(null);
   const [thumbBusy, setThumbBusy] = useState<string | null>(null);
   const [preview, setPreview] = useState<{ video: VideoRow; url: string } | null>(null);
   const [previewLoading, setPreviewLoading] = useState<string | null>(null);
+  const [formatEdit, setFormatEdit] = useState<
+    { id: string; projection: Projection; stereo_mode: StereoMode; source_layout: SourceLayout } | null
+  >(null);
+  const [formatSaving, setFormatSaving] = useState(false);
   const { confirm, confirmDialog } = useConfirm();
 
   const { data, initialLoading, error: loadError, refresh, mutate } = useLiveData<VideoRow[]>(
@@ -225,9 +305,60 @@ export default function Libraries() {
   const videos = data ?? [];
   const thumbnailUrls = useSignedThumbnails(videos);
 
+  const uploadInProgress = Object.values(uploads).some((u) => u.status === "uploading");
+
+  /**
+   * Prévient avant de quitter la page pendant un envoi.
+   *
+   * Un envoi vers le stockage objet ne sait pas reprendre où il s'est arrêté : fermer
+   * l'onglet à mi-parcours perd la totalité du transfert, soit plusieurs gigaoctets et
+   * de longues minutes pour un film. Le navigateur n'affiche cet avertissement que si
+   * l'utilisateur a interagi avec la page, ce qui est toujours le cas ici puisqu'il a
+   * lancé l'envoi lui-même.
+   */
+  useEffect(() => {
+    if (!uploadInProgress) return;
+    const warn = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [uploadInProgress]);
+
   const handleFiles = (files: FileList | null) => {
     if (!files || !canManageContent) return;
-    const next: PendingUpload[] = Array.from(files).map((file) => {
+
+    // Le sélecteur de fichiers filtre déjà sur les vidéos, mais un glisser-déposer accepte
+    // n'importe quoi. Sans ce tri, un document déposé par mégarde partait dans la file
+    // d'attente et n'échouait qu'à la toute fin de l'envoi.
+    const chosen = Array.from(files);
+    const accepted = chosen.filter((file) => resolveVideoContentType(file).startsWith("video/"));
+    const rejected = chosen.filter((file) => !accepted.includes(file));
+    if (rejected.length > 0) {
+      const names = rejected.map((f) => f.name).join(", ");
+      toast.error(
+        rejected.length === 1
+          ? `${names} n'est pas une vidéo. Formats acceptés : MP4, MOV, M4V.`
+          : `Ces fichiers ne sont pas des vidéos : ${names}. Formats acceptés : MP4, MOV, M4V.`,
+      );
+    }
+    if (accepted.length === 0) return;
+
+    // Même nom et même taille : c'est le même film renvoyé par mégarde. On prévient sans
+    // bloquer, car remplacer un film par une version réencodée est un geste légitime.
+    const duplicates = accepted.filter((file) =>
+      videos.some((v) => v.library === activeLib && v.name === file.name && v.size_bytes === file.size),
+    );
+    if (duplicates.length > 0) {
+      toast.warning(
+        duplicates.length === 1
+          ? `« ${duplicates[0].name} » est déjà dans cette bibliothèque. L'envoyer créera un doublon.`
+          : `${duplicates.length} de ces films sont déjà dans cette bibliothèque. Les envoyer créera des doublons.`,
+      );
+    }
+
+    const next: PendingUpload[] = accepted.map((file) => {
       const hinted = inferFormatFromFilename(file.name);
       return {
         tempId: `up-${Date.now()}-${Math.random()}`,
@@ -239,72 +370,54 @@ export default function Libraries() {
         previewState: "idle" as const,
       };
     });
-    setPending((p) => [...p, ...next]);
+    setPending((p) => {
+      const all = [...p, ...next];
+      pendingRef.current = all;
+      return all;
+    });
     // Un film 8K + trois 4K en parallèle gèlent l'onglet : on les traite l'un après l'autre.
     void next.reduce((chain, item) => chain.then(() => analysePending(item)), Promise.resolve());
   };
 
   /**
-   * Examine quelques images de la vidéo pour en proposer le format.
+   * Propose le format, puis envoie dès qu'il est connu.
    *
-   * Rien dans ces fichiers ne le déclare : ni boîte `sv3d`, ni boîte `st3d`. Sans cette
-   * analyse il faudrait le connaître de tête, et une erreur ne se verrait qu'une fois le
-   * casque sur la tête.
+   * Un export Skybox porte déjà les réglages dans le nom : on n'attend pas le décodeur
+   * du navigateur (HEVC, VP9 4K, 8K). Sans nom exploitable, on examine quelques images.
    */
   const analysePending = async (item: PendingUpload) => {
-    const detected = await detectVideoFormat(item.file);
+    // Le codec d'abord : inutile de deviner la projection d'un fichier que le
+    // casque ne saura pas ouvrir. Quelques kilo-octets d'en-tête suffisent.
+    const probe = await probeVideoFile(item.file);
+
     const hinted = inferFormatFromFilename(item.file.name);
-    let retenu: PendingUpload | null = null;
+    const detected = shouldAutoSend(hinted)
+      ? null
+      : await detectVideoFormat(item.file);
+    // Ne pas lire le résultat de setState : hors handler d'événement l'updater
+    // n'est pas synchrone, et l'envoi automatique ne partait jamais.
+    const current = pendingRef.current.find((it) => it.tempId === item.tempId) ?? item;
+    const pret = { ...applyFormatAnalysis(current, hinted, detected), probe };
+    setPending((p) => p.map((it) => (it.tempId === item.tempId ? pret : it)));
+    pendingRef.current = pendingRef.current.map((it) => (it.tempId === item.tempId ? pret : it));
 
-    setPending((p) =>
-      p.map((it) => {
-        if (it.tempId !== item.tempId) return it;
+    if (probe.verdict === "unsupported") {
+      // Envoi retenu : transférer le fichier ne ferait que déplacer la panne
+      // jusqu'au casque, où elle serait bien plus difficile à comprendre.
+      toast.error(probe.message);
+      return;
+    }
+    if (probe.verdict === "risky") toast.warning(probe.message);
 
-        // Un réglage déjà corrigé à la main fait foi : l'analyse arrive après coup et ne doit
-        // pas défaire le choix de l'opérateur.
-        const merged: PendingUpload = it.touched
-          ? { ...it, analysis: "done", recognised: false, analysisNote: detected.explanation }
-          : {
-              ...it,
-              projection: detected.confident ? detected.projection : hinted.projection,
-              stereo_mode: detected.confident ? detected.stereoMode : hinted.stereoMode,
-              source_layout: detected.confident ? detected.sourceLayout : hinted.sourceLayout,
-              analysis: "done",
-              recognised: detected.confident || hinted.named,
-              analysisNote: detected.confident
-                ? detected.explanation
-                : hinted.named
-                  ? "Réglages lus dans le nom du fichier (export Skybox). Le casque n'a pas besoin que le navigateur décode la vidéo."
-                  : detected.explanation,
-            };
-
-        if (merged.projection === "flat") {
-          merged.stereo_mode = "mono";
-          merged.source_layout = "equirectangular";
-        }
-        retenu = merged;
-        return merged;
-      }),
-    );
-
-    if (!retenu) return;
-
-    const pret = retenu;
     const stereoOk = pret.projection === "flat" || pret.stereo_mode !== "unknown";
-    if (!pret.touched && stereoOk && (detected.confident || hinted.named)) {
-      const thumbnail = await generateVideoThumbnail(pret.file, {
-        projection: pret.projection,
-        stereo: pret.stereo_mode === "unknown" ? "mono" : pret.stereo_mode,
-        sourceLayout: pret.source_layout,
-      });
-      pret.previewBlob = thumbnail?.blob;
-      pret.previewDurationSeconds = thumbnail?.durationSeconds ?? null;
+    if (!pret.touched && stereoOk && (detected?.confident || hinted.named)) {
+      // Miniature après l'envoi (confirmUpload) : ne pas décoder 8K/HEVC avant le TUS.
       toast.message(`Envoi de ${pret.file.name}…`);
       await confirmUpload(pret);
       return;
     }
 
-    await refreshPreview(retenu);
+    await refreshPreview(pret);
   };
 
   /**
@@ -420,6 +533,41 @@ export default function Libraries() {
     return isStereo ? "360_stereo" : "360_mono";
   };
 
+  /**
+   * Corrige les réglages d'affichage d'un film déjà envoyé.
+   *
+   * Ces réglages sont déduits du nom du fichier au moment de l'envoi. Quand la déduction se
+   * trompe, le film s'affiche déformé, voire pas du tout, et il fallait jusqu'ici le supprimer
+   * puis le renvoyer en entier — plusieurs gigaoctets pour une erreur qui ne tient qu'à trois
+   * champs.
+   */
+  const saveFormat = async () => {
+    if (!formatEdit) return;
+    setFormatSaving(true);
+    try {
+      const { projection, stereo_mode, source_layout } = formatEdit;
+      const { error } = await supabase
+        .from("videos")
+        .update({
+          projection,
+          stereo_mode,
+          source_layout,
+          // Le casque choisit sa surface d'affichage d'après `format` : ne pas le recalculer
+          // laisserait la correction sans effet visible dans le casque.
+          format: legacyFormatFor(projection, stereo_mode),
+        })
+        .eq("id", formatEdit.id);
+      if (error) throw new Error(error.message);
+      await refresh();
+      setFormatEdit(null);
+      toast.success("Réglages corrigés. Les casques les appliqueront à la prochaine synchronisation.");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "La correction n'a pas pu être enregistrée.");
+    } finally {
+      setFormatSaving(false);
+    }
+  };
+
   const setUpload = (tempId: string, patch: Partial<UploadProgress>) =>
     setUploads((u) => (u[tempId] ? { ...u, [tempId]: { ...u[tempId], ...patch } } : u));
 
@@ -445,7 +593,10 @@ export default function Libraries() {
       // L'aperçu affiché dans le formulaire est déjà cette vignette, rendue avec les mêmes
       // réglages : la réutiliser évite de décoder une seconde fois un fichier qui peut peser
       // plusieurs gigaoctets.
-      const generated = item.previewBlob
+      // Un 8K dans l'onglet après l'envoi peut encore faire tomber Chrome : au-delà d'un
+      // gros fichier, la vignette se choisit plus tard depuis la bibliothèque.
+      const tooHeavyForBrowser = !item.previewBlob && file.size >= 700 * 1024 * 1024;
+      const generated = item.previewBlob || tooHeavyForBrowser
         ? null
         : await generateVideoThumbnail(file, {
             projection: item.projection,
@@ -503,6 +654,7 @@ export default function Libraries() {
 
     let path: string | null = null;
     let thumbnailPath: string | null = null;
+    let origin: ObjectOrigin | "supabase" = "supabase";
     try {
       const contentType = resolveVideoContentType(file);
       if (!contentType.startsWith("video/")) {
@@ -526,15 +678,25 @@ export default function Libraries() {
       );
 
       setUpload(tempId, { phase: "uploading", progress: 0 });
-      await uploadFileWithProgress({
-        bucket: "videos",
-        path,
-        file,
-        contentType,
-        onProgress: (fraction) =>
-          setUpload(tempId, { phase: "uploading", progress: Math.round(fraction * 100) }),
-        signal: controller.signal,
-      });
+      const onProgress = (fraction: number) =>
+        setUpload(tempId, { phase: "uploading", progress: Math.round(fraction * 100) });
+
+      // C'est le serveur qui sait quel stockage est en service ; le bucket Storage
+      // n'est qu'un recours quand aucun n'est configuré, et il plafonne à 50 Mo.
+      try {
+        origin = await uploadToObjectStore({ path, file, contentType, onProgress, signal: controller.signal });
+      } catch (err) {
+        if (!(err instanceof NoObjectStoreError)) throw err;
+        await uploadFileWithProgress({
+          bucket: "videos",
+          path,
+          file,
+          contentType,
+          onProgress,
+          signal: controller.signal,
+        });
+        origin = "supabase";
+      }
 
       // Miniature après l'envoi de la vidéo : la vidéo est déjà en sécurité, un échec de
       // génération n'empêche donc rien. Le casque et le dashboard retombent sur une vignette
@@ -555,12 +717,17 @@ export default function Libraries() {
         source_layout,
         size_bytes: file.size,
         storage_path: path,
+        origin,
         thumbnail_url: thumbnailPath,
         duration_seconds: durationSeconds != null ? Math.round(durationSeconds) : null,
         sha256,
       });
       if (dbErr) {
-        await supabase.storage.from("videos").remove([path]);
+        if (origin === "supabase") {
+          await supabase.storage.from("videos").remove([path]);
+        } else {
+          await deleteFromObjectStore(path, origin).catch(() => undefined);
+        }
         path = null;
         throw new Error(dbErr.message);
       }
@@ -575,7 +742,11 @@ export default function Libraries() {
     } catch (err) {
       // Never leave an orphan object behind in Storage.
       if (path) {
-        await supabase.storage.from("videos").remove([path]).catch(() => undefined);
+        if (origin === "supabase") {
+          await supabase.storage.from("videos").remove([path]).catch(() => undefined);
+        } else {
+          await deleteFromObjectStore(path, origin).catch(() => undefined);
+        }
       }
       if (thumbnailPath) {
         await supabase.storage.from("thumbnails").remove([thumbnailPath]).catch(() => undefined);
@@ -611,36 +782,68 @@ export default function Libraries() {
       toast.error(dbErr.message);
       return;
     }
+    const external = v.origin === "disk" || v.origin === "r2";
+
     if (v.thumbnail_url) {
       // Une miniature orpheline n'occupe que quelques kilo-octets : son échec de suppression ne
       // mérite pas d'alerter l'utilisateur.
-      await supabase.storage.from("thumbnails").remove([v.thumbnail_url]).catch(() => undefined);
+      if (external) {
+        await deleteFromObjectStore(v.thumbnail_url, v.origin as ObjectOrigin).catch(() => undefined);
+      } else {
+        await supabase.storage.from("thumbnails").remove([v.thumbnail_url]).catch(() => undefined);
+      }
     }
 
-    const { error: stErr } = await supabase.storage.from("videos").remove([v.storage_path]);
-    if (stErr && !stErr.message.includes("not found")) {
-      toast.warning(`Vidéo supprimée, mais le fichier stocké subsiste : ${stErr.message}`);
-      return;
+    // Un film pèse près d'un gigaoctet : le laisser derrière soi remplirait le
+    // stockage sans que personne ne s'en aperçoive.
+    if (external) {
+      try {
+        await deleteFromObjectStore(v.storage_path, v.origin as ObjectOrigin);
+      } catch (err) {
+        toast.warning(
+          `Vidéo supprimée, mais le fichier stocké subsiste : ${err instanceof Error ? err.message : "erreur"}`,
+        );
+        return;
+      }
+    } else {
+      const { error: stErr } = await supabase.storage.from("videos").remove([v.storage_path]);
+      if (stErr && !stErr.message.includes("not found")) {
+        toast.warning(`Vidéo supprimée, mais le fichier stocké subsiste : ${stErr.message}`);
+        return;
+      }
     }
     toast.success("Vidéo supprimée");
   };
 
-  const handleDownload = async (v: VideoRow) => {
+  const signedPlaybackUrl = async (v: VideoRow): Promise<string> => {
+    if (v.origin === "disk" || v.origin === "r2") {
+      return objectStorePlaybackUrl(v.storage_path, v.origin as ObjectOrigin);
+    }
     const { data, error } = await supabase.storage
       .from("videos")
       .createSignedUrl(v.storage_path, 3600);
-    if (error) { toast.error(error.message); return; }
-    window.open(data.signedUrl, "_blank");
+    if (error || !data?.signedUrl) throw new Error(error?.message ?? "URL indisponible");
+    return data.signedUrl;
+  };
+
+  const handleDownload = async (v: VideoRow) => {
+    try {
+      window.open(await signedPlaybackUrl(v), "_blank");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "URL indisponible");
+    }
   };
 
   const handlePreview = async (v: VideoRow) => {
     setPreviewLoading(v.id);
-    const { data, error } = await supabase.storage
-      .from("videos")
-      .createSignedUrl(v.storage_path, 3600);
-    setPreviewLoading(null);
-    if (error || !data) { toast.error(error?.message ?? "URL indisponible"); return; }
-    setPreview({ video: v, url: data.signedUrl });
+    try {
+      const url = await signedPlaybackUrl(v);
+      setPreview({ video: v, url });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "URL indisponible");
+    } finally {
+      setPreviewLoading(null);
+    }
   };
 
   const thumbnailFormatOf = (v: Pick<VideoRow, "projection" | "stereo_mode" | "source_layout">) => ({
@@ -689,9 +892,8 @@ export default function Libraries() {
   const handleRegenerateLibraryThumbnail = async (v: VideoRow) => {
     setThumbBusy(v.id);
     try {
-      const { data, error } = await supabase.storage.from("videos").createSignedUrl(v.storage_path, 3600);
-      if (error || !data) throw new Error(error?.message ?? "URL indisponible");
-      const result = await generateVideoThumbnail(data.signedUrl, thumbnailFormatOf(v));
+      const url = await signedPlaybackUrl(v);
+      const result = await generateVideoThumbnail(url, thumbnailFormatOf(v));
       if (!result) {
         toast.error("Extraction impossible — le navigateur ne décode pas cette vidéo.");
         return;
@@ -772,6 +974,12 @@ export default function Libraries() {
       {/* Upload progress */}
       {Object.values(uploads).length > 0 && (
         <div className="space-y-2">
+          {uploadInProgress && (
+            <p className="text-[10px] text-amber-500">
+              Laissez cette page ouverte jusqu'à la fin : un envoi interrompu doit être
+              recommencé depuis le début.
+            </p>
+          )}
           {Object.values(uploads).map((u) => (
             <div key={u.id} className="rounded-lg border border-border/60 bg-[hsl(var(--vr-surface)_/_0.5)] p-3">
               <div className="flex items-center gap-2 mb-1.5">
@@ -823,6 +1031,7 @@ export default function Libraries() {
             const isFlat = it.projection === "flat";
             const stereoUnknown = !isFlat && it.stereo_mode === "unknown";
             const enCours = it.analysis === "running";
+            const formatIncompatible = it.probe?.verdict === "unsupported";
             const projection = PROJECTION_CHOICES.find((c) => c.value === it.projection);
             const stereo = STEREO_CHOICES.find((c) => c.value === it.stereo_mode);
             const layout = SOURCE_LAYOUT_CHOICES.find((c) => c.value === it.source_layout);
@@ -979,6 +1188,29 @@ export default function Libraries() {
                   </p>
                 )}
 
+                {it.probe && it.probe.verdict !== "ok" && (
+                  <div
+                    className={cn(
+                      "rounded-lg border px-3 py-2 flex items-start gap-2",
+                      formatIncompatible
+                        ? "border-destructive/40 bg-destructive/10"
+                        : "border-amber-500/40 bg-amber-500/10",
+                    )}
+                  >
+                    {formatIncompatible ? (
+                      <XCircle size={14} className="mt-0.5 shrink-0 text-destructive" />
+                    ) : (
+                      <AlertTriangle size={14} className="mt-0.5 shrink-0 text-amber-500" />
+                    )}
+                    <div className="min-w-0">
+                      <p className="text-[11px] font-medium">{it.probe.message}</p>
+                      {it.probe.advice && (
+                        <p className="text-[10px] text-muted-foreground mt-0.5">{it.probe.advice}</p>
+                      )}
+                    </div>
+                  </div>
+                )}
+
                 <div className="flex justify-end gap-2">
                   <button
                     onClick={() => removePending(it.tempId)}
@@ -988,7 +1220,8 @@ export default function Libraries() {
                   </button>
                   <button
                     onClick={() => confirmUpload(it)}
-                    disabled={stereoUnknown || enCours}
+                    disabled={stereoUnknown || enCours || formatIncompatible}
+                    title={formatIncompatible ? it.probe?.advice : undefined}
                     className="text-[11px] px-3 py-1.5 rounded bg-[hsl(var(--vr-violet))] text-white font-medium hover:bg-[hsl(var(--vr-violet)_/_0.85)] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     Envoyer
@@ -1048,7 +1281,8 @@ export default function Libraries() {
           {filtered.map((v) => {
             const durationLabel = fmtDuration(v.duration_seconds);
             return (
-            <div key={v.id} className="flex items-center gap-3 rounded-lg border border-border/60 bg-[hsl(var(--vr-surface)_/_0.5)] px-4 py-3 hover:border-[hsl(var(--vr-violet)_/_0.4)] transition-colors">
+            <div key={v.id} className="rounded-lg border border-border/60 bg-[hsl(var(--vr-surface)_/_0.5)] hover:border-[hsl(var(--vr-violet)_/_0.4)] transition-colors">
+              <div className="flex items-center gap-3 px-4 py-3">
               {v.thumbnail_url && thumbnailUrls[v.thumbnail_url] ? (
                 <img
                   src={thumbnailUrls[v.thumbnail_url]}
@@ -1079,6 +1313,29 @@ export default function Libraries() {
               </button>
               {canManageContent && (
                 <>
+                  <button
+                    onClick={() =>
+                      setFormatEdit((f) =>
+                        f?.id === v.id
+                          ? null
+                          : {
+                              id: v.id,
+                              projection: v.projection,
+                              stereo_mode: v.stereo_mode,
+                              source_layout: v.source_layout,
+                            },
+                      )
+                    }
+                    className={cn(
+                      "p-2 rounded transition-colors hover:bg-[hsl(var(--vr-violet)_/_0.1)]",
+                      formatEdit?.id === v.id
+                        ? "text-[hsl(var(--vr-violet))]"
+                        : "text-muted-foreground hover:text-[hsl(var(--vr-violet))]",
+                    )}
+                    title="Corriger les réglages d'affichage"
+                  >
+                    <SlidersHorizontal size={13} />
+                  </button>
                   <button
                     onClick={() => {
                       thumbnailTargetRef.current = v;
@@ -1116,6 +1373,92 @@ export default function Libraries() {
                 >
                   <Trash2 size={13} />
                 </button>
+              )}
+              </div>
+
+              {formatEdit?.id === v.id && (
+                <div className="border-t border-border/40 px-4 py-3 space-y-3">
+                  <p className="text-[10px] text-muted-foreground">
+                    Ces réglages décrivent ce que contient le fichier. S'ils ne lui correspondent
+                    pas, l'image apparaîtra déformée ou dédoublée dans le casque.
+                  </p>
+
+                  <div className="grid gap-3 sm:grid-cols-3">
+                    <label className="block text-[10px] text-muted-foreground space-y-1">
+                      <span>Ce que la vidéo montre</span>
+                      <select
+                        value={formatEdit.projection}
+                        onChange={(e) => {
+                          const projection = e.target.value as Projection;
+                          setFormatEdit((f) => f && {
+                            ...f,
+                            projection,
+                            // Un écran plat n'a ni relief ni projection sphérique : garder
+                            // d'anciennes valeurs ici laisserait des réglages contradictoires.
+                            ...(projection === "flat"
+                              ? { stereo_mode: "mono" as StereoMode, source_layout: "equirectangular" as SourceLayout }
+                              : {}),
+                          });
+                        }}
+                        className="w-full rounded bg-background border border-border/60 px-2 py-1.5 text-xs text-foreground"
+                      >
+                        {PROJECTION_CHOICES.map((c) => (
+                          <option key={c.value} value={c.value}>{c.label}</option>
+                        ))}
+                      </select>
+                    </label>
+
+                    <label className="block text-[10px] text-muted-foreground space-y-1">
+                      <span>Relief</span>
+                      <select
+                        value={formatEdit.stereo_mode}
+                        disabled={formatEdit.projection === "flat"}
+                        onChange={(e) => setFormatEdit((f) => f && { ...f, stereo_mode: e.target.value as StereoMode })}
+                        className="w-full rounded bg-background border border-border/60 px-2 py-1.5 text-xs text-foreground disabled:opacity-50"
+                      >
+                        {STEREO_CHOICES.map((c) => (
+                          <option key={c.value} value={c.value}>{c.label}</option>
+                        ))}
+                      </select>
+                    </label>
+
+                    <label className="block text-[10px] text-muted-foreground space-y-1">
+                      <span>Encodage de l'image</span>
+                      <select
+                        value={formatEdit.source_layout}
+                        disabled={formatEdit.projection === "flat"}
+                        onChange={(e) => setFormatEdit((f) => f && { ...f, source_layout: e.target.value as SourceLayout })}
+                        className="w-full rounded bg-background border border-border/60 px-2 py-1.5 text-xs text-foreground disabled:opacity-50"
+                      >
+                        {SOURCE_LAYOUT_CHOICES.map((c) => (
+                          <option key={c.value} value={c.value}>{c.label}</option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => void saveFormat()}
+                      disabled={formatSaving || formatEdit.stereo_mode === "unknown"}
+                      className="rounded bg-[hsl(var(--vr-violet))] px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50"
+                    >
+                      {formatSaving ? "Enregistrement…" : "Enregistrer"}
+                    </button>
+                    <button
+                      onClick={() => setFormatEdit(null)}
+                      disabled={formatSaving}
+                      className="rounded border border-border/60 px-3 py-1.5 text-xs text-muted-foreground disabled:opacity-50"
+                    >
+                      Annuler
+                    </button>
+                    {formatEdit.stereo_mode === "unknown" && (
+                      <span className="text-[10px] text-amber-500">
+                        Précisez la disposition du relief avant d'enregistrer.
+                      </span>
+                    )}
+                  </div>
+                </div>
               )}
             </div>
             );
