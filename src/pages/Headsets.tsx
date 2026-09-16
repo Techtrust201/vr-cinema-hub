@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { isPermissionError } from "@/lib/supabaseErrors";
 import { appContactLabel, appContactState, formatRelativeFr, type AppContactState } from "@/lib/headsetContact";
+import { describeReportStatus, describeVersionGap } from "@/lib/syncVocabulary";
 
 interface HeadsetRow {
   id: string;
@@ -188,13 +189,18 @@ export default function Headsets() {
                   <p className="text-xs text-muted-foreground">
                     {h.model ?? "Modèle inconnu"}{h.serial ? ` • ${h.serial}` : ""}{h.app_version ? ` • app v${h.app_version}` : ""}
                   </p>
-                  <p className="text-xs text-muted-foreground/80">
+                  {/* Le détail des trois horodatages n'intéresse que le support :
+                      il reste en infobulle plutôt que d'encombrer la ligne. */}
+                  <p
+                    className="text-xs text-muted-foreground/80"
+                    title={[
+                      `Signal de présence ${formatRelativeFr(h.last_heartbeat_at)}`,
+                      `Contenu proposé ${formatRelativeFr(h.last_manifest_at)}`,
+                      `Compte rendu ${formatRelativeFr(h.last_sync_at ?? null)}`,
+                    ].join("\n")}
+                  >
                     Dernier contact {formatRelativeFr(h.last_seen_at)}
-                    {h.last_contact_source ? ` (${h.last_contact_source})` : ""}
-                    {" · "}Heartbeat {formatRelativeFr(h.last_heartbeat_at)}
-                    {" · "}Manifest {formatRelativeFr(h.last_manifest_at)}
-                    {" · "}Sync {formatRelativeFr(h.last_sync_at ?? null)}
-                    {h.last_sync_status ? ` [${h.last_sync_status}]` : ""}
+                    {h.last_sync_status ? ` · ${describeReportStatus(h.last_sync_status)}` : ""}
                   </p>
                   {(h.last_error_code || h.last_error_message) && (
                     <p className="text-xs text-destructive/80">
@@ -237,16 +243,24 @@ function SyncBadge({ h }: { h: HeadsetRow }) {
   const desired = h.desired_manifest_version ?? 0;
   const applied = h.applied_manifest_version ?? 0;
   if (h.status !== "active") return null;
+  // Les numéros de version ne disent rien à l'exploitant : ils partent en
+  // infobulle, et l'étiquette dit seulement si le casque a bien ce qu'il doit avoir.
+  const detail = `Version reçue par le casque : ${applied} — version attendue : ${desired}`;
+  const base = "hidden md:inline-flex text-[10px] px-2 py-0.5 rounded";
   if (desired === 0 && applied === 0) {
-    return <span className="hidden md:inline-flex text-[10px] px-2 py-0.5 rounded bg-muted/60 text-muted-foreground">jamais sync · d{desired}/a{applied}</span>;
+    return <span title={detail} className={cn(base, "bg-muted/60 text-muted-foreground")}>Jamais synchronisé</span>;
   }
   if (h.last_sync_status === "failed") {
-    return <span className="hidden md:inline-flex text-[10px] px-2 py-0.5 rounded bg-destructive/15 text-destructive">erreur · d{desired}/a{applied}</span>;
+    return <span title={detail} className={cn(base, "bg-destructive/15 text-destructive")}>Échec de mise à jour</span>;
   }
   if (applied < desired) {
-    return <span className="hidden md:inline-flex text-[10px] px-2 py-0.5 rounded bg-[hsl(35_90%_55%_/_0.15)] text-[hsl(35_90%_55%)]">en attente · d{desired}/a{applied}</span>;
+    return (
+      <span title={detail} className={cn(base, "bg-[hsl(35_90%_55%_/_0.15)] text-[hsl(35_90%_55%)]")}>
+        {describeVersionGap(applied, desired)}
+      </span>
+    );
   }
-  return <span className="hidden md:inline-flex text-[10px] px-2 py-0.5 rounded bg-[hsl(140_70%_40%_/_0.15)] text-[hsl(140_70%_55%)]">à jour · v{applied}</span>;
+  return <span title={detail} className={cn(base, "bg-[hsl(140_70%_40%_/_0.15)] text-[hsl(140_70%_55%)]")}>À jour</span>;
 }
 
 function PairModal({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {

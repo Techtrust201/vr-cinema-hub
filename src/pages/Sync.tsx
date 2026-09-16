@@ -5,6 +5,8 @@ import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
 import { useLiveData } from "@/hooks/useLiveData";
+import { DiagnosticPanel } from "@/components/sync/DiagnosticPanel";
+import { describeCause, describeReportStatus, describeVersionGap, fmtBytes } from "@/lib/syncVocabulary";
 
 interface Headset {
   id: string;
@@ -69,13 +71,6 @@ function fmtRel(iso: string | null) {
   if (h < 24) return `il y a ${h} h`;
   return `il y a ${Math.floor(h / 24)} j`;
 }
-function fmtBytes(b: number) {
-  if (!b) return "—";
-  if (b < 1024 * 1024) return `${(b / 1024).toFixed(0)} KB`;
-  if (b < 1024 * 1024 * 1024) return `${(b / (1024 * 1024)).toFixed(0)} MB`;
-  return `${(b / (1024 * 1024 * 1024)).toFixed(1)} GB`;
-}
-
 type SyncSnapshot = {
   reports: SyncReport[];
   headsets: Headset[];
@@ -86,7 +81,7 @@ export default function Sync() {
   const { canManageContent } = useAuth();
   const [tab, setTab] = useState<"state" | "history">("state");
   const [forcing, setForcing] = useState<Record<string, boolean>>({});
-  const [diagJson, setDiagJson] = useState<string | null>(null);
+  const [diag, setDiag] = useState<{ kind: "headset" | "playlist"; title: string; data: unknown } | null>(null);
   const [diagLoading, setDiagLoading] = useState<string | null>(null);
   const [diagPlaylistId, setDiagPlaylistId] = useState<string>("");
 
@@ -132,7 +127,7 @@ export default function Sync() {
     if (error) {
       toast.error("Erreur: " + error.message);
     } else {
-      toast.success(`Resync demandée pour ${h.name}`);
+      toast.success(`Mise à jour demandée pour ${h.name} — elle partira à sa prochaine connexion.`);
       void refresh();
     }
   }
@@ -147,11 +142,11 @@ export default function Sync() {
         error.message?.includes("content_manager_required")
       ) {
         toast.error("Réservé aux gestionnaires de contenu.");
-      } else toast.error("Diag erreur : " + error.message);
+      } else toast.error("Le diagnostic a échoué : " + error.message);
       return;
     }
-    setDiagJson(JSON.stringify(data, null, 2));
-    toast.success(`Diagnostic casque ${h.name} — voir le panneau ci-dessous.`);
+    setDiag({ kind: "headset", title: `Diagnostic du casque « ${h.name} »`, data });
+    toast.success(`Diagnostic terminé — résultat en bas de page.`);
   }
 
   async function runPlaylistDiag() {
@@ -165,19 +160,19 @@ export default function Sync() {
         error.message?.includes("content_manager_required")
       ) {
         toast.error("Réservé aux gestionnaires de contenu.");
-      } else toast.error("Diag erreur : " + error.message);
+      } else toast.error("Le diagnostic a échoué : " + error.message);
       return;
     }
-    setDiagJson(JSON.stringify(data, null, 2));
-    type PlaylistDiag = {
-      impacted_headsets?: unknown[];
-      discrepancy?: boolean;
-      trigger_target_count?: number;
-    };
-    const diag = data as PlaylistDiag | null;
-    const impacted = diag?.impacted_headsets ?? [];
-    if (diag?.discrepancy) toast.warning(`Discrepancy : ${impacted.length} vs trigger ${diag?.trigger_target_count}.`);
-    else toast.success(`${impacted.length} casque(s) impacté(s).`);
+    const name = playlists.find((p) => p.id === diagPlaylistId)?.name ?? "";
+    setDiag({ kind: "playlist", title: `Diffusion de la playlist « ${name} »`, data });
+
+    const result = data as { impacted_headsets?: unknown[]; discrepancy?: boolean } | null;
+    const count = result?.impacted_headsets?.length ?? 0;
+    if (result?.discrepancy) {
+      toast.warning("Incohérence détectée — voir le détail en bas de page.");
+    } else {
+      toast.success(count === 0 ? "Aucun casque ne reçoit cette playlist." : `${count} casque(s) concerné(s).`);
+    }
   }
 
   if (initialLoading) return <div className="p-6 text-muted-foreground flex items-center gap-2"><Loader2 className="animate-spin" size={16} /> Chargement…</div>;
@@ -232,12 +227,10 @@ export default function Sync() {
                   <div className="flex-1 min-w-0">
                     <p className="font-semibold">{h.name}</p>
                     <p className="text-xs text-muted-foreground">
-                      version casque <span className="font-mono">{h.applied_manifest_version}</span>
-                      <span className="mx-1">/</span>
-                      version serveur <span className="font-mono">{h.desired_manifest_version}</span>
+                      {describeVersionGap(h.applied_manifest_version, h.desired_manifest_version)}
                     </p>
                     <p className="text-xs text-muted-foreground/70 mt-0.5">
-                      Dernier manifest servi : {fmtRel(h.last_manifest_at)} • Dernier report : {fmtRel(h.last_sync_at)}
+                      Contenu proposé {fmtRel(h.last_manifest_at)} • Dernières nouvelles du casque {fmtRel(h.last_sync_at)}
                     </p>
                   </div>
                   {canManageContent && (
@@ -248,7 +241,7 @@ export default function Sync() {
                         className="px-3 py-1.5 text-xs rounded-lg border border-border/50 text-muted-foreground hover:text-foreground hover:bg-muted/40 transition flex items-center gap-1.5 disabled:opacity-40"
                       >
                         {diagLoading === h.id ? <Loader2 size={12} className="animate-spin" /> : <Bug size={12} />}
-                        Diag
+                        Analyser
                       </button>
                       <button
                         onClick={() => forceResync(h)}
@@ -256,7 +249,7 @@ export default function Sync() {
                         className="px-3 py-1.5 text-xs rounded-lg border border-border/50 text-muted-foreground hover:text-foreground hover:bg-muted/40 transition flex items-center gap-1.5 disabled:opacity-40"
                       >
                         {forcing[h.id] ? <Loader2 size={12} className="animate-spin" /> : <Zap size={12} />}
-                        Forcer resync
+                        Forcer la mise à jour
                       </button>
                     </div>
                   )}
@@ -282,24 +275,27 @@ export default function Sync() {
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium">
                       {name}
-                      {r.applied_manifest_version != null && (
-                        <span className="ml-2 text-[10px] font-mono px-1.5 py-0.5 rounded bg-muted/60 text-muted-foreground">v{r.applied_manifest_version}</span>
-                      )}
+                      <span className="ml-2 text-xs font-normal text-muted-foreground">
+                        {describeReportStatus(r.status)}
+                      </span>
                     </p>
                     <p className="text-xs text-muted-foreground">
                       {fmtTime(r.started_at)}
                       {r.finished_at && ` → ${fmtTime(r.finished_at)}`}
-                      {r.cause && <span className="ml-2 opacity-60">cause: {r.cause}</span>}
+                      {r.cause && <span className="ml-2 opacity-60">{describeCause(r.cause)}</span>}
                     </p>
                     {r.error_message && <p className="text-xs text-destructive mt-1 truncate">{r.error_message}</p>}
                   </div>
-                  <div className="hidden md:flex items-center gap-4 text-xs text-muted-foreground font-mono">
-                    {r.visible_video_count != null && <span title="visibles dans le casque">👁 {r.visible_video_count}</span>}
-                    {r.local_video_count != null && <span title="présentes localement">💾 {r.local_video_count}</span>}
-                    <span>↓ {r.downloaded_count}</span>
-                    {r.failed_count > 0 && <span className="text-destructive">✗ {r.failed_count}</span>}
-                    {r.deleted_count > 0 && <span>🗑 {r.deleted_count}</span>}
-                    <span>{fmtBytes(r.total_bytes)}</span>
+                  <div className="hidden md:flex items-center gap-4 text-xs text-muted-foreground">
+                    {r.visible_video_count != null && (
+                      <span>{r.visible_video_count} film{r.visible_video_count > 1 ? "s" : ""} visible{r.visible_video_count > 1 ? "s" : ""}</span>
+                    )}
+                    {r.downloaded_count > 0 && <span>{r.downloaded_count} téléchargé{r.downloaded_count > 1 ? "s" : ""}</span>}
+                    {r.failed_count > 0 && (
+                      <span className="text-destructive">{r.failed_count} en échec</span>
+                    )}
+                    {r.deleted_count > 0 && <span>{r.deleted_count} retiré{r.deleted_count > 1 ? "s" : ""}</span>}
+                    {r.total_bytes > 0 && <span>{fmtBytes(r.total_bytes)}</span>}
                   </div>
                 </div>
               );
@@ -312,9 +308,12 @@ export default function Sync() {
         <div className="mt-6 p-4 rounded-xl border border-border/40 bg-[hsl(var(--vr-surface))] space-y-3">
           <div className="flex items-center gap-2">
             <Bug size={16} className="text-[hsl(var(--vr-violet))]" />
-            <h2 className="font-semibold">Diagnostic playlist</h2>
+            <h2 className="font-semibold">Vérifier la diffusion d'une playlist</h2>
           </div>
-          <p className="text-xs text-muted-foreground">Analyse l'impact réel d'une playlist : assignments directs, via groupes, ou globaux, et liste dédupliquée des casques qui doivent bumper.</p>
+          <p className="text-xs text-muted-foreground">
+            Montre quels casques recevront cette playlist, et par quel chemin : attribution directe, appartenance à
+            un groupe, ou diffusion à tous.
+          </p>
           <div className="flex gap-2 items-center">
             <select
               value={diagPlaylistId}
@@ -336,14 +335,8 @@ export default function Sync() {
         </div>
       )}
 
-      {canManageContent && diagJson && (
-        <div className="mt-4 p-4 rounded-xl border border-border/40 bg-[hsl(var(--vr-surface))]">
-          <div className="flex items-center justify-between mb-2">
-            <h3 className="text-sm font-semibold">Résultat diagnostic</h3>
-            <button onClick={() => setDiagJson(null)} className="text-xs text-muted-foreground hover:text-foreground">Fermer</button>
-          </div>
-          <pre className="text-[11px] font-mono bg-background/50 p-3 rounded-lg overflow-auto max-h-[60vh] whitespace-pre-wrap break-all">{diagJson}</pre>
-        </div>
+      {canManageContent && diag && (
+        <DiagnosticPanel kind={diag.kind} title={diag.title} data={diag.data} onClose={() => setDiag(null)} />
       )}
     </div>
   );
