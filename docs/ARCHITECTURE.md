@@ -8,6 +8,18 @@
 | Supabase Postgres | Source de vérité assignments + versions manifest |
 | Edge Functions Deno | Contrat device (pair / manifest / heartbeat / report) |
 | App Unity Quest (`vr-cinema-quest-app-unity`) | Pairing, sync, bibliothèque 3D, lecture |
+| Cloudflare R2 | Fichiers vidéo et miniatures, bucket privé |
+
+## Stockage des fichiers
+
+La colonne `videos.origin` dit où vivent les octets d'une vidéo — `r2`,
+`supabase` ou `disk`. C'est une propriété de la vidéo, pas de l'installation :
+un parc peut donc être migré film par film, sans coupure.
+
+Le bucket n'est jamais public. `headset-manifest` signe une URL par fichier,
+valable 6 h ; les identifiants R2 ne quittent jamais les Edge Functions.
+
+Détail complet, coûts et diagnostic : **[`STOCKAGE.md`](./STOCKAGE.md)**.
 
 ## Flux principal
 

@@ -137,10 +137,22 @@ case "${cmd}" in
     stop_daemon
     disable_flags "$PKG_PROD"
     disable_flags "$PKG_STAGING"
-    adb shell 'am broadcast -a com.oculus.vrpowermanager.prox_far --user 0' >/dev/null 2>&1 || true
+    # « prox_far » ne lève pas l'automatisation : il ne fait que remplacer un
+    # override CLOSE par un override FAR. Le capteur physique reste ignoré, donc
+    # Horizon OS ne rend jamais le focus VR à l'app : image figée, aucun suivi de
+    # tête, pointeur mort. Seul « automation_disable » repasse l'état virtuel à
+    # DISABLED et redonne la main au capteur réel.
+    adb shell 'am broadcast -a com.oculus.vrpowermanager.automation_disable --user 0' >/dev/null 2>&1 || true
     adb shell 'svc power stayon false' >/dev/null 2>&1 || true
     adb shell 'settings put global stay_on_while_plugged_in 2' >/dev/null
-    echo "Capteur de proximité rétabli — le casque se mettra en veille s'il n'est pas porté."
+    prox=$(adb shell dumpsys vrpowermanager 2>/dev/null | sed -n 's/^Virtual proximity state: //p' | tr -d '\r')
+    if [[ "${prox}" == "DISABLED" ]]; then
+      echo "Capteur de proximité rétabli — le casque se mettra en veille s'il n'est pas porté."
+    else
+      echo "ATTENTION : proximité virtuelle encore forcée (${prox:-inconnue})." >&2
+      echo "L'app resterait sans suivi de tête. Redémarre le casque : adb reboot" >&2
+      exit 1
+    fi
     ;;
   status)
     need_adb
