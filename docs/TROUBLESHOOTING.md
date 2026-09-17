@@ -44,6 +44,51 @@ adb logcat -s Unity:V | grep 'placé devant'
 La valeur `faceAuSpectateur` doit être proche de `1,00`. Une valeur négative
 signifie que l'écran présente son dos, que le moteur n'affiche pas.
 
+Le même défaut existait sur les vidéos à 180°, pour une raison voisine : le
+recentrage sur le regard n'était appliqué qu'aux vidéos à 360°, et l'hémisphère
+gardait l'orientation de la scène. Un hémisphère ne couvrant que la moitié de
+l'espace, le spectateur qui ne regardait pas par hasard dans cette direction ne
+voyait que le ciel et le sol par défaut du moteur — alors que les traces
+annonçaient `lecture=True affichée=True`. Le recentrage couvre désormais toute
+image panoramique, 180° comprise.
+
+### Un film à 360° paraît moins net qu'un film sur écran
+
+Ce n'est très probablement pas une panne, mais une conséquence arithmétique.
+
+La netteté ressentie dépend du nombre de pixels tombant dans un degré du champ
+de vision, et l'écran du Quest 3 en affiche une vingtaine. Un fichier 4K étalé
+sur 360° n'en fournit que 10,7 ; le même fichier sur un écran occupant 50° en
+fournit près de 70. Deux films « en 4K » rendent donc de façon radicalement
+différente, sans qu'aucun réglage n'entre en jeu. La seule correction est un
+export à 7680 pixels de large, que le décodeur du casque accepte.
+
+Avant de conclure, vérifier qu'aucune perte évitable ne s'ajoute :
+
+```bash
+adb logcat -s Unity:V | grep -E 'RenderTexture ajustée|XRQuality'
+```
+
+- `RenderTexture ajustée … -> 3840x2160 (vidéo 3840x2160)` : la cible épouse la
+  source, il n'y a pas de réduction. Une cible plus petite que la vidéo
+  signalerait un plafond mal calculé, à chercher dans `VideoTextureBudget`.
+- `Rendu fovéal = 0,00` : attendu. Le rendu fovéal réduit volontairement la
+  définition en périphérie et, faute de capteurs oculaires sur Quest 3, cette
+  zone nette reste figée au centre de l'écran. Inoffensif devant un écran, que
+  l'on regarde de face ; très visible en 360°, où le regard balaie en
+  permanence. Il est désactivé, pour un coût mesuré nul : la lecture vidéo
+  n'occupe que 30 % du processeur graphique et tient les 90 Hz sans une image
+  perdue.
+
+Pour contrôler la cadence réellement obtenue, casque en fonctionnement :
+
+```bash
+adb logcat -d | grep VrApi | tail -1
+```
+
+`FPS=90/90` avec `Stale=0` signale une lecture sans défaut. `Fov=0` confirme que
+le rendu fovéal est bien éteint.
+
 ### Un casque reste bloqué en téléchargement
 
 Vérifier d'abord que les fichiers sont réellement accessibles :
@@ -103,20 +148,52 @@ pas de capteurs oculaires — la fenêtre s'affiche donc pour une fonction qui n
 marchera jamais, et elle bloque le premier démarrage jusqu'à ce que quelqu'un
 enfile le casque et réponde.
 
-Unity n'expose aucun réglage pour l'éviter : désactiver la fonction supprimerait
-aussi le rendu fovéal fixe, qui lui fonctionne et compense la résolution
-augmentée utilisée pour la netteté. En revanche, le greffon vérifie d'abord si
-l'autorisation est déjà donnée. L'accorder par câble pendant la préparation
-suffit donc à ne plus jamais voir la fenêtre, sans rien dégrader :
+Le rendu fovéal étant désormais désactivé — il dégradait la périphérie de
+l'image sans rendre aucun service utile, voir plus haut — la fonction OpenXR
+correspondante est éteinte et l'application ne réclame plus rien. Le manifeste
+ne déclare plus que l'accès au réseau et le suivi des mains, ce qui se vérifie
+sur l'APK livré :
+
+```bash
+aapt2 dump xmltree builds/VR-Cinema-Quest-PRODUCTION.apk \
+  --file AndroidManifest.xml | grep -ci eye   # doit rendre 0
+```
+
+Sur une application plus ancienne, ou si le rendu fovéal devait être réactivé,
+l'autorisation peut être accordée par câble pendant la préparation, ce qui évite
+la fenêtre sans rien dégrader :
 
 ```bash
 scripts/prepare-headset.sh
 ```
 
-Le script installe l'application et accorde l'autorisation sur tous les casques
-branchés, puis vérifie ce que le système a réellement retenu. Sans cette étape,
-la fenêtre revient à chaque démarrage à froid et quelqu'un doit la fermer dans
-le casque — ce qui ruine tout déploiement sans intervention.
+Le script installe l'application, constate si une autorisation est réclamée et
+l'accorde le cas échéant, puis vérifie ce que le système a réellement retenu.
+Sans cette étape, la fenêtre reviendrait à chaque démarrage à froid et quelqu'un
+devrait la fermer dans le casque — ce qui ruine tout déploiement sans
+intervention.
+
+### Le casque refuse de lancer l'application, sans aucune trace
+
+Symptôme : `adb shell am start` rend un succès, aucune trace Unity n'apparaît,
+et le journal système contient :
+
+```
+SystemUXController: Launch is blocked because: a Guardian dialog is currently showing
+VolumetricWindowManagerServiceImpl: Timeout while requesting window placement
+```
+
+Horizon OS attend une réponse à sa fenêtre de limites de sécurité, posée devant
+toute application. Sur un casque posé sur une table, personne ne la voit, et le
+lancement reste suspendu indéfiniment. Pour débloquer sans enfiler le casque :
+
+```bash
+adb shell setprop debug.oculus.guardian_pause 1
+adb shell am force-stop com.oculus.guardian
+```
+
+À réserver aux vérifications par câble : cela suspend les limites de sécurité,
+qui doivent rester actives pour un spectateur debout.
 
 ## Vérifier un casque sans le porter
 

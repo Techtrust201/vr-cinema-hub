@@ -1,20 +1,57 @@
 #!/usr/bin/env bash
-# Normalise des vidéos vers le seul profil que le décodeur du Quest accepte de
-# façon fiable via Unity VideoPlayer : H.264 High, 4K max, yuv420p, AAC, mp4.
+# Normalise des vidéos vers le profil que le décodeur du Quest accepte de façon
+# fiable via Unity VideoPlayer : H.264 High, yuv420p, AAC, mp4.
 #
 # Les sources livrées par les clients sortent de Skybox / caméras 360 et sont
 # régulièrement indécodables telles quelles :
 #   - VP9        : aucun décodeur exposé à Unity VideoPlayer sur Horizon OS ;
-#   - H.264 8K   : au-delà du décodeur AVC du Quest 3 (plafond ~4K) ;
 #   - HEVC .MOV  : conteneur + codec mal gérés, image noire avec audio correct.
 #
 # Symptôme commun : la barre de lecture avance, l'image reste noire.
 #
+# COMBIEN DE DÉFINITION VISER, ET POURQUOI CE N'EST PAS LA MÊME SELON L'IMAGE
+#
+# Ce qui décide de la netteté ressentie n'est pas la définition du fichier, mais
+# le nombre de pixels qui tombent dans un degré du champ de vision. L'écran du
+# Quest 3 en affiche une vingtaine par degré.
+#
+#   - Écran plat  : l'image occupe ~50°, donc 3840 px y donnent ~70 px/degré.
+#                   Très au-delà de ce que la dalle montre : 4K suffit largement,
+#                   et monter plus haut ne gonflerait que le fichier.
+#   - 360         : les mêmes 3840 px sont étalés sur 360°, soit 10,7 px/degré —
+#                   la moitié de ce que l'écran peut rendre, d'où une image molle
+#                   quoi qu'on fasse côté application. Il faut 7680 de large pour
+#                   atteindre 21 px/degré et retrouver la netteté d'un écran plat.
+#   - 360 relief  : en haut/bas, chaque œil ne reçoit que la moitié des lignes.
+#                   C'est le cas le plus exigeant : viser 7680x7680 si la source
+#                   le permet, sinon accepter une image en retrait.
+#
+# Le plafond de 4K appliqué ici auparavant venait d'une limite supposée du
+# décodeur. C'était faux : le Quest 3 annonce H.264 et HEVC jusqu'à 8192x8192
+# (vérifiable dans les traces au démarrage, « Décodeurs matériels »). La 8K passe
+# donc, et c'est le seul vrai levier de netteté pour une vidéo 360.
+#
+# Aucun agrandissement n'est jamais pratiqué : une source 4K reste en 4K, car
+# interpoler des pixels n'ajoute aucun détail. Viser la 8K suppose de l'exporter
+# en 8K depuis l'outil d'origine.
+#
 # Usage : scripts/normalize-for-quest.sh <sortie_dir> <fichier...>
+#   PROJECTION=flat scripts/normalize-for-quest.sh out/ film.mov   # cible 4K
+#   PROJECTION=360  scripts/normalize-for-quest.sh out/ film.mp4   # cible 8K
 set -euo pipefail
 
-MAX_WIDTH=3840
-MAX_HEIGHT=2160
+# Le décodeur matériel du Quest 3 accepte 8192x8192. On s'arrête à 7680 de large,
+# définition 8K usuelle des exports 360, qui laisse une marge au conteneur.
+case "${PROJECTION:-360}" in
+  flat|plat)
+    MAX_WIDTH=3840
+    MAX_HEIGHT=2160
+    ;;
+  *)
+    MAX_WIDTH=7680
+    MAX_HEIGHT=4320
+    ;;
+esac
 # QP 26 était trop agressif : en 360 les pixels sont étalés sur la sphère, et le
 # résultat paraissait compressé. 18 reste rapide en VAAPI tout en restant net.
 QP="${QP:-18}"

@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
 import {
   Upload, MapPin, Clapperboard, FolderOpen, Trash2, Loader2,
   FileVideo, Download, CheckCircle2, XCircle, Play, X, WifiOff, AlertTriangle,
-  ImagePlus, RotateCcw, SlidersHorizontal,
+  ImagePlus, RotateCcw, SlidersHorizontal, Info,
 } from "lucide-react";
 import { toast } from "sonner";
 import { isMovLike, resolveVideoContentType, sanitizeStorageFileName } from "@/lib/videoMime";
@@ -22,7 +22,7 @@ import {
 } from "@/lib/objectStore";
 import { generateVideoThumbnail, prepareImageThumbnail, IMAGE_THUMBNAIL_MAX_BYTES } from "@/lib/videoThumbnail";
 import { detectVideoFormat, type DetectedFormat } from "@/lib/detectVideoFormat";
-import { probeVideoFile, type VideoProbe } from "@/lib/probeVideoFile";
+import { probeVideoFile, sharpnessAdvice, type VideoProbe } from "@/lib/probeVideoFile";
 import {
   inferFormatFromFilename,
   shouldAutoSend,
@@ -397,7 +397,11 @@ export default function Libraries() {
     // Ne pas lire le résultat de setState : hors handler d'événement l'updater
     // n'est pas synchrone, et l'envoi automatique ne partait jamais.
     const current = pendingRef.current.find((it) => it.tempId === item.tempId) ?? item;
-    const pret = { ...applyFormatAnalysis(current, hinted, detected), probe };
+    const formatted = applyFormatAnalysis(current, hinted, detected);
+    // La netteté ne se juge qu'une fois la projection connue : les mêmes pixels
+    // étalés sur 360° ou sur un écran plat ne donnent pas du tout le même rendu.
+    const sharpness = sharpnessAdvice(probe.width, formatted.projection) ?? undefined;
+    const pret = { ...formatted, probe: { ...probe, sharpness } };
     setPending((p) => p.map((it) => (it.tempId === item.tempId ? pret : it)));
     pendingRef.current = pendingRef.current.map((it) => (it.tempId === item.tempId ? pret : it));
 
@@ -408,6 +412,7 @@ export default function Libraries() {
       return;
     }
     if (probe.verdict === "risky") toast.warning(probe.message);
+    else if (sharpness) toast.warning(sharpness.message);
 
     const stereoOk = pret.projection === "flat" || pret.stereo_mode !== "unknown";
     if (!pret.touched && stereoOk && (detected?.confident || hinted.named)) {
@@ -1207,6 +1212,20 @@ export default function Libraries() {
                       {it.probe.advice && (
                         <p className="text-[10px] text-muted-foreground mt-0.5">{it.probe.advice}</p>
                       )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Séparé du verdict : le film se lira sans défaut, il sera seulement
+                    moins net. C'est une information, pas un obstacle à l'envoi. */}
+                {it.probe?.sharpness && (
+                  <div className="rounded-lg border border-sky-500/40 bg-sky-500/10 px-3 py-2 flex items-start gap-2">
+                    <Info size={14} className="mt-0.5 shrink-0 text-sky-500" />
+                    <div className="min-w-0">
+                      <p className="text-[11px] font-medium">{it.probe.sharpness.message}</p>
+                      <p className="text-[10px] text-muted-foreground mt-0.5">
+                        {it.probe.sharpness.advice}
+                      </p>
                     </div>
                   </div>
                 )}

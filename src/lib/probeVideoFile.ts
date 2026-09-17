@@ -22,6 +22,12 @@ export interface VideoProbe {
   message: string;
   /** Ce qu'il doit faire, quand il y a quelque chose à faire. */
   advice?: string;
+  /**
+   * Avertissement de netteté, renseigné une fois la projection connue. Séparé du
+   * verdict : le film se lira sans défaut, il sera seulement moins net que ce que
+   * le casque pourrait montrer.
+   */
+  sharpness?: { message: string; advice: string };
 }
 
 // Identifiants de codec tels qu'ils apparaissent dans la table `stsd` d'un MP4.
@@ -36,9 +42,60 @@ const CODECS: Record<string, { label: string; verdict: VideoVerdict }> = {
   mp4v: { label: "MPEG-4 Part 2", verdict: "unsupported" },
 };
 
-// Au-delà, le décodeur matériel du Quest 3 décroche sur du H.264.
-const MAX_SAFE_WIDTH = 4096;
-const MAX_SAFE_HEIGHT = 2304;
+// Ce que le décodeur matériel du Quest 3 annonce réellement : 8192 × 8192 en
+// H.264 comme en HEVC. Un plafond de 4096 figurait ici, hérité du Quest 2 : il
+// faisait conseiller de réduire en 4K une source 8K, donc de dégrader la seule
+// chose qui rende une vidéo 360 nette. Les traces du casque au démarrage
+// (« Décodeurs matériels ») donnent la valeur exacte de l'appareil en service.
+const MAX_SAFE_WIDTH = 8192;
+const MAX_SAFE_HEIGHT = 8192;
+
+/**
+ * Définition à partir de laquelle une vidéo panoramique est réellement nette.
+ *
+ * La netteté ressentie ne dépend pas de la définition du fichier mais du nombre
+ * de pixels tombant dans un degré du champ de vision. L'écran du Quest 3 en
+ * montre une vingtaine. Une image étalée sur 360° a donc besoin d'environ 7680
+ * pixels de large pour les atteindre ; en 4K elle plafonne à 10,7, soit la
+ * moitié, et paraît molle quoi que fasse l'application.
+ *
+ * Un film sur écran plat n'occupe qu'une cinquantaine de degrés : 4K y donne
+ * déjà près de 70 pixels par degré, bien au-delà du nécessaire. C'est pourquoi
+ * un même fichier 4K paraît superbe sur écran plat et flou en 360.
+ */
+const SHARP_360_WIDTH = 7680;
+const SHARP_180_WIDTH = 3840;
+
+/**
+ * Prévient qu'une vidéo panoramique est trop peu définie pour être nette dans le
+ * casque. Rend `null` quand il n'y a rien à signaler.
+ *
+ * Distinct du verdict de compatibilité : le film se lira parfaitement, il sera
+ * simplement moins net que ce que le casque sait afficher. C'est une information
+ * à donner avant l'envoi, quand il est encore temps de demander un meilleur
+ * export, plutôt qu'une découverte faite casque sur la tête.
+ */
+export function sharpnessAdvice(
+  width: number | null,
+  projection: string | null | undefined,
+): { message: string; advice: string } | null {
+  if (!width || !projection) return null;
+
+  // Le relief haut/bas partage les lignes entre les deux yeux : à définition
+  // égale, chaque œil en reçoit la moitié.
+  const needed = projection === "360" ? SHARP_360_WIDTH : projection === "180" ? SHARP_180_WIDTH : 0;
+  if (needed === 0 || width >= needed) return null;
+
+  const perDegree = projection === "360" ? width / 360 : width / 180;
+  return {
+    message:
+      `Ce film sera lisible mais peu net : ${width} pixels étalés sur ${projection}° ` +
+      `ne donnent que ${perDegree.toFixed(1)} pixels par degré, là où le casque en affiche 20.`,
+    advice:
+      `Pour une image nette, demandez un export en ${needed} pixels de large ` +
+      `(${needed === 7680 ? "8K" : "4K"}) : le casque sait le lire.`,
+  };
+}
 
 async function readChunk(file: Blob, start: number, length: number): Promise<DataView> {
   const end = Math.min(start + length, file.size);
@@ -223,8 +280,8 @@ export async function probeVideoFile(file: File): Promise<VideoProbe> {
         container,
         width,
         height,
-        message: `Ce film est en ${width} × ${height}, au-delà de ce que le casque décode de façon fiable.`,
-        advice: "Réduisez-le en 4K (3840 × 2160) pour éviter les images noires ou saccadées.",
+        message: `Ce film est en ${width} × ${height}, au-delà des 8192 pixels que le casque sait décoder.`,
+        advice: "Réduisez-le à 7680 pixels de large au maximum, sinon l'écran restera noir.",
       };
     }
 

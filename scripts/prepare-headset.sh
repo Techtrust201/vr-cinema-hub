@@ -94,20 +94,29 @@ for serial in "${serials[@]}"; do
     continue
   fi
 
-  granted=0
-  for perm in "${PERMISSIONS[@]}"; do
-    adb -s "$serial" shell pm grant "$PKG" "$perm" >/dev/null 2>&1 && granted=$((granted + 1)) || true
-  done
+  # Depuis que le rendu fovéal est désactivé, l'application ne déclare plus
+  # d'accès au suivi oculaire : il n'y a alors rien à accorder, et c'est le
+  # meilleur des cas. On ne le tient pour un échec que si l'autorisation est
+  # réclamée sans être obtenue — auquel cas la fenêtre bloquerait le démarrage.
+  declared=$(adb -s "$serial" shell dumpsys package "$PKG" 2>/dev/null | grep -c 'EYE_TRACKING' || true)
 
-  # Ce que le système retient réellement, pas ce qu'on a demandé : une
-  # autorisation inconnue d'Horizon OS est refusée sans le dire.
-  if adb -s "$serial" shell dumpsys package "$PKG" 2>/dev/null \
-      | grep -qE 'EYE_TRACKING.*granted=true'; then
-    echo "   suivi oculaire accordé — aucune fenêtre au démarrage"
+  if [[ "${declared:-0}" -eq 0 ]]; then
+    echo "   aucun accès au suivi oculaire réclamé — rien ne bloquera le démarrage"
   else
-    echo "   ATTENTION : aucune autorisation de suivi oculaire retenue." >&2
-    echo "   La fenêtre risque d'apparaître au premier lancement." >&2
-    failures=$((failures + 1))
+    for perm in "${PERMISSIONS[@]}"; do
+      adb -s "$serial" shell pm grant "$PKG" "$perm" >/dev/null 2>&1 || true
+    done
+
+    # Ce que le système retient réellement, pas ce qu'on a demandé : une
+    # autorisation inconnue d'Horizon OS est refusée sans le dire.
+    if adb -s "$serial" shell dumpsys package "$PKG" 2>/dev/null \
+        | grep -qE 'EYE_TRACKING.*granted=true'; then
+      echo "   suivi oculaire accordé — aucune fenêtre au démarrage"
+    else
+      echo "   ATTENTION : accès au suivi oculaire réclamé mais non obtenu." >&2
+      echo "   La fenêtre risque d'apparaître au premier lancement." >&2
+      failures=$((failures + 1))
+    fi
   fi
 
   version=$(adb -s "$serial" shell dumpsys package "$PKG" 2>/dev/null \

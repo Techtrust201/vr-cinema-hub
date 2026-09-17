@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { probeVideoFile } from "./probeVideoFile";
+import { probeVideoFile, sharpnessAdvice } from "./probeVideoFile";
 
 // Construit de vrais fichiers MP4 en miniature. Un MP4 étant un arbre de boîtes
 // « taille + type + contenu », quelques dizaines d'octets suffisent à reproduire
@@ -92,11 +92,21 @@ describe("probeVideoFile", () => {
     expect(r.codecLabel).toBe("HEVC (H.265)");
   });
 
-  it("alerte sur une définition que le casque ne tient pas", async () => {
+  it("accepte une source 8K, que le décodeur du Quest 3 tient", async () => {
+    // Ce cas était auparavant refusé au motif d'un plafond de 4096 hérité du
+    // Quest 2 : l'exploitant était invité à réduire en 4K la seule définition
+    // qui rende une vidéo 360 nette.
     const r = await probeVideoFile(asFile(mp4("avc1", 7680, 3840)));
-    expect(r.verdict).toBe("risky");
-    expect(r.message).toContain("7680");
-    expect(r.advice).toMatch(/3840/);
+    expect(r.verdict).toBe("ok");
+    expect(r.width).toBe(7680);
+  });
+
+  it("alerte sur une définition que le casque ne tient pas", async () => {
+    const r = await probeVideoFile(asFile(mp4("avc1", 8192, 8192)));
+    expect(r.verdict).toBe("ok");
+    const tropGrand = await probeVideoFile(asFile(mp4("avc1", 8192, 8194)));
+    expect(tropGrand.verdict).toBe("risky");
+    expect(tropGrand.message).toContain("8192");
   });
 
   it("trouve les informations même quand elles sont en fin de fichier", async () => {
@@ -143,5 +153,41 @@ describe("probeVideoFile", () => {
       expect(r.message.length).toBeGreaterThan(10);
       expect(r.message).not.toMatch(/_|stsd|moov|codec_/i);
     }
+  });
+});
+
+describe("sharpnessAdvice", () => {
+  it("prévient qu'une 360 en 4K sera peu nette", () => {
+    const a = sharpnessAdvice(3840, "360");
+    expect(a).not.toBeNull();
+    // 3840 / 360 = 10,7 pixels par degré, contre une vingtaine affichés.
+    expect(a!.message).toContain("10.7");
+    expect(a!.advice).toContain("7680");
+  });
+
+  it("ne dit rien d'une 360 en 8K", () => {
+    expect(sharpnessAdvice(7680, "360")).toBeNull();
+  });
+
+  it("ne dit rien d'un écran plat, où la 4K est déjà surabondante", () => {
+    expect(sharpnessAdvice(1920, "flat")).toBeNull();
+    expect(sharpnessAdvice(3840, "flat")).toBeNull();
+  });
+
+  it("attend moins d'une 180, qui étale ses pixels sur deux fois moins large", () => {
+    expect(sharpnessAdvice(3840, "180")).toBeNull();
+    expect(sharpnessAdvice(1920, "180")).not.toBeNull();
+  });
+
+  it("se taît quand la définition ou la projection est inconnue", () => {
+    expect(sharpnessAdvice(null, "360")).toBeNull();
+    expect(sharpnessAdvice(3840, null)).toBeNull();
+    expect(sharpnessAdvice(3840, undefined)).toBeNull();
+  });
+
+  it("parle de netteté sans jargon technique", () => {
+    const a = sharpnessAdvice(3840, "360")!;
+    expect(a.message).not.toMatch(/equirect|codec|bitrate|foveat/i);
+    expect(a.message).toMatch(/net/i);
   });
 });

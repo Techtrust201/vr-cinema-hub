@@ -1,0 +1,600 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>VR Cinema Hub — Guide de prise en main</title>
+<style>
+  @page { size: A4; margin: 18mm 16mm 16mm 16mm; }
+
+  :root {
+    --encre: #1a1d24;
+    --gris: #5b6472;
+    --trait: #d8dde5;
+    --accent: #1f6feb;
+    --vert: #0f7b45;
+    --ambre: #9a6400;
+    --rouge: #b42318;
+    --fond-doux: #f5f7fa;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+    color: var(--encre);
+    font-size: 10.5pt;
+    line-height: 1.5;
+    margin: 0;
+  }
+
+  h1 { font-size: 26pt; line-height: 1.15; margin: 0 0 6px; letter-spacing: -0.4px; }
+  h2 {
+    font-size: 15pt;
+    margin: 20px 0 9px;
+    padding-bottom: 5px;
+    border-bottom: 2px solid var(--encre);
+    page-break-after: avoid;
+  }
+  h3 { font-size: 11.5pt; margin: 16px 0 6px; page-break-after: avoid; }
+  p { margin: 0 0 8px; }
+  ul, ol { margin: 0 0 8px; padding-left: 20px; }
+  li { margin-bottom: 4px; }
+  strong { font-weight: 600; }
+  code {
+    font-family: "SF Mono", Menlo, Consolas, monospace;
+    font-size: 9pt;
+    background: var(--fond-doux);
+    border: 1px solid var(--trait);
+    border-radius: 3px;
+    padding: 1px 4px;
+  }
+  pre {
+    font-family: "SF Mono", Menlo, Consolas, monospace;
+    font-size: 9pt;
+    background: var(--encre);
+    color: #f0f3f8;
+    padding: 9px 12px;
+    border-radius: 5px;
+    margin: 8px 0;
+    overflow-wrap: break-word;
+    white-space: pre-wrap;
+  }
+  pre code { background: none; border: none; color: inherit; padding: 0; }
+
+  /* ---- page de garde ---- */
+  .garde {
+    height: 247mm;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    page-break-after: always;
+  }
+  .garde .surtitre {
+    text-transform: uppercase;
+    letter-spacing: 2.5px;
+    font-size: 8.5pt;
+    color: var(--accent);
+    font-weight: 700;
+    margin-bottom: 14px;
+  }
+  .garde .sous {
+    font-size: 13pt;
+    color: var(--gris);
+    margin: 10px 0 30px;
+    max-width: 125mm;
+  }
+  .garde .filet { height: 4px; width: 60px; background: var(--accent); margin-bottom: 26px; }
+  .garde dl { display: grid; grid-template-columns: 42mm 1fr; gap: 5px 0; font-size: 10pt; max-width: 135mm; }
+  .garde dt { color: var(--gris); }
+  .garde dd { margin: 0; font-weight: 600; }
+
+  /* ---- sommaire ---- */
+  .sommaire { page-break-after: always; }
+  .sommaire ol { list-style: none; padding: 0; counter-reset: s; }
+  .sommaire li {
+    counter-increment: s;
+    padding: 7px 0;
+    border-bottom: 1px solid var(--trait);
+    display: flex;
+    gap: 10px;
+  }
+  .sommaire li::before {
+    content: counter(s);
+    color: var(--accent);
+    font-weight: 700;
+    min-width: 17px;
+  }
+  .sommaire .quoi { color: var(--gris); font-size: 9.5pt; }
+
+  /* ---- encadrés ---- */
+  .bloc {
+    border-left: 3px solid var(--accent);
+    background: var(--fond-doux);
+    padding: 8px 11px;
+    margin: 9px 0;
+    border-radius: 0 4px 4px 0;
+    page-break-inside: avoid;
+  }
+  .bloc.attention { border-left-color: var(--ambre); background: #fdf8ec; }
+  .bloc.stop { border-left-color: var(--rouge); background: #fdf3f2; }
+  .bloc.ok { border-left-color: var(--vert); background: #f2f9f5; }
+  .bloc .titre {
+    font-weight: 700;
+    font-size: 9pt;
+    text-transform: uppercase;
+    letter-spacing: 0.7px;
+    margin-bottom: 4px;
+    color: var(--accent);
+  }
+  .bloc.attention .titre { color: var(--ambre); }
+  .bloc.stop .titre { color: var(--rouge); }
+  .bloc.ok .titre { color: var(--vert); }
+  .bloc p:last-child { margin-bottom: 0; }
+
+  /* ---- étapes ---- */
+  .etapes { counter-reset: e; list-style: none; padding: 0; }
+  .etapes > li {
+    counter-increment: e;
+    position: relative;
+    padding-left: 32px;
+    margin-bottom: 11px;
+    page-break-inside: avoid;
+  }
+  .etapes > li::before {
+    content: counter(e);
+    position: absolute;
+    left: 0;
+    top: -1px;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: var(--encre);
+    color: #fff;
+    font-weight: 700;
+    font-size: 10pt;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .etapes > li > .quoi { font-weight: 600; display: block; }
+
+  /* ---- tableaux ---- */
+  table { width: 100%; border-collapse: collapse; margin: 10px 0; font-size: 9.5pt; page-break-inside: avoid; }
+  th {
+    text-align: left;
+    background: var(--encre);
+    color: #fff;
+    padding: 6px 9px;
+    font-size: 8.5pt;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  td { padding: 6px 9px; border-bottom: 1px solid var(--trait); vertical-align: top; }
+  tr:nth-child(even) td { background: #fafbfd; }
+
+  .illus { margin: 12px 0; page-break-inside: avoid; }
+  .illus img { width: 100%; border: 1px solid var(--trait); border-radius: 4px; display: block; }
+  .illus .legende { font-size: 8.5pt; color: var(--gris); margin-top: 5px; font-style: italic; }
+
+  .deux { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .fin {
+    margin-top: 16px;
+    padding-top: 10px;
+    border-top: 1px solid var(--trait);
+    font-size: 9pt;
+    color: var(--gris);
+  }
+  .nowrap { white-space: nowrap; }
+</style>
+</head>
+<body>
+
+<!-- ============ PAGE DE GARDE ============ -->
+<section class="garde">
+  <div class="surtitre">Guide de prise en main</div>
+  <h1>VR Cinema Hub</h1>
+  <div class="filet"></div>
+  <p class="sous">
+    Diffuser vos films en réalité virtuelle sur une flotte de casques Meta Quest,
+    depuis une simple page web. Tout ce qu'il faut savoir, sans connaissance technique.
+  </p>
+  <dl>
+    <dt>Tableau de bord</dt><dd>vr-cinema-hub.vercel.app</dd>
+    <dt>Casques compatibles</dt><dd>Meta Quest 3 et Quest 3S</dd>
+    <dt>Nombre de casques</dt><dd>De 1 à 50, sans réglage supplémentaire</dd>
+    <dt>Version de l'application</dt><dd>1.1.6</dd>
+  </dl>
+</section>
+
+<!-- ============ SOMMAIRE ============ -->
+<section class="sommaire">
+  <h2 style="margin-top:0">Sommaire</h2>
+  <ol>
+    <li><div><strong>Comment ça marche</strong><div class="quoi">Le principe en trois phrases</div></div></li>
+    <li><div><strong>Préparer les casques</strong><div class="quoi">Une seule commande, même pour cinquante casques</div></div></li>
+    <li><div><strong>Ajouter un film</strong><div class="quoi">Glisser, déposer, c'est envoyé</div></div></li>
+    <li><div><strong>Obtenir une belle image</strong><div class="quoi">Ce qu'il faut demander à votre vidéaste</div></div></li>
+    <li><div><strong>Composer un programme</strong><div class="quoi">Choisir les films que verra chaque casque</div></div></li>
+    <li><div><strong>Mettre les casques en service</strong><div class="quoi">Associer un casque à un programme</div></div></li>
+    <li><div><strong>Gérer plusieurs casques</strong><div class="quoi">Les groupes, pour ne rien faire cinquante fois</div></div></li>
+    <li><div><strong>Surveiller la flotte</strong><div class="quoi">Savoir où en est chaque casque</div></div></li>
+    <li><div><strong>Quand ça ne va pas</strong><div class="quoi">Les pannes courantes et leur solution</div></div></li>
+    <li><div><strong>À ne pas faire</strong><div class="quoi">Les quelques pièges à connaître</div></div></li>
+  </ol>
+</section>
+
+<!-- ============ 1 ============ -->
+<h2>1. Comment ça marche</h2>
+
+<p>
+  Vous déposez vos films sur une page web. Vous décidez quels films va recevoir quel casque.
+  Les casques les téléchargent tout seuls dès qu'ils sont allumés et connectés au Wi-Fi.
+</p>
+<p>
+  Ensuite, <strong>les casques n'ont plus besoin de rien</strong> : les films sont enregistrés dans
+  leur mémoire. Vous pouvez les emporter n'importe où, sans Wi-Fi, sans ordinateur, et les
+  spectateurs regardent les films en toute autonomie.
+</p>
+
+<div class="bloc ok">
+  <div class="titre">Ce qu'il faut retenir</div>
+  <p>
+    Le Wi-Fi sert uniquement à <em>remplir</em> les casques. Pendant les projections, il est inutile.
+    C'est ce qui permet d'utiliser les casques en extérieur, sur un salon ou dans un lieu sans réseau.
+  </p>
+</div>
+
+<h3>Les trois pages que vous utiliserez</h3>
+<table>
+  <tr><th style="width:32mm">Page</th><th>À quoi elle sert</th></tr>
+  <tr><td><strong>Bibliothèque</strong></td><td>Déposer vos films et corriger leurs réglages.</td></tr>
+  <tr><td><strong>Programmes</strong></td><td>Composer les listes de films à diffuser.</td></tr>
+  <tr><td><strong>Casques</strong></td><td>Associer les casques aux programmes et suivre leur état.</td></tr>
+</table>
+
+<!-- ============ 2 ============ -->
+<h2>2. Préparer les casques</h2>
+
+<p>
+  À faire <strong>une seule fois par casque</strong>, avant la première utilisation. Il faut un
+  ordinateur et un câble USB.
+</p>
+
+<ol class="etapes">
+  <li>
+    <span class="quoi">Autoriser l'ordinateur</span>
+    Branchez le casque à l'ordinateur, mettez-le sur votre tête : une fenêtre demande d'autoriser
+    l'ordinateur. Acceptez, et cochez « toujours autoriser ».
+  </li>
+  <li>
+    <span class="quoi">Lancer l'installation</span>
+    Sur l'ordinateur, ouvrez un terminal dans le dossier du projet et tapez&nbsp;:
+    <pre><code>scripts/prepare-headset.sh</code></pre>
+  </li>
+  <li>
+    <span class="quoi">Vérifier le message</span>
+    Le programme affiche la liste des casques traités et termine par
+    « <em>Casques prêts. Ils peuvent être livrés tels quels.</em> »
+  </li>
+</ol>
+
+<div class="bloc">
+  <div class="titre">Plusieurs casques à la fois</div>
+  <p>
+    Branchez-les tous ensemble, sur un multiprise USB par exemple, et lancez la même commande :
+    elle les traite l'un après l'autre et vous annonce combien ont été préparés. Rien d'autre à faire.
+  </p>
+</div>
+
+<div class="bloc attention">
+  <div class="titre">Si un casque échoue</div>
+  <p>
+    Le programme vous le dit et continue avec les suivants. Débranchez puis rebranchez le casque
+    récalcitrant, remettez-le sur votre tête pour vérifier qu'aucune fenêtre n'attend une réponse,
+    puis relancez la commande. Elle ne fait aucun mal aux casques déjà prêts.
+  </p>
+</div>
+
+<!-- ============ 3 ============ -->
+<h2>3. Ajouter un film</h2>
+
+<ol class="etapes">
+  <li>
+    <span class="quoi">Ouvrir la bibliothèque</span>
+    Rendez-vous sur le tableau de bord, puis sur la page <strong>Bibliothèque</strong>.
+  </li>
+  <li>
+    <span class="quoi">Déposer le fichier</span>
+    Faites glisser le film depuis votre ordinateur vers la zone prévue. Les fichiers qui ne sont
+    pas des vidéos sont refusés immédiatement.
+  </li>
+  <li>
+    <span class="quoi">Laisser l'application reconnaître le film</span>
+    Elle lit le nom du fichier et son contenu pour deviner s'il s'agit d'une image à 360°, à 180°,
+    ou d'un film ordinaire à projeter sur un écran. Si elle est sûre, l'envoi démarre tout seul.
+  </li>
+  <li>
+    <span class="quoi">Répondre si l'on vous demande</span>
+    En cas de doute, l'application vous pose la question en français. Choisissez, puis validez.
+  </li>
+</ol>
+
+<h3>Les trois sortes d'images</h3>
+<table>
+  <tr><th style="width:30mm">Type</th><th>Ce que voit le spectateur</th></tr>
+  <tr><td><strong>360°</strong></td><td>Il est au centre de l'image et peut regarder partout, y compris derrière lui.</td></tr>
+  <tr><td><strong>180°</strong></td><td>L'image l'entoure de face, sur la moitié avant seulement.</td></tr>
+  <tr><td><strong>Écran</strong></td><td>Un film classique projeté sur un grand écran, comme au cinéma.</td></tr>
+</table>
+
+<div class="bloc attention">
+  <div class="titre">Un film à l'envers ou coupé en deux&nbsp;?</div>
+  <p>
+    C'est que le type d'image retenu n'était pas le bon. Inutile de renvoyer le fichier :
+    dans la bibliothèque, cliquez sur l'icône de réglages en face du film, corrigez le type,
+    et enregistrez. Les casques se mettront à jour tout seuls.
+  </p>
+</div>
+
+<!-- ============ 4 ============ -->
+<h2>4. Obtenir une belle image</h2>
+
+<p>
+  C'est le point le plus mal compris, et pourtant le plus simple à retenir&nbsp;: la qualité ressentie
+  ne dépend pas seulement de la définition du fichier, mais de <strong>la surface sur laquelle
+  cette définition est étalée</strong>.
+</p>
+
+<p>
+  Un film en 4K projeté sur un écran virtuel occupe une petite partie de votre champ de vision :
+  l'image est superbe. Le même film en 4K, mais à 360°, doit couvrir tout l'espace autour de vous,
+  <em>y compris derrière</em> : les mêmes pixels sont alors étirés sur une surface six fois plus
+  grande, et l'image paraît molle. Ce n'est pas un défaut de l'application ni du casque.
+</p>
+
+<h3>Ce qu'il faut demander pour chaque type de film</h3>
+<table>
+  <tr><th style="width:30mm">Type</th><th style="width:34mm">Définition à demander</th><th>Pourquoi</th></tr>
+  <tr>
+    <td><strong>Écran</strong></td>
+    <td class="nowrap">4K — 3840 × 2160</td>
+    <td>Largement suffisant : l'image est concentrée sur une surface réduite.</td>
+  </tr>
+  <tr>
+    <td><strong>180°</strong></td>
+    <td class="nowrap">4K — 3840 de large</td>
+    <td>L'image ne couvre que la moitié avant, la 4K y reste correcte.</td>
+  </tr>
+  <tr>
+    <td><strong>360°</strong></td>
+    <td class="nowrap"><strong>8K — 7680 de large</strong></td>
+    <td>Seule façon d'obtenir, à 360°, la netteté d'un film sur écran. Le casque sait la lire.</td>
+  </tr>
+</table>
+
+<div class="bloc ok">
+  <div class="titre">L'application vous prévient</div>
+  <p>
+    Si vous déposez un film à 360° trop peu défini, un message bleu vous l'indique avant l'envoi et
+    vous précise la définition à réclamer. Le film fonctionnera quand même : il sera simplement moins
+    net qu'il pourrait l'être.
+  </p>
+</div>
+
+<div class="illus">
+  <img src="assets/apercu-360.jpg" alt="Vue à 360° telle qu'elle apparaît dans le casque">
+  <div class="legende">
+    Une vidéo à 360° telle qu'elle s'affiche dans le casque, un cercle par œil. La netteté est
+    uniforme jusqu'aux bords de l'image.
+  </div>
+</div>
+
+<h3>La consigne à transmettre à votre vidéaste</h3>
+<div class="bloc">
+  <p>
+    « Export en MP4, codec H.264, son AAC. Pour les vues à 360° : 7680 × 3840, avec un débit élevé
+    (au moins 60 Mb/s). Pour les films sur écran : 3840 × 2160 suffit. Éviter les codecs VP9 et AV1,
+    ainsi que les fichiers MKV et WEBM, que le casque ne sait pas ouvrir. »
+  </p>
+</div>
+
+<!-- ============ 5 ============ -->
+<h2>5. Composer un programme</h2>
+
+<p>
+  Un <strong>programme</strong> est simplement une liste de films, dans l'ordre où vous voulez les
+  proposer. C'est ce que l'on attribue aux casques — jamais les films un par un.
+</p>
+
+<ol class="etapes">
+  <li><span class="quoi">Ouvrir la page Programmes</span> Puis créer un programme et lui donner un nom parlant, par exemple « Salon de Paris ».</li>
+  <li><span class="quoi">Ajouter les films</span> Choisissez-les dans votre bibliothèque.</li>
+  <li><span class="quoi">Ranger dans l'ordre</span> L'ordre de la liste est celui que verront les spectateurs.</li>
+</ol>
+
+<div class="bloc">
+  <div class="titre">Bon réflexe</div>
+  <p>
+    Créez un programme par usage — par client, par salle, par événement — plutôt qu'un programme
+    unique que vous modifieriez sans cesse. Vous pourrez ainsi changer le contenu d'un lieu sans
+    toucher aux autres.
+  </p>
+</div>
+
+<!-- ============ 6 ============ -->
+<h2>6. Mettre les casques en service</h2>
+
+<ol class="etapes">
+  <li>
+    <span class="quoi">Demander un code</span>
+    Sur la page <strong>Casques</strong>, cliquez sur « Appairer un casque ». Un code à six chiffres
+    s'affiche.
+  </li>
+  <li>
+    <span class="quoi">Saisir le code dans le casque</span>
+    Mettez le casque, ouvrez l'application, et tapez le code.
+  </li>
+  <li>
+    <span class="quoi">Attribuer un programme</span>
+    Le casque apparaît dans la liste. Donnez-lui un nom reconnaissable, puis attribuez-lui un
+    programme ou ajoutez-le à un groupe.
+  </li>
+  <li>
+    <span class="quoi">Laisser le casque se remplir</span>
+    Il télécharge les films tout seul. Laissez-le allumé, branché et sur le Wi-Fi le temps
+    nécessaire — comptez quelques minutes par film.
+  </li>
+</ol>
+
+<div class="bloc attention">
+  <div class="titre">Le casque s'endort pendant le téléchargement</div>
+  <p>
+    C'est normal : posé sur une table, un casque se met en veille au bout d'une quinzaine de secondes
+    et suspend son téléchargement. Pour remplir plusieurs casques sans les porter, laissez-les
+    branchés sur secteur et reprenez-les régulièrement, ou demandez à votre prestataire technique
+    d'activer le mode atelier.
+  </p>
+</div>
+
+<!-- ============ 7 ============ -->
+<h2>7. Gérer plusieurs casques</h2>
+
+<p>
+  Dès que vous dépassez trois ou quatre casques, n'attribuez plus les programmes casque par casque.
+  Utilisez les <strong>groupes</strong>.
+</p>
+
+<ol class="etapes">
+  <li><span class="quoi">Créer un groupe</span> Par exemple « Stand accueil » ou « Tournée de mai ».</li>
+  <li><span class="quoi">Attribuer le programme au groupe</span> Et non aux casques.</li>
+  <li><span class="quoi">Glisser les casques dans le groupe</span> Chaque casque ajouté reçoit aussitôt tout le contenu du groupe.</li>
+</ol>
+
+<div class="bloc ok">
+  <div class="titre">L'intérêt, concrètement</div>
+  <p>
+    Pour changer le film diffusé sur cinquante casques, vous modifiez <strong>un seul</strong>
+    programme. Les cinquante casques se mettent à jour d'eux-mêmes à leur prochaine connexion,
+    sans que vous touchiez à un seul d'entre eux.
+  </p>
+</div>
+
+<h3>Déployer une flotte, dans l'ordre</h3>
+<table>
+  <tr><th style="width:12mm">Ordre</th><th>Opération</th></tr>
+  <tr><td>1</td><td>Préparer tous les casques par USB (chapitre 2).</td></tr>
+  <tr><td>2</td><td>Déposer les films et vérifier leur type d'image (chapitre 3).</td></tr>
+  <tr><td>3</td><td>Composer le programme (chapitre 5).</td></tr>
+  <tr><td>4</td><td>Créer le groupe et lui attribuer le programme (chapitre 7).</td></tr>
+  <tr><td>5</td><td>Associer chaque casque, puis le glisser dans le groupe (chapitre 6).</td></tr>
+  <tr><td>6</td><td>Laisser les casques se remplir, puis vérifier la page Synchronisation.</td></tr>
+</table>
+
+<!-- ============ 8 ============ -->
+<h2>8. Surveiller la flotte</h2>
+
+<p>
+  La page <strong>Synchronisation</strong> indique, pour chaque casque, ce qu'il a réellement reçu —
+  d'après ce que le casque lui-même a confirmé, et non d'après ce qui lui a été demandé.
+</p>
+
+<table>
+  <tr><th style="width:44mm">Message affiché</th><th>Ce que vous devez en conclure</th></tr>
+  <tr><td><strong>Contenu à jour</strong></td><td>Tout est en place. Le casque est prêt à projeter.</td></tr>
+  <tr><td><strong>Mise à jour en attente</strong></td><td>Du contenu l'attend. Il le prendra dès qu'il sera allumé sur le Wi-Fi.</td></tr>
+  <tr><td><strong>Échec de mise à jour</strong></td><td>Un téléchargement a échoué. Voir le chapitre suivant.</td></tr>
+  <tr><td><strong>Jamais synchronisé</strong></td><td>Le casque est associé mais n'a encore rien reçu.</td></tr>
+  <tr><td><strong>Application hors ligne</strong></td><td>Elle n'a pas donné de nouvelles depuis un moment. Cela ne veut pas dire que le casque est éteint : il peut très bien être en train de projeter un film hors réseau.</td></tr>
+</table>
+
+<div class="bloc">
+  <div class="titre">Le bouton Analyser</div>
+  <p>
+    En cas de doute, c'est le premier réflexe. Il produit un compte rendu lisible : ce que le casque
+    devrait afficher, pourquoi il le reçoit, et si la mise à jour automatique fonctionne.
+    Joignez ce compte rendu à toute demande d'assistance.
+  </p>
+</div>
+
+<!-- ============ 9 ============ -->
+<h2>9. Quand ça ne va pas</h2>
+
+<table>
+  <tr><th style="width:52mm">Ce que vous constatez</th><th>Ce qu'il faut faire</th></tr>
+  <tr>
+    <td>Le film est à l'envers, ou l'image est coupée en deux.</td>
+    <td>Le type d'image est mal réglé. Corrigez-le dans la bibliothèque (chapitre 3), sans renvoyer le fichier.</td>
+  </tr>
+  <tr>
+    <td>L'image est floue, alors que tout fonctionne.</td>
+    <td>Le film n'est pas assez défini pour être étalé à 360°. Demandez un export en 8K (chapitre 4).</td>
+  </tr>
+  <tr>
+    <td>Le son fonctionne mais l'écran reste noir.</td>
+    <td>Le film utilise un codec que le casque ne sait pas lire. Faites-le reconvertir en MP4 / H.264.</td>
+  </tr>
+  <tr>
+    <td>Le casque montre la pièce autour de vous au lieu de l'application.</td>
+    <td>Il s'est mis en veille. Remettez-le sur votre tête et bougez la tête quelques secondes ; l'image revient.</td>
+  </tr>
+  <tr>
+    <td>Le téléchargement n'avance plus.</td>
+    <td>Le casque s'est endormi, ou le Wi-Fi a été coupé. Rebranchez-le, reprenez-le en main, et vérifiez la page Synchronisation.</td>
+  </tr>
+  <tr>
+    <td>Un casque n'apparaît pas dans la liste.</td>
+    <td>L'association n'a pas abouti. Recommencez avec un nouveau code (chapitre 6) : un code n'est valable qu'une fois.</td>
+  </tr>
+  <tr>
+    <td>Le casque est à court de place.</td>
+    <td>Retirez des films de son programme : il libérera de lui-même ceux qu'il n'a plus à conserver.</td>
+  </tr>
+</table>
+
+<!-- ============ 10 ============ -->
+<h2>10. À ne pas faire</h2>
+
+<div class="bloc stop">
+  <div class="titre">Fermer l'onglet pendant un envoi</div>
+  <p>
+    Un envoi interrompu ne reprend pas où il s'était arrêté : il faut recommencer le film entier.
+    L'application vous avertit si vous tentez de fermer la page, mais évitez aussi de mettre
+    l'ordinateur en veille pendant le transfert d'un gros fichier.
+  </p>
+</div>
+
+<div class="bloc stop">
+  <div class="titre">Supprimer un film encore utilisé</div>
+  <p>
+    Retirez-le d'abord des programmes qui le contiennent. Sinon les casques chercheront un film
+    qui n'existe plus et signaleront un échec de mise à jour.
+  </p>
+</div>
+
+<div class="bloc stop">
+  <div class="titre">Réinitialiser un casque sans prévenir</div>
+  <p>
+    Une réinitialisation efface l'application et l'association. Le casque devra repasser par la
+    préparation par USB (chapitre 2), puis par un nouveau code.
+  </p>
+</div>
+
+<div class="bloc attention">
+  <div class="titre">Bon à savoir</div>
+  <p>
+    Les films sont conservés hors du casque, sur un stockage en ligne. Perdre ou réinitialiser un
+    casque ne fait donc jamais perdre un film : il suffit de le préparer à nouveau et de l'associer
+    pour qu'il se remplisse tout seul.
+  </p>
+</div>
+
+<div class="fin">
+  <p>
+    <strong>VR Cinema Hub</strong> — guide de prise en main, version 1.1.6.
+    Les procédures détaillées à l'usage des techniciens figurent dans les documents
+    <em>GUIDE_EXPLOITANT</em> et <em>TROUBLESHOOTING</em> fournis avec l'application.
+  </p>
+</div>
+
+</body>
+</html>
