@@ -75,20 +75,25 @@ describe("probeVideoFile", () => {
     expect(r.height).toBe(2160);
   });
 
-  it("refuse le VP9, qui donnerait un écran noir", async () => {
+  it("accepte le VP9, dont la lecture a été éprouvée sur casque", async () => {
+    // Ce cas était refusé, l'envoi retenu avant même le transfert. Le Quest 3
+    // déclare un décodeur VP9 et un extrait a été lu sans faute sur l'appareil.
     const r = await probeVideoFile(asFile(mp4("vp09", 3840, 2160)));
-    expect(r.verdict).toBe("unsupported");
+    expect(r.verdict).toBe("ok");
     expect(r.codecLabel).toBe("VP9");
-    expect(r.advice).toMatch(/H\.264/);
   });
 
-  it("refuse l'AV1", async () => {
-    expect((await probeVideoFile(asFile(mp4("av01", 1920, 960)))).verdict).toBe("unsupported");
-  });
-
-  it("signale le HEVC comme risqué sans le bloquer", async () => {
-    const r = await probeVideoFile(asFile(mp4("hvc1", 3840, 2160)));
+  it("avertit sur l'AV1 sans retenir l'envoi", async () => {
+    // Décodeur matériel présent, mais aucune lecture éprouvée : le doute doit
+    // être signalé, pas transformé en refus.
+    const r = await probeVideoFile(asFile(mp4("av01", 1920, 960)));
     expect(r.verdict).toBe("risky");
+    expect(r.codecLabel).toBe("AV1");
+  });
+
+  it("accepte le HEVC, dont la lecture a été éprouvée sur casque", async () => {
+    const r = await probeVideoFile(asFile(mp4("hvc1", 3840, 2160)));
+    expect(r.verdict).toBe("ok");
     expect(r.codecLabel).toBe("HEVC (H.265)");
   });
 
@@ -121,10 +126,18 @@ describe("probeVideoFile", () => {
     expect(r.verdict).toBe("ok");
   });
 
-  it("rejette les conteneurs que le casque n'ouvre pas", async () => {
+  it("laisse passer un WebM en signalant qu'il n'a pas pu être vérifié", async () => {
+    // La structure Matroska échappe à l'analyse, écrite pour les boîtes d'un MP4.
+    // Ces fichiers étaient refusés à ce seul titre, alors que le casque les lit.
     const r = await probeVideoFile(asFile(new Uint8Array(64), "film.webm"));
-    expect(r.verdict).toBe("unsupported");
+    expect(r.verdict).toBe("unknown");
     expect(r.message).toContain("WEBM");
+  });
+
+  it("laisse passer un MKV de la même façon", async () => {
+    const r = await probeVideoFile(asFile(new Uint8Array(64), "film.mkv"));
+    expect(r.verdict).toBe("unknown");
+    expect(r.message).toContain("MKV");
   });
 
   it("laisse passer un fichier illisible plutôt que de bloquer sur un doute", async () => {

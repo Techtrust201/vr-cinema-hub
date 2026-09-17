@@ -31,14 +31,22 @@ export interface VideoProbe {
 }
 
 // Identifiants de codec tels qu'ils apparaissent dans la table `stsd` d'un MP4.
+//
+// Ces verdicts suivent les décodeurs que le Quest 3 déclare réellement (relevés
+// dans /vendor/etc/media_codecs.xml) : H.264, HEVC, VP9 et AV1 y figurent, VP8
+// et MPEG-4 Part 2 non. HEVC et VP9 étaient auparavant donnés pour douteux ou
+// pour refusés ; la lecture a depuis été éprouvée sur casque, extraits à l'appui,
+// et refuser un VP9 revenait à rejeter un fichier que l'appareil sait ouvrir.
 const CODECS: Record<string, { label: string; verdict: VideoVerdict }> = {
   avc1: { label: "H.264", verdict: "ok" },
   avc3: { label: "H.264", verdict: "ok" },
-  hvc1: { label: "HEVC (H.265)", verdict: "risky" },
-  hev1: { label: "HEVC (H.265)", verdict: "risky" },
+  hvc1: { label: "HEVC (H.265)", verdict: "ok" },
+  hev1: { label: "HEVC (H.265)", verdict: "ok" },
+  vp09: { label: "VP9", verdict: "ok" },
+  // Décodeur matériel présent, mais aucune lecture éprouvée sur casque : on
+  // avertit sans retenir le fichier.
+  av01: { label: "AV1", verdict: "risky" },
   vp08: { label: "VP8", verdict: "unsupported" },
-  vp09: { label: "VP9", verdict: "unsupported" },
-  av01: { label: "AV1", verdict: "unsupported" },
   mp4v: { label: "MPEG-4 Part 2", verdict: "unsupported" },
 };
 
@@ -205,15 +213,19 @@ function containerOf(file: File): string {
 export async function probeVideoFile(file: File): Promise<VideoProbe> {
   const container = containerOf(file);
 
+  // WebM et MKV partagent une structure interne (Matroska) que l'analyse ci-dessous,
+  // écrite pour les boîtes d'un MP4, ne sait pas parcourir : ni le codec ni la
+  // définition ne peuvent en être tirés. Cela ne les rend pas illisibles pour autant.
+  // Les deux ont été éprouvés sur casque, et étaient jusqu'ici refusés à tort.
   if (container === "webm" || container === "mkv") {
     return {
-      verdict: "unsupported",
-      codecLabel: "conteneur " + container.toUpperCase(),
+      verdict: "unknown",
+      codecLabel: "indéterminé",
       container,
       width: null,
       height: null,
-      message: `Le casque ne sait pas ouvrir les fichiers ${container.toUpperCase()}.`,
-      advice: "Convertissez le fichier en MP4 (H.264) avant de l'envoyer.",
+      message: `La définition d'un fichier ${container.toUpperCase()} ne peut pas être vérifiée avant l'envoi.`,
+      advice: "L'envoi va se poursuivre. Vérifiez la lecture sur un casque avant de diffuser.",
     };
   }
 
