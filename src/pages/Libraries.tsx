@@ -29,6 +29,21 @@ import {
   type InferredFormatFromName,
 } from "@/lib/inferVideoFormatFromName";
 
+/**
+ * Prévient qu'un fichier est resté dans le stockage sans film associé.
+ *
+ * Ces nettoyages échouaient en silence : un film de plusieurs centaines de mégaoctets
+ * pouvait continuer d'occuper l'espace payant sans apparaître nulle part dans
+ * l'application, donc sans que personne puisse le retrouver pour l'effacer.
+ */
+function warnOrphan(path: string) {
+  console.warn("[stockage] fichier orphelin non supprimé :", path);
+  toast.warning(
+    "Un fichier n'a pas pu être effacé du stockage et occupe encore de l'espace.",
+    { description: path, duration: 10000 },
+  );
+}
+
 type LibraryType = "location" | "animation";
 type VrFormat = "360_mono" | "180_mono" | "360_stereo" | "180_stereo" | "flat";
 type Projection = "360" | "180" | "flat";
@@ -271,7 +286,7 @@ function useSignedThumbnails(videos: VideoRow[]): Record<string, string> {
 }
 
 export default function Libraries() {
-  const { canManageContent } = useAuth();
+  const { canManageContent, user } = useAuth();
   const [activeLib, setActiveLib] = useState<LibraryType>("location");
   const [uploads, setUploads] = useState<Record<string, UploadProgress>>({});
   const [dragging, setDragging] = useState(false);
@@ -726,12 +741,15 @@ export default function Libraries() {
         thumbnail_url: thumbnailPath,
         duration_seconds: durationSeconds != null ? Math.round(durationSeconds) : null,
         sha256,
+        // La colonne existait mais restait vide : impossible de savoir qui avait envoyé
+        // un film quand plusieurs personnes gèrent la bibliothèque.
+        uploaded_by: user?.id ?? null,
       });
       if (dbErr) {
         if (origin === "supabase") {
           await supabase.storage.from("videos").remove([path]);
         } else {
-          await deleteFromObjectStore(path, origin).catch(() => undefined);
+          await deleteFromObjectStore(path, origin).catch(() => warnOrphan(path!));
         }
         path = null;
         throw new Error(dbErr.message);
@@ -748,9 +766,9 @@ export default function Libraries() {
       // Never leave an orphan object behind in Storage.
       if (path) {
         if (origin === "supabase") {
-          await supabase.storage.from("videos").remove([path]).catch(() => undefined);
+          await supabase.storage.from("videos").remove([path]).catch(() => warnOrphan(path!));
         } else {
-          await deleteFromObjectStore(path, origin).catch(() => undefined);
+          await deleteFromObjectStore(path, origin).catch(() => warnOrphan(path!));
         }
       }
       if (thumbnailPath) {

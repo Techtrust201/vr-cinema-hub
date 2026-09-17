@@ -166,18 +166,26 @@ Deno.serve(async (req) => {
     _headset_ids: [headset.id],
     _cause: "pairing_claim",
   });
+  // Sans ce bump, `desired_manifest_version` reste à 0 : le casque n'héritera jamais des
+  // playlists « tous les casques » et restera vide. L'échec doit donc arrêter
+  // l'appairage — l'exploitant peut recommencer, alors qu'un casque annoncé « appairé »
+  // mais muet se diagnostique très mal, surtout au milieu d'une flotte.
   if (bumpErr) {
     console.error("pairing bump failed", bumpErr);
-  } else {
-    console.log(`[HeadsetContact] headset_id=${headset.id} source=pairing`);
-    await admin
-      .from("headsets")
-      .update({
-        last_contact_source: "pairing",
-        last_seen_at: new Date().toISOString(),
-      })
-      .eq("id", headset.id);
+    return new Response(
+      JSON.stringify({ error: "Préparation du casque incomplète, relancez l'appairage." }),
+      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+    );
   }
+
+  console.log(`[HeadsetContact] headset_id=${headset.id} source=pairing`);
+  await admin
+    .from("headsets")
+    .update({
+      last_contact_source: "pairing",
+      last_seen_at: new Date().toISOString(),
+    })
+    .eq("id", headset.id);
 
   const device_token = await signDeviceToken(headset.id);
 

@@ -6,6 +6,7 @@ import {
   signedDiskUploadToken,
 } from "../_shared/disk-origin.ts";
 import {
+  abortR2MultipartUpload,
   completeR2MultipartUpload,
   createR2MultipartUpload,
   deleteR2Object,
@@ -62,6 +63,7 @@ Deno.serve(async (req) => {
     size?: number;
     contentType?: string;
     complete?: { uploadId?: string; parts?: { partNumber: number; etag: string }[] };
+    abort?: { uploadId?: string };
   };
   try {
     body = await req.json();
@@ -72,6 +74,17 @@ Deno.serve(async (req) => {
   const path = (body.path ?? "").trim();
   if (!path || path.includes("..") || path.startsWith("/")) {
     return json({ error: "Chemin invalide" }, 400);
+  }
+
+  // Le chemin doit désigner une des deux bibliothèques de l'application.
+  //
+  // Sans ce garde-fou, un chemin quelconque — deviné ou forgé — pouvait être signé ou
+  // supprimé dans tout le bucket. Vérifier l'existence en base était impossible : le
+  // dashboard efface la ligne avant le fichier, et un envoi interrompu nettoie un
+  // fichier qui n'a jamais eu de ligne. Contraindre la forme du chemin protège les deux
+  // cas sans gêner aucun usage légitime.
+  if (!/^(location|animation)\/[A-Za-z0-9][A-Za-z0-9._-]*$/.test(path)) {
+    return json({ error: "Chemin hors des bibliothèques autorisées" }, 400);
   }
 
   const userClient = createClient(
@@ -108,6 +121,14 @@ Deno.serve(async (req) => {
       if (origin === "r2") await deleteR2Object(path);
       else await deleteDiskObject(path);
       return json({ ok: true, origin });
+    }
+
+    // Envoi interrompu : les morceaux déjà déposés restent facturés tant qu'ils ne sont
+    // pas abandonnés. Un film annulé en cours de route laissait plusieurs centaines de
+    // mégaoctets invisibles dans le bucket, sans aucun moyen de les retrouver.
+    if (body.abort?.uploadId) {
+      await abortR2MultipartUpload(path, body.abort.uploadId);
+      return json({ ok: true, origin: "r2" });
     }
 
     // Finalisation d'un envoi multipart R2.

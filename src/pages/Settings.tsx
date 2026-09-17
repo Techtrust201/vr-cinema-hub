@@ -82,7 +82,30 @@ export default function Settings() {
     if (tab === "security") void loadAudit();
   }, [tab, loadMembers, loadAudit]);
 
-  async function changeRole(targetUserId: string, newRole: AppRole) {
+  async function changeRole(targetUserId: string, newRole: AppRole, label: string) {
+    // Le menu déroulant applique le changement dès la sélection : un clic de travers
+    // pouvait transférer la propriété du compte ou rétrograder un administrateur. Seuls
+    // ces deux cas, difficiles à défaire, demandent une confirmation.
+    if (newRole === "owner") {
+      const ok = await confirm({
+        title: `Transférer la propriété à ${label} ?`,
+        description:
+          "Cette personne deviendra propriétaire du compte et vous perdrez ce statut. " +
+          "Seul le nouveau propriétaire pourra vous le rendre.",
+        confirmLabel: "Transférer la propriété",
+        destructive: true,
+      });
+      if (!ok) return;
+    } else if (newRole === "admin") {
+      const ok = await confirm({
+        title: `Donner les droits d'administration à ${label} ?`,
+        description:
+          "Cette personne pourra gérer les casques, les films et les autres utilisateurs.",
+        confirmLabel: "Confirmer",
+      });
+      if (!ok) return;
+    }
+
     setBusy(true);
     setMessage(null);
     const { error } = await supabase.rpc("change_my_org_member_role", {
@@ -284,7 +307,11 @@ export default function Settings() {
                           disabled={busy || m.user_id === user?.id}
                           value={m.role ?? "operator"}
                           onChange={(e) =>
-                            void changeRole(m.user_id, e.target.value as AppRole)
+                            void changeRole(
+                              m.user_id,
+                              e.target.value as AppRole,
+                              m.display_name || m.email || "cet utilisateur",
+                            )
                           }
                           className="rounded-md border border-border/60 bg-background px-2 py-1 text-xs"
                         >

@@ -70,7 +70,9 @@ Deno.serve(async (req) => {
   // Make sure the headset still exists and is active.
   const { data: headset, error: hErr } = await supabase
     .from("headsets")
-    .select("id, status, desired_manifest_version, applied_manifest_version, last_manifest_cause")
+    .select(
+      "id, status, desired_manifest_version, applied_manifest_version, last_manifest_cause, last_error_code",
+    )
     .eq("id", claims.sub)
     .maybeSingle();
   if (hErr || !headset) {
@@ -326,23 +328,43 @@ Deno.serve(async (req) => {
     });
   }
 
-  if (seen.size > 0 && videos.length === 0) {
-    console.error("all manifest videos failed to sign", {
-      headset_id: headset.id,
-      skipped: skippedUnsigned,
-    });
-    return new Response(JSON.stringify({ error: "Signed URL generation failed" }), {
-      status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
-  }
-
+  // Un manifeste incomplet est plus dangereux qu'un manifeste refusé.
+  //
+  // Servir les vidéos restantes en HTTP 200 laissait le casque croire qu'il avait tout
+  // reçu : il téléchargeait le reste, annonçait une synchronisation réussie, et le
+  // tableau de bord affichait « Contenu à jour » alors qu'un film manquait. La panne ne
+  // se découvrait que devant les spectateurs.
+  //
+  // Refuser tout le manifeste est le comportement sûr : le casque conserve le contenu
+  // qu'il avait déjà, signale un échec, et l'exploitant voit qu'il doit intervenir. La
+  // cause est écrite sur la fiche du casque pour qu'elle soit lisible sans consulter les
+  // traces du serveur — sans quoi refuser reviendrait à bloquer la flotte en silence.
   if (skippedUnsigned > 0) {
-    console.error("manifest omitted unsigned videos", {
+    console.error("manifest incomplete, refusing to serve", {
       headset_id: headset.id,
       skipped: skippedUnsigned,
-      served: videos.length,
+      signable: videos.length,
+      expected: seen.size,
     });
+
+    await supabase
+      .from("headsets")
+      .update({
+        last_error_code: "manifest_incomplete",
+        last_error_message:
+          `${skippedUnsigned} film(s) sur ${seen.size} sont introuvables dans le stockage. ` +
+          `Retirez-les de la playlist ou renvoyez-les, puis relancez la mise à jour.`,
+      })
+      .eq("id", headset.id);
+
+    return new Response(
+      JSON.stringify({
+        error: "Manifest incomplete",
+        missing_videos: skippedUnsigned,
+        expected_videos: seen.size,
+      }),
+      { status: 503, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+    );
   }
 
   console.log(JSON.stringify({
@@ -353,6 +375,15 @@ Deno.serve(async (req) => {
     skipped_unsigned: skippedUnsigned,
     playlist_ids: playlistIds,
   }));
+
+  // Le manifeste est complet : effacer un refus précédent, sans quoi le tableau de bord
+  // afficherait indéfiniment une panne déjà résolue.
+  if (headset.last_error_code === "manifest_incomplete") {
+    await supabase
+      .from("headsets")
+      .update({ last_error_code: null, last_error_message: null })
+      .eq("id", headset.id);
+  }
 
   // playlist_id kept for compatibility (first sorted id); playlist_ids is the truth.
   const playlistId = playlistIds[0] ?? null;

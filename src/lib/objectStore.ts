@@ -82,35 +82,44 @@ async function uploadR2Multipart(
   signal?: AbortSignal,
 ): Promise<void> {
   const parts: { partNumber: number; etag: string }[] = [];
-  for (let i = 0; i < grant.partUrls.length; i++) {
-    if (signal?.aborted) throw new DOMException("Upload annulé", "AbortError");
-    const start = i * grant.partBytes;
-    const end = Math.min(start + grant.partBytes, file.size);
-    const res = await fetch(grant.partUrls[i], {
-      method: "PUT",
-      body: file.slice(start, end),
-      signal,
-    });
-    if (!res.ok) {
-      throw new Error((await res.text().catch(() => "")) || `R2 : HTTP ${res.status} sur le morceau ${i + 1}`);
+  try {
+    for (let i = 0; i < grant.partUrls.length; i++) {
+      if (signal?.aborted) throw new DOMException("Upload annulé", "AbortError");
+      const start = i * grant.partBytes;
+      const end = Math.min(start + grant.partBytes, file.size);
+      const res = await fetch(grant.partUrls[i], {
+        method: "PUT",
+        body: file.slice(start, end),
+        signal,
+      });
+      if (!res.ok) {
+        throw new Error((await res.text().catch(() => "")) || `R2 : HTTP ${res.status} sur le morceau ${i + 1}`);
+      }
+      const etag = res.headers.get("etag");
+      if (!etag) {
+        // Le navigateur ne voit un en-tête de réponse que si CORS l'expose.
+        throw new Error(
+          "R2 n'expose pas l'en-tête ETag au navigateur. Ajoutez « ETag » à ExposeHeaders dans la configuration CORS du bucket.",
+        );
+      }
+      parts.push({ partNumber: i + 1, etag });
+      onProgress?.(end / file.size);
     }
-    const etag = res.headers.get("etag");
-    if (!etag) {
-      // Le navigateur ne voit un en-tête de réponse que si CORS l'expose.
-      throw new Error(
-        "R2 n'expose pas l'en-tête ETag au navigateur. Ajoutez « ETag » à ExposeHeaders dans la configuration CORS du bucket.",
-      );
-    }
-    parts.push({ partNumber: i + 1, etag });
-    onProgress?.(end / file.size);
-  }
 
-  const { data, error } = await supabase.functions.invoke<{ ok?: boolean; error?: string }>(
-    "origin-upload-url",
-    { body: { path, complete: { uploadId: grant.uploadId, parts } } },
-  );
-  if (error || !data?.ok) {
-    throw new Error(data?.error ?? error?.message ?? "R2 : finalisation de l'envoi refusée.");
+    const { data, error } = await supabase.functions.invoke<{ ok?: boolean; error?: string }>(
+      "origin-upload-url",
+      { body: { path, complete: { uploadId: grant.uploadId, parts } } },
+    );
+    if (error || !data?.ok) {
+      throw new Error(data?.error ?? error?.message ?? "R2 : finalisation de l'envoi refusée.");
+    }
+  } catch (err) {
+    // Annulation ou panne réseau : les morceaux déjà déposés resteraient facturés
+    // indéfiniment, sans apparaître dans la liste des objets du bucket.
+    await supabase.functions
+      .invoke("origin-upload-url", { body: { path, abort: { uploadId: grant.uploadId } } })
+      .catch(() => undefined);
+    throw err;
   }
 }
 

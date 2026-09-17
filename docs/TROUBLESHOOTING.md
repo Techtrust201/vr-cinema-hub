@@ -112,6 +112,26 @@ jour sont bien présents en base.
 Si le contrôle automatique signale « Ce casque ne serait pas prévenu », un
 déclencheur manque : comparer avec `supabase/migrations/`.
 
+### Un casque affiche « des films sont introuvables dans le stockage »
+
+Le serveur a refusé d'envoyer un catalogue incomplet. Un ou plusieurs films de la
+playlist n'existent plus dans le stockage : leur fiche est restée dans l'application mais
+le fichier a disparu, ou son chemin a changé.
+
+Le casque conserve alors le contenu qu'il avait déjà et n'applique rien : c'est
+volontaire. Servir le catalogue amputé reviendrait à faire croire que tout est à jour,
+et le film manquant ne se découvrirait que devant les spectateurs.
+
+Pour rétablir la situation, ouvrir la page **Bibliothèques** et repérer les films
+concernés : leur lecture depuis le tableau de bord échoue aussi. Deux issues possibles,
+au choix :
+
+- retirer le film de la playlist, s'il n'est plus nécessaire ;
+- le supprimer puis le renvoyer, pour reconstituer le fichier manquant.
+
+La synchronisation repart d'elle-même à la connexion suivante du casque, et le message
+disparaît du tableau de bord.
+
 ### L'envoi d'un film échoue à la dernière étape
 
 Les octets partent, puis la finalisation échoue. C'est la signature d'un CORS
