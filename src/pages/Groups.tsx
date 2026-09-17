@@ -5,7 +5,7 @@ import { useLiveData } from "@/hooks/useLiveData";
 import { useConfirm } from "@/hooks/useConfirm";
 import { FolderTree, Plus, Trash2, Loader2, Check, X, WifiOff } from "lucide-react";
 import { toast } from "sonner";
-import { isPermissionError } from "@/lib/supabaseErrors";
+import { humanizeSupabaseError } from "@/lib/supabaseErrors";
 
 interface Group { id: string; name: string; description: string | null; }
 interface Headset { id: string; name: string; desired_manifest_version?: number; applied_manifest_version?: number; }
@@ -46,9 +46,7 @@ export default function Groups() {
     if (!name) return;
     const { error } = await supabase.from("headset_groups").insert({ name });
     if (error) {
-      toast.error(isPermissionError(error)
-        ? "Création refusée : droits insuffisants."
-        : error.message);
+      toast.error(humanizeSupabaseError(error, "Le groupe n'a pas pu être créé."));
       return;
     }
     setNewName("");
@@ -78,9 +76,7 @@ export default function Groups() {
     const { error } = await supabase.from("headset_groups").delete().eq("id", id);
     if (error) {
       mutate(() => previous);
-      toast.error(isPermissionError(error)
-        ? "Suppression refusée : droits insuffisants."
-        : error.message);
+      toast.error(humanizeSupabaseError(error, "Le groupe n'a pas pu être supprimé."));
       return;
     }
     toast.success("Supprimé");
@@ -117,9 +113,7 @@ export default function Groups() {
 
     if (error) {
       void refresh();
-      toast.error(isPermissionError(error)
-        ? "Modification non enregistrée : droits insuffisants."
-        : `Échec : ${error.message}`);
+      toast.error(humanizeSupabaseError(error, "La modification n'a pas été enregistrée."));
       return;
     }
     toast.success(present ? "Casque retiré du groupe" : "Casque ajouté au groupe");

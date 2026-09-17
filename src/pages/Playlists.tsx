@@ -5,7 +5,7 @@ import { useLiveData } from "@/hooks/useLiveData";
 import { useConfirm } from "@/hooks/useConfirm";
 import { ListVideo, Plus, Trash2, Loader2, Check, Globe2, Headset as HeadsetIcon, FolderTree, WifiOff } from "lucide-react";
 import { toast } from "sonner";
-import { isPermissionError } from "@/lib/supabaseErrors";
+import { humanizeSupabaseError, isPermissionError } from "@/lib/supabaseErrors";
 
 interface Playlist { id: string; name: string; description: string | null; }
 interface Video { id: string; name: string; }
@@ -83,7 +83,7 @@ export default function Playlists() {
     if (!name) return;
     const { error } = await supabase.from("playlists").insert({ name });
     if (error) {
-      toast.error(error.message);
+      toast.error(humanizeSupabaseError(error, "La playlist n'a pas pu être créée."));
       return;
     }
     setNewName("");
@@ -114,7 +114,7 @@ export default function Playlists() {
     const { error } = await supabase.from("playlists").delete().eq("id", id);
     if (error) {
       mutate(() => previous);
-      toast.error(error.message);
+      toast.error(humanizeSupabaseError(error, "La modification n'a pas pu être enregistrée."));
       return;
     }
     toast.success("Supprimée");

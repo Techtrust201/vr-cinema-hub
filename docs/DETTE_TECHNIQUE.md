@@ -1,99 +1,79 @@
 # Dette technique connue
 
-Points identifiés lors de l'audit du 17 septembre 2026 et volontairement laissés en
-attente. Chacun est accompagné de la raison de l'ajournement et de la correction à
-appliquer, pour qu'une reprise ne reparte pas de zéro.
+Points identifiés lors de l'audit du 17 septembre 2026 et restés en attente, avec la
+raison de l'ajournement et la correction à appliquer. Les constats corrigés le même jour
+ne figurent plus ici : voir l'historique Git.
 
 ---
 
-## 1. Un jeton de casque reste valide après un nouvel appairage
-
-**Où** : `supabase/functions/_shared/device-jwt.ts` (vérification), `headset-pair-claim/index.ts`
-(émission).
-
-**Le problème.** La vérification d'un jeton de casque contrôle seulement la signature et
-la date d'expiration, fixée à un an. Quand un casque déjà connu est réappairé, un nouveau
-jeton est émis mais l'ancien continue de fonctionner jusqu'à son expiration. Un jeton
-copié depuis un casque revendu, prêté ou mis au rebut garde donc accès au catalogue et
-aux liens de téléchargement des films.
-
-**Pourquoi ce n'est pas corrigé.** La correction touche le chemin d'authentification de
-toute la flotte. Une erreur y rendrait tous les casques muets d'un coup. L'audit a eu lieu
-quelques heures avant une livraison client, avec des casques physiquement sous contrôle :
-le risque du correctif dépassait le risque de la faille.
-
-**Correction à appliquer.**
-
-1. Ajouter une colonne `token_version` (entier, défaut 0) à la table `headsets`.
-2. Inclure cette version dans le jeton émis par `signDeviceToken`.
-3. Dans `verifyDeviceToken`, rejeter un jeton dont la version est inférieure à celle
-   enregistrée sur le casque.
-4. Incrémenter `token_version` à chaque appairage et à chaque révocation.
-
-Traiter l'absence de version comme la version 0 laisse les casques déjà en service
-fonctionner : ils ne basculeront sur le mécanisme qu'à leur prochain appairage. La
-migration se fait donc sans réappairer la flotte.
-
----
-
-## 2. Le code d'appairage n'est pas protégé contre les tentatives répétées
-
-**Où** : `supabase/functions/headset-pair-claim/index.ts`
-
-**Le problème.** Le code d'appairage compte six chiffres, soit un million de
-combinaisons, et reste valable dix minutes. Aucune limite ne freine les tentatives : un
-balayage automatisé peut détourner un appairage en cours avant l'exploitant légitime.
-
-**Pourquoi ce n'est pas corrigé.** L'attaque suppose de viser une fenêtre de dix minutes
-connue à l'avance, et n'apporte l'accès qu'à un seul casque. L'ajout d'une limite de débit
-demande un compteur persistant, donc une migration et des essais.
-
-**Correction à appliquer.** Compter les échecs par adresse et par code dans une table
-dédiée, et bloquer après une dizaine de tentatives. Un code alphanumérique de huit
-caractères réduirait aussi fortement la surface, au prix d'une saisie plus longue au
-casque.
-
----
-
-## 3. Un envoi interrompu ne reprend pas où il s'est arrêté
+## 1. Un envoi interrompu ne reprend pas où il s'est arrêté
 
 **Où** : `src/lib/objectStore.ts`
 
-**Le problème.** Si l'envoi d'un film est coupé, il faut le recommencer entièrement.
-Les morceaux déjà déposés sont désormais nettoyés, mais rien ne permet de reprendre.
+**Le problème.** Si l'envoi d'un film est coupé — onglet fermé, coupure réseau, veille de
+l'ordinateur — il faut le recommencer entièrement. Les morceaux déjà déposés sont
+désormais nettoyés automatiquement, mais rien ne permet de repartir du point d'arrêt.
+Pour un film de plusieurs gigaoctets sur une connexion modeste, c'est une heure perdue.
 
 **Pourquoi ce n'est pas corrigé.** Reprendre un envoi suppose de mémoriser l'identifiant
-de l'envoi en cours et les morceaux acceptés côté navigateur, puis de les retrouver après
-un rechargement de page. C'est un vrai chantier, sans rapport avec un défaut.
+de l'envoi en cours et la liste des morceaux acceptés, de les conserver après un
+rechargement de page, puis de demander au serveur quels morceaux il détient déjà. C'est
+une fonctionnalité à part entière, pas la réparation d'un défaut.
 
-**Contournement actuel.** Le guide d'exploitation indique de ne pas fermer l'onglet
-pendant un envoi, et l'application en avertit à l'écran.
-
----
-
-## 4. Les fonctions `get_user_role` et `can_manage_content` acceptent n'importe quel compte
-
-**Où** : `supabase/migrations/20260718193000_enforce_one_role_per_user.sql`
-
-**Le problème.** Tout utilisateur authentifié peut demander le rôle de n'importe quel
-autre compte. C'est une fuite d'information, sans possibilité de modification.
-
-**Pourquoi ce n'est pas corrigé.** `useAuth` appelle `get_user_role` au démarrage de
-l'application. Restreindre la fonction sans adapter l'appel priverait l'interface du rôle
-de l'utilisateur, donc de tous ses droits d'affichage.
-
-**Correction à appliquer.** Ajouter une garde `auth.uid() = _user_id OR
-is_admin_or_owner(auth.uid())` dans la fonction, après avoir vérifié que tous les appels
-côté application portent bien sur l'utilisateur connecté.
+**Contournement actuel.** Le guide d'exploitation demande de ne pas fermer l'onglet
+pendant un envoi, et l'application affiche un avertissement tant qu'un envoi est en
+cours.
 
 ---
 
-## 5. Tables et fichiers sans usage
+## 2. `can_manage_content` répond sur n'importe quel compte
 
-**Où** : tables `agents`, `devices`, `sync_jobs` ; fichiers `src/lib/assignmentDiff.ts`
-et `src/lib/originHmac.ts`.
+**Où** : `supabase/migrations/20260718200100_owner_role_helpers_and_audit.sql`
 
-Ces éléments datent de versions antérieures et ne sont plus référencés par
-l'application, hors tests. Ils ne présentent pas de risque, mais alourdissent la lecture
-du schéma et du code. À retirer lors d'un passage de nettoyage, après vérification qu'aucun
-outil externe ne s'appuie dessus.
+**Le problème.** Tout utilisateur connecté peut demander si un autre compte a le droit de
+gérer du contenu. C'est une fuite d'information, sans possibilité de modification.
+
+**Pourquoi ce n'est pas corrigé.** Cette fonction est appelée par une dizaine de
+politiques de sécurité, sur les tables comme sur le stockage. Y ajouter un refus ferait
+courir un risque de régression sur tous les accès aux données, pour protéger un simple
+booléen qui ne révèle même pas quel rôle est en cause. Le compromis n'est pas
+favorable.
+
+`get_user_role`, qui expose le rôle exact et n'est utilisée par aucune politique, a
+elle été restreinte.
+
+**Correction à envisager.** Si le besoin se confirme, remplacer les appels dans les
+politiques par une variante interne non exposée, puis restreindre la fonction publique.
+À faire hors période de livraison, avec une vérification complète des accès.
+
+---
+
+## 3. Tables restées d'une architecture antérieure
+
+**Où** : tables `agents`, `devices`, `sync_jobs`.
+
+Ces tables datent d'avant le passage aux casques autonomes. Aucun code ne les lit ni ne
+les écrit. Elles portent désormais un commentaire « HORS SERVICE » visible dans la
+console Supabase, mais n'ont pas été supprimées : une suppression est irréversible et
+n'apporte rien d'autre qu'un schéma plus court. À retirer lors d'un passage de nettoyage
+si leur inutilité se confirme sur la durée.
+
+---
+
+## 4. L'historique des migrations est désynchronisé
+
+**Où** : `supabase/migrations/` face à la base de production.
+
+**Le problème.** Cinq migrations locales n'ont pas d'équivalent distant, et cinq
+migrations distantes n'existent pas en local. Leur contenu a manifestement été appliqué
+sous d'autres horodatages, via l'éditeur SQL ou un outil externe.
+
+**Conséquence pratique.** `supabase db push` est dangereux en l'état : il tenterait de
+rejouer des migrations dont le contenu est déjà en place. Les migrations du 17 septembre
+ont donc été appliquées une par une, de façon ciblée, après vérification.
+
+**Correction à appliquer.** Aligner l'historique avec `supabase migration repair
+--status applied <version>` pour chaque migration locale déjà en place, puis récupérer
+les migrations distantes manquantes avec `supabase db pull`. À faire à froid, en
+vérifiant migration par migration que le contenu correspond, jamais sous contrainte de
+temps.

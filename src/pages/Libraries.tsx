@@ -28,6 +28,8 @@ import {
   shouldAutoSend,
   type InferredFormatFromName,
 } from "@/lib/inferVideoFormatFromName";
+import { humanizeSupabaseError } from "@/lib/supabaseErrors";
+import { legacyFormatFor } from "@/lib/legacyVideoFormat";
 
 /**
  * Prévient qu'un fichier est resté dans le stockage sans film associé.
@@ -546,13 +548,6 @@ export default function Libraries() {
       }),
     );
 
-  const legacyFormatFor = (projection: Projection, stereo: StereoMode): VrFormat => {
-    if (projection === "flat") return "flat";
-    const isStereo = stereo !== "mono";
-    if (projection === "180") return isStereo ? "180_stereo" : "180_mono";
-    return isStereo ? "360_stereo" : "360_mono";
-  };
-
   /**
    * Corrige les réglages d'affichage d'un film déjà envoyé.
    *
@@ -802,7 +797,7 @@ export default function Libraries() {
     const { error: dbErr } = await supabase.from("videos").delete().eq("id", v.id);
     if (dbErr) {
       mutate(() => previous);
-      toast.error(dbErr.message);
+      toast.error(humanizeSupabaseError(dbErr, "Le film n'a pas pu être supprimé."));
       return;
     }
     const external = v.origin === "disk" || v.origin === "r2";

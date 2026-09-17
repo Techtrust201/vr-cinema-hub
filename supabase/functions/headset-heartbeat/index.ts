@@ -1,5 +1,10 @@
 import { createClient } from "npm:@supabase/supabase-js@2.45.4";
-import { corsHeaders, extractBearer, verifyDeviceToken } from "../_shared/device-jwt.ts";
+import {
+  corsHeaders,
+  deviceTokenVersionIsCurrent,
+  extractBearer,
+  verifyDeviceToken,
+} from "../_shared/device-jwt.ts";
 import { getSecretKey } from "../_shared/supabase-keys.ts";
 
 // Lightweight ping sent by the Quest app (immediate on start/foreground, then periodically).
@@ -48,7 +53,7 @@ Deno.serve(async (req) => {
 
   const { data: existing, error: findErr } = await supabase
     .from("headsets")
-    .select("id, status, desired_manifest_version, applied_manifest_version")
+    .select("id, status, desired_manifest_version, applied_manifest_version, token_version")
     .eq("id", claims.sub)
     .maybeSingle();
 
@@ -62,6 +67,18 @@ Deno.serve(async (req) => {
   if (!existing) {
     return new Response(JSON.stringify({ error: "Headset not found" }), {
       status: 404,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+  // Un jeton émis avant le dernier appairage ou la dernière révocation n'a plus cours.
+  if (!deviceTokenVersionIsCurrent(claims, existing.token_version)) {
+    console.error("stale device token refused", {
+      headset_id: existing.id,
+      token_version: claims.tv ?? 0,
+      current_version: existing.token_version,
+    });
+    return new Response(JSON.stringify({ error: "Token superseded" }), {
+      status: 401,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }

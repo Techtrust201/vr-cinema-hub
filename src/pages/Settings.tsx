@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { useConfirm } from "@/hooks/useConfirm";
+import { humanizeSupabaseError } from "@/lib/supabaseErrors";
 import { type AppRole, roleLabel } from "@/lib/permissions";
 import { supabase } from "@/integrations/supabase/client";
 import {
@@ -61,7 +62,7 @@ export default function Settings() {
     if (!canManageMembers) return;
     const { data, error } = await supabase.rpc("list_organization_members");
     if (error) {
-      setMessage(error.message);
+      setMessage(humanizeSupabaseError(error, "La liste des utilisateurs n'a pas pu être chargée."));
       return;
     }
     setMembers((data as Member[]) ?? []);
@@ -115,7 +116,7 @@ export default function Settings() {
     });
     setBusy(false);
     if (error) {
-      setMessage(error.message);
+      setMessage(humanizeSupabaseError(error, "Le rôle n'a pas pu être modifié."));
       return;
     }
     setMessage("Rôle mis à jour.");
@@ -140,7 +141,7 @@ export default function Settings() {
     });
     setBusy(false);
     if (error) {
-      setMessage(error.message);
+      setMessage(humanizeSupabaseError(error, "L'accès n'a pas pu être retiré."));
       return;
     }
     setMessage("Accès retiré.");
@@ -162,11 +163,12 @@ export default function Settings() {
     );
     setBusy(false);
     if (error) {
-      setMessage(error.message);
+      setMessage(humanizeSupabaseError(error, "L'invitation n'a pas pu être envoyée."));
       return;
     }
     if (data?.error) {
-      setMessage(data.error);
+      // Codes applicatifs de la fonction d'invitation : « invalid_email », etc.
+      setMessage(humanizeSupabaseError({ message: data.error }, "L'invitation a été refusée."));
       return;
     }
     setInviteEmail("");

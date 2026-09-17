@@ -656,7 +656,10 @@ export type Database = {
           size_bytes: number
           source_layout: Database["public"]["Enums"]["video_source_layout"]
           stereo_mode: Database["public"]["Enums"]["video_stereo_mode"]
-          origin: string
+          // Restreint à la main : la colonne porte une contrainte CHECK et non un type
+          // énuméré, donc la génération automatique produit `string` et laisserait
+          // passer une origine inexistante. À rétablir après chaque régénération.
+          origin: "supabase" | "disk" | "r2"
           storage_path: string
           thumbnail_url: string | null
           updated_at: string
@@ -675,7 +678,7 @@ export type Database = {
           size_bytes?: number
           source_layout?: Database["public"]["Enums"]["video_source_layout"]
           stereo_mode?: Database["public"]["Enums"]["video_stereo_mode"]
-          origin?: string
+          origin?: "supabase" | "disk" | "r2"
           storage_path: string
           thumbnail_url?: string | null
           updated_at?: string
@@ -694,7 +697,7 @@ export type Database = {
           size_bytes?: number
           source_layout?: Database["public"]["Enums"]["video_source_layout"]
           stereo_mode?: Database["public"]["Enums"]["video_stereo_mode"]
-          origin?: string
+          origin?: "supabase" | "disk" | "r2"
           storage_path?: string
           thumbnail_url?: string | null
           updated_at?: string

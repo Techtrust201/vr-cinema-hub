@@ -1,5 +1,10 @@
 import { createClient } from "npm:@supabase/supabase-js@2.45.4";
-import { corsHeaders, extractBearer, verifyDeviceToken } from "../_shared/device-jwt.ts";
+import {
+  corsHeaders,
+  deviceTokenVersionIsCurrent,
+  extractBearer,
+  verifyDeviceToken,
+} from "../_shared/device-jwt.ts";
 import { getSecretKey } from "../_shared/supabase-keys.ts";
 
 // Receives the result of a sync cycle from the Quest app.
@@ -63,6 +68,26 @@ Deno.serve(async (req) => {
     Deno.env.get("SUPABASE_URL")!,
     getSecretKey(),
   );
+
+  // Un jeton émis avant le dernier appairage ou la dernière révocation n'a plus cours.
+  // Cette fonction est la seule des trois à ne pas déjà lire la fiche du casque, d'où
+  // cette requête dédiée ; elle ne s'exécute qu'en début et en fin de synchronisation.
+  const { data: headsetRow } = await supabase
+    .from("headsets")
+    .select("token_version")
+    .eq("id", claims.sub)
+    .maybeSingle();
+  if (headsetRow && !deviceTokenVersionIsCurrent(claims, headsetRow.token_version)) {
+    console.error("stale device token refused", {
+      headset_id: claims.sub,
+      token_version: claims.tv ?? 0,
+      current_version: headsetRow.token_version,
+    });
+    return new Response(JSON.stringify({ error: "Token superseded" }), {
+      status: 401,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
 
   if (!body.phase || body.phase === "started") {
     if (body.status && body.status === "pending") {

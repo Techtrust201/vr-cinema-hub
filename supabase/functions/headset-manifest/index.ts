@@ -1,5 +1,10 @@
 import { createClient } from "npm:@supabase/supabase-js@2.45.4";
-import { corsHeaders, extractBearer, verifyDeviceToken } from "../_shared/device-jwt.ts";
+import {
+  corsHeaders,
+  deviceTokenVersionIsCurrent,
+  extractBearer,
+  verifyDeviceToken,
+} from "../_shared/device-jwt.ts";
 import { getSecretKey } from "../_shared/supabase-keys.ts";
 import { signedDiskDownloadUrl } from "../_shared/disk-origin.ts";
 import { signedR2DownloadUrl } from "../_shared/r2.ts";
@@ -71,7 +76,8 @@ Deno.serve(async (req) => {
   const { data: headset, error: hErr } = await supabase
     .from("headsets")
     .select(
-      "id, status, desired_manifest_version, applied_manifest_version, last_manifest_cause, last_error_code",
+      "id, status, desired_manifest_version, applied_manifest_version, last_manifest_cause, " +
+        "last_error_code, token_version",
     )
     .eq("id", claims.sub)
     .maybeSingle();
@@ -84,6 +90,18 @@ Deno.serve(async (req) => {
   if (headset.status !== "active") {
     return new Response(JSON.stringify({ error: "Headset revoked" }), {
       status: 403,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+  // Un jeton émis avant le dernier appairage ou la dernière révocation n'a plus cours.
+  if (!deviceTokenVersionIsCurrent(claims, headset.token_version)) {
+    console.error("stale device token refused", {
+      headset_id: headset.id,
+      token_version: claims.tv ?? 0,
+      current_version: headset.token_version,
+    });
+    return new Response(JSON.stringify({ error: "Token superseded" }), {
+      status: 401,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }

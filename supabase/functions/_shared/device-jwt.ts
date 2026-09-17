@@ -32,10 +32,27 @@ async function getKey(usage: "sign" | "verify"): Promise<CryptoKey> {
   );
 }
 
-export async function signDeviceToken(headsetId: string, ttlSeconds = 60 * 60 * 24 * 365): Promise<string> {
+/**
+ * Émet le jeton d'un casque.
+ *
+ * `tv` porte la version du jeton relevée sur le casque au moment de l'émission. Elle
+ * permet de refuser d'un coup tous les jetons antérieurs à un réappairage ou à une
+ * révocation, sans attendre l'expiration d'un an.
+ */
+export async function signDeviceToken(
+  headsetId: string,
+  ttlSeconds = 60 * 60 * 24 * 365,
+  tokenVersion = 0,
+): Promise<string> {
   const header = { alg: "HS256", typ: "JWT" };
   const now = Math.floor(Date.now() / 1000);
-  const payload = { sub: headsetId, iat: now, exp: now + ttlSeconds, typ: "device" };
+  const payload = {
+    sub: headsetId,
+    iat: now,
+    exp: now + ttlSeconds,
+    typ: "device",
+    tv: tokenVersion,
+  };
   const data = `${b64urlEncode(JSON.stringify(header))}.${b64urlEncode(JSON.stringify(payload))}`;
   const key = await getKey("sign");
   const sig = new Uint8Array(await crypto.subtle.sign("HMAC", key, encoder.encode(data)));
@@ -47,6 +64,21 @@ export interface DeviceClaims {
   iat: number;
   exp: number;
   typ: string;
+  /** Absente des jetons émis avant l'introduction du mécanisme : vaut alors 0. */
+  tv?: number;
+}
+
+/**
+ * Dit si un jeton est encore de la génération en cours pour ce casque.
+ *
+ * Un jeton sans version est lu comme la version 0, ce qui laisse fonctionner les casques
+ * mis en service avant ce mécanisme tant qu'ils n'ont pas été réappairés.
+ */
+export function deviceTokenVersionIsCurrent(
+  claims: DeviceClaims,
+  headsetTokenVersion: number | null | undefined,
+): boolean {
+  return (claims.tv ?? 0) >= (headsetTokenVersion ?? 0);
 }
 
 export async function verifyDeviceToken(token: string): Promise<DeviceClaims | null> {

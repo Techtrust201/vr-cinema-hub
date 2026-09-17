@@ -7,6 +7,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useLiveData } from "@/hooks/useLiveData";
 import { DiagnosticPanel } from "@/components/sync/DiagnosticPanel";
 import { describeCause, describeReportStatus, describeVersionGap, fmtBytes } from "@/lib/syncVocabulary";
+import { humanizeSupabaseError } from "@/lib/supabaseErrors";
 
 interface Headset {
   id: string;
@@ -125,7 +126,7 @@ export default function Sync() {
     });
     setForcing((s) => ({ ...s, [h.id]: false }));
     if (error) {
-      toast.error("Erreur: " + error.message);
+      toast.error(humanizeSupabaseError(error, "La mise à jour n'a pas pu être demandée."));
     } else {
       toast.success(`Mise à jour demandée pour ${h.name} — elle partira à sa prochaine connexion.`);
       void refresh();

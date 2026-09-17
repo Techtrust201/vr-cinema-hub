@@ -79,9 +79,21 @@ Deno.serve(async (req) => {
     data: { display_name: body.display_name ?? email.split("@")[0] },
   });
   if (inviteErr) {
-    // If user already exists, look them up and apply role.
-    const listed = await admin.auth.admin.listUsers({ page: 1, perPage: 200 });
-    const existing = listed.data?.users?.find((u) => (u.email ?? "").toLowerCase() === email);
+    // L'invitation a échoué, le plus souvent parce que le compte existe déjà : on le
+    // retrouve pour lui appliquer le rôle demandé au lieu de renvoyer une erreur.
+    //
+    // La recherche s'arrêtait à la première page de 200 comptes. Au-delà, inviter une
+    // personne déjà inscrite échouait sans explication utilisable. Le client Supabase
+    // n'offre pas de recherche par adresse, il faut donc parcourir les pages. La borne
+    // évite une boucle sans fin si l'API renvoyait toujours des résultats.
+    const MAX_PAGES = 50;
+    let existing: { id: string } | undefined;
+    for (let page = 1; page <= MAX_PAGES; page++) {
+      const listed = await admin.auth.admin.listUsers({ page, perPage: 200 });
+      const users = listed.data?.users ?? [];
+      existing = users.find((u) => (u.email ?? "").toLowerCase() === email);
+      if (existing || users.length < 200) break;
+    }
     if (!existing) {
       return new Response(JSON.stringify({ error: inviteErr.message }), {
         status: 400,

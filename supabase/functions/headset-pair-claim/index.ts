@@ -73,6 +73,39 @@ Deno.serve(async (req) => {
     });
   }
 
+  // Un code de six chiffres se devine par balayage si rien ne limite les essais. Le
+  // compteur porte sur le compte appelant, la seule identité disponible ici : l'adresse
+  // IP passe par l'infrastructure Supabase et ne distingue pas les appelants.
+  //
+  // En cas de panne du compteur, l'appairage continue : bloquer la mise en service d'une
+  // flotte pour protéger un scénario qui suppose déjà un compte autorisé détourné serait
+  // un mauvais échange.
+  const MAX_FAILED_CLAIMS = 10;
+  const { data: recentFailures, error: rateErr } = await admin.rpc(
+    "recent_failed_pairing_claims",
+    { _actor_user_id: userData.user.id, _window_minutes: 15 },
+  );
+  if (rateErr) {
+    console.error("pairing rate check failed", rateErr);
+  } else if ((recentFailures ?? 0) >= MAX_FAILED_CLAIMS) {
+    console.error("pairing claim rate limited", {
+      actor: userData.user.id,
+      failures: recentFailures,
+    });
+    return new Response(
+      JSON.stringify({
+        error: "Trop de codes erronés. Patientez un quart d'heure avant de réessayer.",
+      }),
+      { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+    );
+  }
+
+  const noteAttempt = (succeeded: boolean) =>
+    admin
+      .from("pairing_claim_attempts")
+      .insert({ actor_user_id: userData.user.id, succeeded })
+      .then(() => undefined, () => undefined);
+
   const { data: pairing, error: pairErr } = await admin
     .from("pairing_codes")
     .select("id, expires_at, claimed_by_headset_id, pending_serial, pending_model")
@@ -80,18 +113,22 @@ Deno.serve(async (req) => {
     .maybeSingle();
 
   if (pairErr || !pairing) {
+    await noteAttempt(false);
     return new Response(JSON.stringify({ error: "Code not found" }), {
       status: 404,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
   if (pairing.claimed_by_headset_id) {
+    await noteAttempt(false);
     return new Response(JSON.stringify({ error: "Code already used" }), {
       status: 409,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
   if (new Date(pairing.expires_at).getTime() < Date.now()) {
+    // Un code expiré n'apprend rien sur les codes valides : ne pas le compter comme un
+    // essai évite de punir un exploitant simplement trop lent.
     return new Response(JSON.stringify({ error: "Code expired" }), {
       status: 410,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -99,12 +136,12 @@ Deno.serve(async (req) => {
   }
 
   // Reuse existing headset for the same physical serial to avoid duplicates.
-  let headset: { id: string; name: string } | null = null;
+  let headset: { id: string; name: string; token_version?: number } | null = null;
   const serial = pairing.pending_serial?.trim() || null;
   if (serial) {
     const { data: existing, error: findErr } = await admin
       .from("headsets")
-      .select("id, name")
+      .select("id, name, token_version")
       .eq("serial", serial)
       .order("created_at", { ascending: true })
       .limit(1)
@@ -120,9 +157,12 @@ Deno.serve(async (req) => {
           status: "active",
           paired_by: userData.user.id,
           paired_at: new Date().toISOString(),
+          // Réappairer périme les jetons précédents de ce casque : celui qui restait sur
+          // l'appareil d'avant, ou une copie prise entre-temps, cesse d'être accepté.
+          token_version: (existing.token_version ?? 0) + 1,
         })
         .eq("id", existing.id)
-        .select("id, name")
+        .select("id, name, token_version")
         .single();
       if (updErr || !updated) {
         console.error("headset reuse update failed", updErr);
@@ -147,7 +187,7 @@ Deno.serve(async (req) => {
         paired_by: userData.user.id,
         paired_at: new Date().toISOString(),
       })
-      .select("id, name")
+      .select("id, name, token_version")
       .single();
 
     if (hErr || !created) {
@@ -187,7 +227,12 @@ Deno.serve(async (req) => {
     })
     .eq("id", headset.id);
 
-  const device_token = await signDeviceToken(headset.id);
+  // Le jeton porte la version en vigueur : toute version antérieure sera refusée.
+  const device_token = await signDeviceToken(
+    headset.id,
+    undefined,
+    headset.token_version ?? 0,
+  );
 
   const { data: claimed, error: claimErr } = await admin
     .from("pairing_codes")
@@ -214,6 +259,8 @@ Deno.serve(async (req) => {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
+
+  await noteAttempt(true);
 
   return new Response(
     JSON.stringify({ headset_id: headset.id, name: headset.name }),

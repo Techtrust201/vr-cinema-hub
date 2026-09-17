@@ -6,7 +6,7 @@ import { useConfirm } from "@/hooks/useConfirm";
 import { Headset, Plus, Battery, HardDrive, Wifi, WifiOff, Trash2, Loader2, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import { isPermissionError } from "@/lib/supabaseErrors";
+import { humanizeSupabaseError } from "@/lib/supabaseErrors";
 import { appContactLabel, appContactState, formatRelativeFr, type AppContactState } from "@/lib/headsetContact";
 import { describeReportStatus, describeVersionGap } from "@/lib/syncVocabulary";
 
@@ -89,9 +89,9 @@ export default function Headsets() {
     if (error || !updated || updated.status !== "revoked") {
       void refresh();
       toast.error(
-        error && isPermissionError(error)
-          ? "Révoquer nécessite des droits de gestion."
-          : (error?.message ?? "Révocation non confirmée par la base."),
+        error
+          ? humanizeSupabaseError(error, "Le casque n'a pas pu être révoqué.")
+          : "La révocation n'a pas été confirmée par le serveur.",
       );
       return;
     }
@@ -112,9 +112,7 @@ export default function Headsets() {
     const { error } = await supabase.from("headsets").delete().eq("id", id);
     if (error) {
       mutate(() => previous);
-      toast.error(isPermissionError(error)
-        ? "Suppression refusée : droits insuffisants."
-        : error.message);
+      toast.error(humanizeSupabaseError(error, "Le casque n'a pas pu être supprimé."));
       return;
     }
     toast.success("Supprimé");
