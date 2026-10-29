@@ -75,7 +75,10 @@ Deno.serve(async (req) => {
     });
   }
 
+  // Sans cette adresse, Supabase renvoie le lien vers le site_url du projet, qui était
+  // localhost : la personne clique, et son navigateur n'a aucune page à ouvrir.
   const { data: invited, error: inviteErr } = await admin.auth.admin.inviteUserByEmail(email, {
+    redirectTo: "https://vr-cinema-hub.vercel.app",
     data: { display_name: body.display_name ?? email.split("@")[0] },
   });
   if (inviteErr) {
@@ -113,7 +116,18 @@ Deno.serve(async (req) => {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
-    return new Response(JSON.stringify({ ok: true, user_id: existing.id, invited: false, role }), {
+    // Le compte existe déjà : inviteUserByEmail n'envoie plus rien. Sans ce second envoi,
+    // refaire l'invitation depuis le site affiche un succès et la personne ne reçoit aucun lien.
+    const { error: mailErr } = await admin.auth.resetPasswordForEmail(email, {
+      redirectTo: "https://vr-cinema-hub.vercel.app/reset-password",
+    });
+    if (mailErr) {
+      return new Response(JSON.stringify({ error: mailErr.message }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    return new Response(JSON.stringify({ ok: true, user_id: existing.id, invited: true, role }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
