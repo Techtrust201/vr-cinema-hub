@@ -7,9 +7,10 @@ import { cn } from "@/lib/utils";
 import {
   Upload, MapPin, Clapperboard, FolderOpen, Trash2, Loader2,
   FileVideo, Download, CheckCircle2, XCircle, Play, X, WifiOff, AlertTriangle,
-  ImagePlus, RotateCcw, SlidersHorizontal, Info,
+  ImagePlus, RotateCcw, SlidersHorizontal, Info, Copy,
 } from "lucide-react";
 import { toast } from "sonner";
+import { Slider } from "@/components/ui/slider";
 import { isMovLike, resolveVideoContentType, sanitizeStorageFileName } from "@/lib/videoMime";
 import { sha256HexOfBlob } from "@/lib/sha256";
 import { uploadFileWithProgress } from "@/lib/uploadWithProgress";
@@ -30,6 +31,7 @@ import {
 } from "@/lib/inferVideoFormatFromName";
 import { humanizeSupabaseError } from "@/lib/supabaseErrors";
 import { legacyFormatFor } from "@/lib/legacyVideoFormat";
+import { describeYawOffset, normalizeYawOffset, yawLimit, yawPresets } from "@/lib/yawOffset";
 
 /**
  * Prévient qu'un fichier est resté dans le stockage sans film associé.
@@ -60,6 +62,9 @@ interface VideoRow {
   projection: Projection;
   stereo_mode: StereoMode;
   source_layout: SourceLayout;
+  /** Absent tant que la migration de l'orientation n'est pas appliquée. */
+  yaw_offset_deg?: number;
+  sha256: string | null;
   size_bytes: number;
   storage_path: string;
   origin?: "supabase" | ObjectOrigin;
@@ -302,7 +307,13 @@ export default function Libraries() {
   const [preview, setPreview] = useState<{ video: VideoRow; url: string } | null>(null);
   const [previewLoading, setPreviewLoading] = useState<string | null>(null);
   const [formatEdit, setFormatEdit] = useState<
-    { id: string; projection: Projection; stereo_mode: StereoMode; source_layout: SourceLayout } | null
+    {
+      id: string;
+      projection: Projection;
+      stereo_mode: StereoMode;
+      source_layout: SourceLayout;
+      yaw_offset_deg: number;
+    } | null
   >(null);
   const [formatSaving, setFormatSaving] = useState(false);
   const { confirm, confirmDialog } = useConfirm();
@@ -560,13 +571,14 @@ export default function Libraries() {
     if (!formatEdit) return;
     setFormatSaving(true);
     try {
-      const { projection, stereo_mode, source_layout } = formatEdit;
+      const { projection, stereo_mode, source_layout, yaw_offset_deg } = formatEdit;
       const { error } = await supabase
         .from("videos")
         .update({
           projection,
           stereo_mode,
           source_layout,
+          yaw_offset_deg: normalizeYawOffset(yaw_offset_deg, projection),
           // Le casque choisit sa surface d'affichage d'après `format` : ne pas le recalculer
           // laisserait la correction sans effet visible dans le casque.
           format: legacyFormatFor(projection, stereo_mode),
@@ -1333,7 +1345,9 @@ export default function Libraries() {
                   {PROJECTION_LABELS[v.projection] ?? v.projection} • {STEREO_LABELS[v.stereo_mode] ?? v.stereo_mode}
                   {/* L'encodage n'est signalé que s'il sort de l'ordinaire : le mentionner à
                       chaque ligne noierait l'information utile. */}
-                  {v.source_layout === "equiangular_cubemap" && " • Cubemap"} • {fmtSize(v.size_bytes)} • ajoutée le {new Date(v.created_at).toLocaleDateString("fr-FR")}
+                  {v.source_layout === "equiangular_cubemap" && " • Cubemap"}
+                  {v.projection !== "flat" && (v.yaw_offset_deg ?? 0) !== 0 && ` • sujet ${describeYawOffset(v.yaw_offset_deg ?? 0)}`}
+                  {" "}• {fmtSize(v.size_bytes)} • ajoutée le {new Date(v.created_at).toLocaleDateString("fr-FR")}
                 </p>
               </div>
               <button
@@ -1355,6 +1369,7 @@ export default function Libraries() {
                               projection: v.projection,
                               stereo_mode: v.stereo_mode,
                               source_layout: v.source_layout,
+                              yaw_offset_deg: v.yaw_offset_deg ?? 0,
                             },
                       )
                     }
@@ -1425,6 +1440,7 @@ export default function Libraries() {
                           setFormatEdit((f) => f && {
                             ...f,
                             projection,
+                            yaw_offset_deg: normalizeYawOffset(f.yaw_offset_deg, projection),
                             // Un écran plat n'a ni relief ni projection sphérique : garder
                             // d'anciennes valeurs ici laisserait des réglages contradictoires.
                             ...(projection === "flat"
@@ -1468,6 +1484,80 @@ export default function Libraries() {
                       </select>
                     </label>
                   </div>
+
+                  {formatEdit.projection !== "flat" && (
+                    <div className="space-y-2 rounded border border-border/40 px-3 py-2.5">
+                      <div className="flex items-baseline justify-between gap-3">
+                        <span className="text-[10px] text-muted-foreground">
+                          Au lancement, casque sur la tête, le sujet du film apparaît :
+                        </span>
+                        <span className="text-xs font-medium text-foreground">
+                          {describeYawOffset(formatEdit.yaw_offset_deg)}
+                        </span>
+                      </div>
+                      <Slider
+                        min={-yawLimit(formatEdit.projection)}
+                        max={yawLimit(formatEdit.projection)}
+                        step={5}
+                        value={[formatEdit.yaw_offset_deg]}
+                        onValueChange={([value]) =>
+                          setFormatEdit((f) => f && {
+                            ...f,
+                            yaw_offset_deg: normalizeYawOffset(value, f.projection),
+                          })
+                        }
+                        aria-label="Position du sujet dans l'image"
+                      />
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        {yawPresets(formatEdit.projection).map((preset) => (
+                          <button
+                            key={preset.value}
+                            type="button"
+                            onClick={() => setFormatEdit((f) => f && { ...f, yaw_offset_deg: preset.value })}
+                            className={cn(
+                              "rounded border px-2 py-1 text-[10px] transition-colors",
+                              formatEdit.yaw_offset_deg === preset.value
+                                ? "border-[hsl(var(--vr-violet))] text-[hsl(var(--vr-violet))]"
+                                : "border-border/60 text-muted-foreground hover:text-foreground",
+                            )}
+                          >
+                            {preset.label}
+                          </button>
+                        ))}
+                      </div>
+                      <p className="text-[10px] text-muted-foreground/80">
+                        Indiquez où vous voyez le sujet au démarrage du film : le casque le
+                        ramènera face au spectateur. Le fichier n'est pas renvoyé.
+                      </p>
+                    </div>
+                  )}
+
+                  {v.sha256 && (
+                    <div className="space-y-1 text-[10px] text-muted-foreground">
+                      <div className="flex items-center gap-2">
+                        <span className="shrink-0">Empreinte du fichier reçu (SHA-256) :</span>
+                        <code className="truncate font-mono text-foreground/80">{v.sha256}</code>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            void navigator.clipboard
+                              .writeText(v.sha256 ?? "")
+                              .then(() => toast.success("Empreinte copiée."))
+                              .catch(() => toast.error("Copie impossible."));
+                          }}
+                          className="shrink-0 rounded p-1 hover:text-foreground hover:bg-background"
+                          title="Copier l'empreinte"
+                        >
+                          <Copy size={11} />
+                        </button>
+                      </div>
+                      <p className="text-muted-foreground/70">
+                        Pour vérifier que l'envoi n'a rien altéré, sous Windows :{" "}
+                        <code className="font-mono">certutil -hashfile "film.mp4" SHA256</code>.
+                        Si les deux empreintes sont identiques, le fichier est arrivé intact.
+                      </p>
+                    </div>
+                  )}
 
                   <div className="flex items-center gap-2">
                     <button

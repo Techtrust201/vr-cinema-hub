@@ -82,6 +82,7 @@ Réponse **200** :
       "order": 0,
       "projection": "360" | "180" | "flat",
       "stereo_mode": "mono" | "sbs" | "tb" | null,
+      "yaw_offset_deg": 0,
       "file_extension": "mp4" | "mov" | "m4v" | "webm" | "mkv",
       "size_bytes": 1234567890,
       "duration_seconds": 240,
@@ -104,7 +105,7 @@ Algo côté casque :
 2. Télécharger ceux qui manquent via `download_url` (`UnityWebRequest`, suit les redirects, supporte `Range`).
 3. Supprimer les fichiers locaux qui ne sont plus dans `videos`.
 4. Si `download_url` expire en cours de route → rappeler `headset-manifest` (avec `force_full=1` pour re-signer même si la version n'a pas bougé).
-5. Router le rendu selon `projection` + `stereo_mode`.
+5. Router le rendu selon `projection` + `stereo_mode`. Pour un 180/360, faire pivoter la sphère de `yaw_offset_deg` (position du sujet dans l'image, en degrés depuis le centre, positif vers la droite) pour l'amener face au spectateur.
 6. Une fois TOUT appliqué (téléchargements OK + bibliothèque rafraîchie), envoyer `headset-report-sync` avec `applied_manifest_version = manifest_version`.
 
 ## 5. `POST /headset-heartbeat`

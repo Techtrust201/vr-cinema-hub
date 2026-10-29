@@ -56,6 +56,45 @@ export type Database = {
         }
         Relationships: []
       }
+      app_releases: {
+        Row: {
+          created_at: string
+          git_commit: string | null
+          id: string
+          notes: string | null
+          sha256: string
+          signer_sha256: string | null
+          size_bytes: number
+          storage_path: string
+          version_code: number
+          version_name: string
+        }
+        Insert: {
+          created_at?: string
+          git_commit?: string | null
+          id?: string
+          notes?: string | null
+          sha256: string
+          signer_sha256?: string | null
+          size_bytes: number
+          storage_path: string
+          version_code: number
+          version_name: string
+        }
+        Update: {
+          created_at?: string
+          git_commit?: string | null
+          id?: string
+          notes?: string | null
+          sha256?: string
+          signer_sha256?: string | null
+          size_bytes?: number
+          storage_path?: string
+          version_code?: number
+          version_name?: string
+        }
+        Relationships: []
+      }
       assignments: {
         Row: {
           created_at: string
@@ -664,6 +703,7 @@ export type Database = {
           thumbnail_url: string | null
           updated_at: string
           uploaded_by: string | null
+          yaw_offset_deg: number
         }
         Insert: {
           created_at?: string
@@ -683,6 +723,7 @@ export type Database = {
           thumbnail_url?: string | null
           updated_at?: string
           uploaded_by?: string | null
+          yaw_offset_deg?: number
         }
         Update: {
           created_at?: string
@@ -702,6 +743,7 @@ export type Database = {
           thumbnail_url?: string | null
           updated_at?: string
           uploaded_by?: string | null
+          yaw_offset_deg?: number
         }
         Relationships: []
       }
