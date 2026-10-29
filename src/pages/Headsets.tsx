@@ -9,6 +9,9 @@ import { cn } from "@/lib/utils";
 import { humanizeSupabaseError } from "@/lib/supabaseErrors";
 import { appContactLabel, appContactState, formatRelativeFr, type AppContactState } from "@/lib/headsetContact";
 import { describeReportStatus, describeVersionGap } from "@/lib/syncVocabulary";
+import { HeadsetAppReleaseCard } from "@/components/HeadsetAppReleaseCard";
+import { useLatestAppRelease } from "@/hooks/useLatestAppRelease";
+import { isOutdated } from "@/lib/appRelease";
 
 interface HeadsetRow {
   id: string;
@@ -66,6 +69,8 @@ export default function Headsets() {
   );
 
   const list = data ?? [];
+  const latestRelease = useLatestAppRelease();
+  const latestVersion = latestRelease.data?.version_name ?? null;
 
   async function revoke(id: string, name: string) {
     const ok = await confirm({
@@ -155,6 +160,8 @@ export default function Headsets() {
         </div>
       )}
 
+      {canManageContent && <HeadsetAppReleaseCard latest={latestRelease} headsets={list} />}
+
       {initialLoading ? (
         <div className="flex items-center justify-center py-12 text-muted-foreground">
           <Loader2 className="animate-spin mr-2" size={16} /> Chargement…
@@ -186,6 +193,9 @@ export default function Headsets() {
                   </div>
                   <p className="text-xs text-muted-foreground">
                     {h.model ?? "Modèle inconnu"}{h.serial ? ` • ${h.serial}` : ""}{h.app_version ? ` • app v${h.app_version}` : ""}
+                    {h.status === "active" && isOutdated(h.app_version, latestVersion) && (
+                      <span className="text-[hsl(35_90%_55%)]"> • mise à jour disponible (v{latestVersion})</span>
+                    )}
                   </p>
                   {/* Le détail des trois horodatages n'intéresse que le support :
                       il reste en infobulle plutôt que d'encombrer la ligne. */}

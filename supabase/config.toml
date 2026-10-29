@@ -47,3 +47,6 @@ verify_jwt = true
 
 [functions.origin-upload-url]
 verify_jwt = true
+
+[functions.app-release-latest]
+verify_jwt = true
