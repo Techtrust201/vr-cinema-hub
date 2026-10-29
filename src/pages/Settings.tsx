@@ -25,6 +25,7 @@ type Member = {
 type InviteResponse = {
   error?: string;
   invited?: boolean;
+  email_error?: string | null;
 };
 
 type AuditRow = {
@@ -163,7 +164,13 @@ export default function Settings() {
     );
     setBusy(false);
     if (error) {
-      setMessage(humanizeSupabaseError(error, "L'invitation n'a pas pu être envoyée."));
+      // La fonction répond en 4xx avec la vraie raison dans le corps : sans le lire, tout
+      // échec se résumait à « l'invitation n'a pas pu être envoyée ».
+      const body = await (error as { context?: Response }).context?.json?.().catch(() => null);
+      const reason = (body as InviteResponse | null)?.error;
+      setMessage(
+        humanizeSupabaseError(reason ? { message: reason } : error, "L'invitation n'a pas pu être envoyée."),
+      );
       return;
     }
     if (data?.error) {
@@ -172,7 +179,16 @@ export default function Settings() {
       return;
     }
     setInviteEmail("");
-    setMessage(data?.invited ? "Invitation envoyée." : "Rôle appliqué au compte existant.");
+    if (data?.email_error) {
+      setMessage(
+        `Accès donné, mais l'e-mail n'est pas parti : ${humanizeSupabaseError(
+          { message: data.email_error },
+          "envoi refusé.",
+        )}`,
+      );
+    } else {
+      setMessage(data?.invited ? "Invitation envoyée." : "Rôle appliqué au compte existant.");
+    }
     await loadMembers();
   }
 
@@ -291,7 +307,7 @@ export default function Settings() {
               <div className="space-y-2">
                 <h2 className="text-sm font-semibold">Membres</h2>
                 <ul className="divide-y divide-border/50 rounded-lg border border-border/50">
-                  {members.map((m) => (
+                  {members.filter((m) => m.role != null).map((m) => (
                     <li
                       key={m.user_id}
                       className="flex flex-col sm:flex-row sm:items-center gap-2 px-3 py-2.5 text-sm"
@@ -307,7 +323,7 @@ export default function Settings() {
                       <div className="flex items-center gap-2">
                         <select
                           disabled={busy || m.user_id === user?.id}
-                          value={m.role ?? "operator"}
+                          value={m.role}
                           onChange={(e) =>
                             void changeRole(
                               m.user_id,
@@ -341,7 +357,7 @@ export default function Settings() {
                       </div>
                     </li>
                   ))}
-                  {members.length === 0 && (
+                  {members.every((m) => m.role == null) && (
                     <li className="px-3 py-3 text-xs text-muted-foreground">
                       Aucun membre listé.
                     </li>

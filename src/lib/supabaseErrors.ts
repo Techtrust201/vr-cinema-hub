@@ -46,6 +46,11 @@ export function humanizeSupabaseError(
     return "Le serveur est injoignable. Vérifiez la connexion Internet, puis réessayez.";
   }
 
+  // Supabase n'envoie que quelques e-mails par heure avec son service intégré.
+  if (/rate limit/i.test(message)) {
+    return "Trop d'e-mails envoyés en peu de temps. Réessayez dans une heure.";
+  }
+
   if (/jwt|token|session/i.test(message) && /expir|invalid/i.test(message)) {
     return "Votre session a expiré. Reconnectez-vous pour continuer.";
   }

@@ -121,15 +121,18 @@ Deno.serve(async (req) => {
     const { error: mailErr } = await admin.auth.resetPasswordForEmail(email, {
       redirectTo: "https://vr-cinema-hub.vercel.app/reset-password",
     });
-    if (mailErr) {
-      return new Response(JSON.stringify({ error: mailErr.message }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-    return new Response(JSON.stringify({ ok: true, user_id: existing.id, invited: true, role }), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    // Le rôle est déjà appliqué : répondre par une erreur ferait croire que l'accès n'a pas
+    // été donné. Seul l'e-mail manque, le plus souvent à cause de la limite d'envoi horaire.
+    return new Response(
+      JSON.stringify({
+        ok: true,
+        user_id: existing.id,
+        invited: !mailErr,
+        email_error: mailErr?.message ?? null,
+        role,
+      }),
+      { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+    );
   }
 
   const targetId = invited.user?.id;
