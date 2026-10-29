@@ -97,8 +97,8 @@ adb start-server
 
 | Environnement | Icône sur le casque | Package Android | Fichier APK (dossier builds) | Dashboard à ouvrir |
 |---------------|---------------------|-----------------|------------------------------|-------------------|
-| **Staging / labo** | VR Cinema Quest **Staging** | `com.techtrust.vrcinemaquest.staging` | `VR-Cinema-Quest-STAGING-XR-FIX.apk` | `http://127.0.0.1:5173` (local) ou preview Vercel staging |
-| **Production** | VR Cinema Quest | `com.techtrust.vrcinemaquest` | `VR-Cinema-Quest-PRODUCTION.apk` | `https://vr-cinema-hub.vercel.app` |
+| **Staging / labo** | DLPAlexandre **Staging** | `com.techtrust.vrcinemaquest.staging` | `VR-Cinema-Quest-STAGING-XR-FIX.apk` | `http://127.0.0.1:5173` (local) ou preview Vercel staging |
+| **Production** | DLPAlexandre | `com.techtrust.vrcinemaquest` | `DLPAlexandre.apk` | `https://vr-cinema-hub.vercel.app` |
 
 Chemin typique des APK dans le repo :
 
@@ -168,7 +168,7 @@ adb install -r "$APK"
 ### 5.2 Production
 
 ```bash
-APK="/home/hugo/work/vr-cinema-hub/vr-cinema-quest-app-unity/builds/VR-Cinema-Quest-PRODUCTION.apk"
+APK="/home/hugo/work/vr-cinema-hub/vr-cinema-quest-app-unity/builds/DLPAlexandre.apk"
 
 adb install -r "$APK"
 ```
@@ -426,7 +426,7 @@ adb shell am force-stop com.techtrust.vrcinemaquest.staging
 adb shell am start -n com.techtrust.vrcinemaquest.staging/com.unity3d.player.UnityPlayerGameActivity
 
 # Install / relance production
-APK="/home/hugo/work/vr-cinema-hub/vr-cinema-quest-app-unity/builds/VR-Cinema-Quest-PRODUCTION.apk"
+APK="/home/hugo/work/vr-cinema-hub/vr-cinema-quest-app-unity/builds/DLPAlexandre.apk"
 adb install -r "$APK"
 adb shell am force-stop com.techtrust.vrcinemaquest
 adb shell am start -n com.techtrust.vrcinemaquest/com.unity3d.player.UnityPlayerGameActivity

@@ -1,0 +1,665 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>DLPAlexandre — Installer sur Windows</title>
+<style>
+  @page { size: A4; margin: 12mm 15mm 12mm 15mm; }
+
+  :root {
+    --encre: #1a1d24;
+    --gris: #4e5968;
+    --trait: #d5dbe3;
+    --accent: #1f6feb;
+    --vert: #0d7a42;
+    --ambre: #8a5a00;
+    --rouge: #b42318;
+    --fond: #f4f7fb;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+    color: var(--encre);
+    font-size: 11pt;
+    line-height: 1.45;
+    margin: 0;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  h1 { font-size: 24pt; line-height: 1.12; margin: 0 0 6px; letter-spacing: -0.4px; }
+  h2 {
+    font-size: 16pt;
+    line-height: 1.2;
+    margin: 0 0 8px;
+    padding-bottom: 5px;
+    border-bottom: 2.5px solid var(--encre);
+    page-break-after: avoid;
+  }
+  h3 { font-size: 12pt; margin: 12px 0 5px; page-break-after: avoid; }
+  p { margin: 0 0 6px; }
+  strong { font-weight: 650; }
+  a { color: var(--accent); text-decoration: none; }
+
+  .surtitre {
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    font-size: 8.5pt;
+    color: var(--accent);
+    font-weight: 700;
+    margin-bottom: 8px;
+    break-after: avoid;
+  }
+  .sous { font-size: 11.5pt; color: var(--gris); margin: 0 0 10px; max-width: 170mm; }
+
+  ol.etapes { list-style: none; padding: 0; margin: 8px 0 10px; counter-reset: e; }
+  ol.etapes > li {
+    counter-increment: e;
+    position: relative;
+    padding: 0 0 7px 34px;
+    page-break-inside: avoid;
+  }
+  ol.etapes > li::before {
+    content: counter(e);
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background: var(--encre);
+    color: #fff;
+    font-weight: 700;
+    font-size: 11pt;
+    line-height: 24px;
+    text-align: center;
+  }
+
+  .bloc {
+    border-left: 4px solid var(--accent);
+    background: var(--fond);
+    padding: 7px 11px;
+    margin: 8px 0;
+    page-break-inside: avoid;
+  }
+  .bloc.ok { border-left-color: var(--vert); background: #f1f9f4; }
+  .bloc.stop { border-left-color: var(--rouge); background: #fdf3f2; }
+  .bloc.attention { border-left-color: var(--ambre); background: #fdf8ec; }
+  .bloc .titre {
+    font-weight: 700;
+    font-size: 8.5pt;
+    letter-spacing: 0.6px;
+    text-transform: uppercase;
+    margin-bottom: 3px;
+  }
+  .bloc.ok .titre { color: var(--vert); }
+  .bloc.stop .titre { color: var(--rouge); }
+  .bloc.attention .titre { color: var(--ambre); }
+  .bloc p:last-child, .bloc li:last-child { margin-bottom: 0; }
+
+  table { width: 100%; border-collapse: collapse; margin: 8px 0 12px; font-size: 10pt; }
+  th {
+    text-align: left;
+    background: var(--encre);
+    color: #fff;
+    padding: 4px 8px;
+    font-size: 8.5pt;
+    letter-spacing: 0.4px;
+    text-transform: uppercase;
+  }
+  td { padding: 4px 8px; border-bottom: 1px solid var(--trait); vertical-align: top; }
+  tr { page-break-inside: avoid; }
+  table.intact { page-break-inside: avoid; }
+
+  code, .cmd {
+    font-family: Consolas, "Courier New", monospace;
+    font-size: 10pt;
+  }
+  .cmd {
+    display: block;
+    background: var(--encre);
+    color: #f4f7fb;
+    padding: 7px 10px;
+    margin: 6px 0;
+    page-break-inside: avoid;
+  }
+  .lien {
+    font-family: Consolas, "Courier New", monospace;
+    font-size: 9.5pt;
+    background: var(--fond);
+    border: 1px solid var(--trait);
+    padding: 6px 8px;
+    margin: 4px 0 8px;
+    page-break-inside: avoid;
+  }
+
+  ul.simple { margin: 4px 0 8px; padding-left: 18px; }
+  ul.simple li { margin-bottom: 3px; }
+
+  .meta { color: var(--gris); font-size: 9.5pt; margin-top: 18px; }
+</style>
+</head>
+<body>
+
+<!-- ===================== GARDE ===================== -->
+<section>
+  <div class="surtitre">Guide client · Windows seulement</div>
+  <h1>Installer l’application DLPAlexandre sur un casque Quest</h1>
+  <p class="sous">Une étape à la fois. Ne passez à la suivante que lorsque vous voyez la phrase écrite en vert. Le câble sert à installer. Les films passent ensuite par le Wi-Fi, et restent dans le casque sans Internet.</p>
+
+  <h3>Posez ceci sur la table</h3>
+  <ul class="simple">
+    <li>Un PC Windows 10 ou 11.</li>
+    <li>Le téléphone sur lequel l’application <strong>Meta Horizon</strong> est installée, et où le casque apparaît déjà.</li>
+    <li>Le casque (Quest 2, 3, 3S ou Pro), allumé, chargé à plus de 50&nbsp;%.</li>
+    <li>Un câble USB qui copie des fichiers. Celui de la boîte du Quest ne fait souvent que charger&nbsp;: prenez un câble déjà utilisé pour récupérer des photos d’un téléphone.</li>
+    <li>L’adresse e-mail et le mot de passe du site VR Cinema Hub. Ce compte n’est pas le compte Meta. S’il ne vous a pas été donné, arrêtez-vous et demandez-le.</li>
+    <li>Le fichier <strong>DLPAlexandre.apk</strong>, à télécharger sur le site, voir ci-dessous.</li>
+  </ul>
+
+  <h3>Télécharger l’application</h3>
+  <ol class="etapes">
+    <li>Sur le PC, ouvrez le site et connectez-vous avec le compte VR Cinema Hub.
+      <div class="lien">https://vr-cinema-hub.vercel.app</div>
+    </li>
+    <li>Menu de gauche, <strong>Casques</strong>. En haut de la page, le cadre <strong>Application casque DLPAlexandre</strong> indique la version et la date de sa dernière mise à jour.</li>
+    <li>Cliquez sur <strong>Télécharger DLPAlexandre.apk</strong>. Le fichier arrive dans le dossier <strong>Téléchargements</strong> du PC.</li>
+  </ol>
+  <p>Téléchargez-le le jour même&nbsp;: le site propose toujours la dernière version. Si Windows l’a nommé <strong>DLPAlexandre (1).apk</strong>, c’est qu’il était déjà là&nbsp;: supprimez l’ancien et renommez le nouveau en DLPAlexandre.apk.</p>
+
+  <div class="bloc stop">
+    <div class="titre">La règle qui fait rater toute l’installation</div>
+    <p>Le casque, le téléphone et le site développeur Meta doivent utiliser <strong>le même compte Meta</strong>. Ouvrez les paramètres du casque et notez l’adresse affichée. C’est celle-là, pas une autre, que vous utiliserez aux étapes 1, 2 et 3. Trois comptes différents&nbsp;: le reste du guide ne produit rien, sans message d’erreur clair.</p>
+  </div>
+
+  <div class="bloc">
+    <div class="titre">Deux associations, ne les mélangez pas</div>
+    <p><strong>Téléphone et casque.</strong> C’est Meta. C’est déjà fait si le casque apparaît dans l’application du téléphone. On ne vous demandera pas de code pour ça.</p>
+    <p><strong>Casque et site VR Cinema Hub.</strong> C’est plus tard, étape 7. L’application du casque affiche un code à 6 chiffres, et vous le tapez sur le site web.</p>
+  </div>
+
+  <h3>L’ordre</h3>
+  <table>
+    <tr><th style="width:22mm">Étape</th><th>Vous faites</th><th>Vous ne continuez que si</th></tr>
+    <tr><td>1</td><td>Créer l’équipe Meta et vérifier le compte</td><td>le site dit que le compte est vérifié</td></tr>
+    <tr><td>2</td><td>Activer le mode développeur sur le téléphone</td><td>l’interrupteur reste allumé</td></tr>
+    <tr><td>3</td><td>Installer le programme Meta sur le PC</td><td>vous êtes connecté dedans</td></tr>
+    <tr><td>4</td><td>Brancher le casque et autoriser le PC</td><td>le casque apparaît dans le programme</td></tr>
+    <tr><td>5</td><td>Envoyer le fichier .apk dans le casque</td><td>le programme du PC affiche l’application</td></tr>
+    <tr><td>6</td><td>Ouvrir DLPAlexandre dans le casque</td><td>un code à 6 chiffres s’affiche</td></tr>
+    <tr><td>7</td><td>Taper ce code sur le site</td><td>le casque quitte l’écran du code</td></tr>
+    <tr><td>8</td><td>Déposer un film et l’attribuer</td><td>le site affiche À jour</td></tr>
+  </table>
+  <p>40 minutes pour le premier casque. Les suivants reprennent à l’étape 2&nbsp;: le programme du PC est déjà là.</p>
+</section>
+
+<!-- ===================== 1 ===================== -->
+<section class="page">
+  <div class="surtitre">Étape 1 · une seule fois par compte</div>
+  <h2>Créer l’équipe Meta</h2>
+  <p>Sans cette étape, la ligne «&nbsp;Mode développeur&nbsp;» n’existe pas dans le téléphone. Le guide précédent sautait cette page. C’est pour ça que l’installation s’arrêtait avant même le câble.</p>
+
+  <ol class="etapes">
+    <li>Sur le PC, ouvrez Chrome ou Edge. Connectez-vous avec <strong>le compte Meta du casque</strong>, celui que vous avez noté.
+      <div class="lien">https://developers.meta.com/manage/organizations/create/</div>
+    </li>
+    <li>Créez une équipe. Un nom suffit, par exemple celui de votre société. Vous pouvez être seul dans l’équipe. Validez jusqu’au bout.</li>
+    <li>Ouvrez ensuite la page de vérification.
+      <div class="lien">https://developers.meta.com/manage/verify/</div>
+    </li>
+    <li>Vérifiez le compte. Meta propose deux façons&nbsp;: confirmer votre numéro de mobile par SMS, ou ajouter une carte bancaire. PayPal ne compte pas. Le titulaire du compte doit avoir 18 ans ou plus.</li>
+    <li>Attendez que la page indique que le compte est vérifié. Si un e-mail ou un SMS est demandé, faites-le maintenant, avant de toucher au casque.</li>
+  </ol>
+
+  <div class="bloc ok">
+    <div class="titre">Passez à l’étape suivante</div>
+    <p>La page de vérification affiche que le compte est vérifié, et vous avez bien une équipe à votre nom.</p>
+  </div>
+
+  <div class="bloc stop">
+    <div class="titre">Arrêtez-vous si</div>
+    <p>vous n’arrivez pas à vous connecter avec le compte du casque, ou si le site refuse la vérification. Inutile de brancher le casque&nbsp;: le mode développeur restera invisible. Reprenez avec le bon compte, ou demandez à la personne qui gère le compte Meta de faire cette page à votre place.</p>
+  </div>
+</section>
+
+<!-- ===================== 2 ===================== -->
+<section class="page">
+  <div class="surtitre">Étape 2 · une fois par casque</div>
+  <h2>Activer le mode développeur</h2>
+  <p>Cela se fait sur le <strong>téléphone</strong>, dans l’application Meta Horizon. Pas dans le casque, pas sur le PC.</p>
+
+  <ol class="etapes">
+    <li>Ouvrez <strong>Meta Horizon</strong> sur le téléphone. Le compte connecté doit être celui du casque.</li>
+    <li>Si le casque n’apparaît pas dans l’application, associez-le d’abord avec le parcours normal de Meta (l’application vous guide). Ce n’est pas le code à 6 chiffres. Revenez ici seulement quand le nom du casque est visible.</li>
+    <li>Touchez l’<strong>icône de casque</strong> dans la barre du bas.</li>
+    <li>Touchez <strong>la ligne du casque</strong> elle-même (Quest 3, Quest 3S, etc.). La voir en haut de l’écran ne suffit pas.</li>
+    <li>Sous la photo du casque, touchez <strong>Paramètres du casque</strong>. En anglais&nbsp;: Headset Settings.</li>
+    <li>Touchez <strong>Mode développeur</strong>. En anglais&nbsp;: Developer Mode.</li>
+    <li>Mettez l’interrupteur sur <strong>activé</strong>. Sortez de l’écran, rouvrez-le&nbsp;: l’interrupteur doit être resté activé.</li>
+  </ol>
+
+  <div class="bloc ok">
+    <div class="titre">Passez à l’étape suivante</div>
+    <p>L’interrupteur Mode développeur est activé, et il le reste quand vous revenez sur l’écran.</p>
+  </div>
+
+  <div class="bloc stop">
+    <div class="titre">La ligne « Mode développeur » n’existe pas</div>
+    <p>Ne cherchez pas plus loin dans les menus. Revenez à l’étape 1. Les trois causes, dans l’ordre&nbsp;: le téléphone n’est pas connecté avec le compte du casque&nbsp;; le compte n’est pas vérifié&nbsp;; aucune équipe n’a été créée. Tant que la ligne est absente, le PC ne pourra pas installer l’application.</p>
+  </div>
+</section>
+
+<!-- ===================== 3 ===================== -->
+<section class="page">
+  <div class="surtitre">Étape 3 · une seule fois par ordinateur</div>
+  <h2>Installer le programme sur le PC</h2>
+  <p>Le programme s’appelle <strong>Meta Quest Developer Hub</strong>. C’est lui qui installe l’application, avec la souris. Vous n’aurez pas de commande à taper.</p>
+
+  <ol class="etapes">
+    <li>Sur le PC, ouvrez cette page et téléchargez la version Windows.
+      <div class="lien">https://developers.meta.com/horizon/downloads/package/oculus-developer-hub-win/</div>
+    </li>
+    <li>Si Windows affiche «&nbsp;Windows a protégé votre ordinateur&nbsp;», cliquez sur <strong>Informations complémentaires</strong>, puis <strong>Exécuter quand même</strong>.</li>
+    <li>Installez le programme avec les boutons proposés, puis ouvrez-le.</li>
+    <li>Connectez-vous avec <strong>le même compte Meta</strong> que le casque et le téléphone.</li>
+    <li>Avant de brancher le casque&nbsp;: regardez en bas à droite de l’écran, la petite flèche ^. S’il y a une icône Meta ou Oculus, clic droit, <strong>Quitter</strong>. Ce programme (Quest Link) prend le câble et le casque reste invisible. Fermez-le à chaque installation.</li>
+  </ol>
+
+  <div class="bloc ok">
+    <div class="titre">Passez à l’étape suivante</div>
+    <p>Meta Quest Developer Hub est ouvert et vous y êtes connecté. Quest Link est fermé, y compris dans la zone près de l’horloge.</p>
+  </div>
+</section>
+
+<!-- ===================== 4 ===================== -->
+<section class="page">
+  <div class="surtitre">Étape 4 · le point où ça bloque d’habitude</div>
+  <h2>Brancher le casque et l’autoriser</h2>
+  <p>La question d’autorisation s’affiche <strong>dans le casque</strong>, pas sur l’écran du PC. Si vous regardez le moniteur, vous ne la verrez pas.</p>
+
+  <ol class="etapes">
+    <li>Branchez le câble sur un port USB <strong>à l’arrière</strong> de l’ordinateur, directement. Pas sur un hub, pas sur le clavier, pas sur l’écran.</li>
+    <li>Mettez le casque <strong>sur la tête</strong>.</li>
+    <li>Si une fenêtre propose <strong>Quest Link</strong> ou Air Link&nbsp;: refusez. Choisissez Annuler, Pas maintenant ou Refuser. Link empêche l’installation.</li>
+    <li>Une fenêtre demande d’<strong>autoriser le débogage USB</strong>. Cochez <strong>Toujours autoriser cet ordinateur</strong> (en anglais&nbsp;: Always allow from this computer). Puis Autoriser.</li>
+    <li>Si une seconde fenêtre demande l’accès aux fichiers du casque, acceptez-la aussi.</li>
+    <li>Enlevez le casque. Dans Meta Quest Developer Hub, à gauche, cliquez sur <strong>Device Manager</strong>.</li>
+  </ol>
+
+  <div class="bloc ok">
+    <div class="titre">Passez à l’étape suivante</div>
+    <p>Le casque apparaît dans Device Manager, avec une pastille verte <strong>Active</strong>. S’il n’y est pas, restez sur cette page. Ne glissez pas le fichier.</p>
+  </div>
+
+  <h3>Aucune fenêtre dans le casque</h3>
+  <ol class="etapes">
+    <li>Gardez le casque sur la tête. Appuyez sur le bouton Meta de la manette droite (le bouton avec le logo).</li>
+    <li>Touchez l’engrenage <strong>Paramètres</strong>.</li>
+    <li>Ouvrez la rubrique <strong>Développeur</strong>.</li>
+    <li>Activez la ligne qui parle de la connexion USB, ou <strong>Notification MTP</strong>.</li>
+    <li>Débranchez le câble. Comptez jusqu’à cinq. Rebranchez-le, le casque toujours sur la tête.</li>
+    <li>Cochez «&nbsp;Toujours autoriser&nbsp;», puis Autoriser.</li>
+  </ol>
+
+  <div class="bloc attention">
+    <div class="titre">Vous aviez déjà cliqué sur Refuser</div>
+    <p>Dans le casque&nbsp;: Paramètres → Développeur → <strong>Révoquer les autorisations de débogage USB</strong>. Débranchez, rebranchez, et acceptez cette fois en cochant «&nbsp;toujours&nbsp;».</p>
+  </div>
+
+  <div class="bloc stop">
+    <div class="titre">Device Manager reste vide</div>
+    <p>Changez de câble, puis de port USB à l’arrière. Redémarrez le casque (appui long sur le bouton d’alimentation, Éteindre, rallumez). Vérifiez que Quest Link est bien quitté. Si l’écran est toujours vide, allez à la dernière page de ce guide, «&nbsp;Secours&nbsp;», et faites uniquement la partie pilote. Revenez ici ensuite.</p>
+  </div>
+</section>
+
+<!-- ===================== 5 ===================== -->
+<section class="page">
+  <div class="surtitre">Étape 5</div>
+  <h2>Envoyer le fichier dans le casque</h2>
+  <p>Un double-clic sur le fichier .apk ne l’installe pas. Windows ne sait pas l’ouvrir. Seul le programme Meta Quest Developer Hub peut l’envoyer au casque.</p>
+
+  <ol class="etapes">
+    <li>Ouvrez le dossier <strong>Téléchargements</strong> et copiez <strong>DLPAlexandre.apk</strong> sur le Bureau, pour le retrouver tout de suite. Pas encore téléchargé&nbsp;: première page de ce guide, «&nbsp;Télécharger l’application&nbsp;».</li>
+    <li>Dans l’Explorateur, menu <strong>Affichage</strong> → <strong>Afficher</strong> → cochez <strong>Extensions de noms de fichiers</strong>. Le nom doit finir par <strong>.apk</strong>. S’il finit par .zip, ce n’est pas encore le bon fichier.</li>
+    <li>Le casque est branché, pastille verte <strong>Active</strong> dans <strong>Device Manager</strong>. La colonne de gauche du programme est en anglais&nbsp;: cliquez sur ces mots-là. Si le casque est listé mais sans pastille verte, cliquez sur sa carte, remettez le casque, et acceptez à nouveau le débogage USB.</li>
+    <li>Dans cette même page, trouvez la zone <strong>Apps</strong>. Cliquez sur <strong>Add Build</strong>. Ne faites pas glisser le fichier&nbsp;: le bouton se trompe moins.</li>
+    <li>Dans la fenêtre qui s’ouvre, cliquez sur <strong>Bureau</strong> à gauche. Cliquez une fois sur DLPAlexandre.apk, puis sur <strong>Ouvrir</strong>.</li>
+    <li>Attendez. Cela prend une à deux minutes. Ne débranchez pas. Ne fermez pas le programme. Une notification Windows dit que l’installation est finie, et le nom <strong>DLPAlexandre</strong> apparaît dans la liste Apps.</li>
+  </ol>
+
+  <div class="bloc ok">
+    <div class="titre">Passez à l’étape suivante</div>
+    <p>Le nom DLPAlexandre est visible dans la liste Apps du programme, sur le PC. Tant qu’il n’y est pas, le casque n’a rien reçu&nbsp;: ne cherchez pas l’application dans le casque.</p>
+  </div>
+
+  <div class="bloc stop">
+    <div class="titre">Le programme affiche une erreur</div>
+    <p>Ne recommencez pas dix fois. Photographiez le message.</p>
+    <p>S’il contient <strong>INSTALL_FAILED_UPDATE_INCOMPATIBLE</strong>&nbsp;: une ancienne version est déjà dans le casque. N’effacez rien. Appelez votre prestataire.</p>
+    <p>S’il dit que le casque n’est pas connecté&nbsp;: retour à l’étape 4. Le fichier n’a pas été envoyé.</p>
+  </div>
+
+  <div class="bloc attention">
+    <div class="titre">Vous pouvez débrancher</div>
+    <p>Seulement une fois le nom visible dans Apps. Le câble ne sert plus, sauf pour un autre casque.</p>
+  </div>
+</section>
+
+<!-- ===================== 6 ===================== -->
+<section class="page">
+  <div class="surtitre">Étape 6 · c’est ici que l’application semble « absente »</div>
+  <h2>Ouvrir l’application dans le casque</h2>
+  <p>Elle n’est pas sur l’écran d’accueil, ni dans la liste normale des jeux. Meta la range à part. Si vous ne faites pas le chemin ci-dessous, vous concluez que l’installation a échoué alors qu’elle a réussi.</p>
+
+  <div class="bloc">
+    <div class="titre">Comment cliquer</div>
+    <p>Gardez le casque sur la tête. Manette droite&nbsp;: le bouton avec le logo, sous le pouce, ouvre le menu. Pour choisir une ligne, pointez-la avec la manette et pressez la <strong>gâchette</strong>, sous l’index. Tous les clics de cette page se font ainsi.</p>
+  </div>
+
+  <h3>Chemin A — menu récent</h3>
+  <ol class="etapes">
+    <li>Bouton logo de la manette droite.</li>
+    <li>Dans la barre du bas, <strong>Bibliothèque</strong>. En anglais&nbsp;: Library.</li>
+    <li>À gauche, <strong>Menu</strong>.</li>
+    <li><strong>Sources inconnues</strong>. En anglais&nbsp;: Unknown Sources.</li>
+    <li><strong>DLPAlexandre</strong>.</li>
+  </ol>
+
+  <h3>Chemin B — si « Menu » n’existe pas à gauche</h3>
+  <ol class="etapes">
+    <li>Bouton logo, puis <strong>Bibliothèque</strong>.</li>
+    <li>À gauche, touchez <strong>Applications</strong>. Pas «&nbsp;Tous&nbsp;», pas «&nbsp;All&nbsp;». La ligne Sources inconnues n’apparaît pas tant que vous restez sur Tous.</li>
+    <li>En haut de la page, ouvrez la liste qui affiche Tous, All ou Installées.</li>
+    <li>Choisissez <strong>Sources inconnues</strong> / Unknown Sources.</li>
+    <li><strong>DLPAlexandre</strong>.</li>
+  </ol>
+
+  <div class="bloc stop">
+    <div class="titre">La ligne « Sources inconnues » n’existe nulle part</div>
+    <p>Faites ces quatre gestes dans l’ordre, puis recommencez le chemin A et le chemin B.</p>
+    <p>1. Vous devez être sur le profil principal, pas un invité. Bouton logo → icône de personne. S’il y a plusieurs noms, prenez le premier, celui du compte qui a le mode développeur.</p>
+    <p>2. Éteignez vraiment le casque. Appui long sur le bouton d’alimentation (pas le bouton logo) → <strong>Éteindre</strong>. Comptez jusqu’à dix. Rallumez.</p>
+    <p>3. Sur le téléphone, coupez Mode développeur. Éteignez le casque, rallumez-le. Réactivez Mode développeur. Éteignez et rallumez encore.</p>
+    <p>4. Si la ligne manque toujours, le fichier n’est pas dans le casque. Retour à l’étape 5&nbsp;: le nom DLPAlexandre doit être dans la liste Apps du PC.</p>
+  </div>
+
+  <div class="bloc attention">
+    <div class="titre">La première fois, des fenêtres s’interposent</div>
+    <p>Zone de jeu&nbsp;: choisissez <strong>Stationnaire</strong> si on vous le propose, sinon tracez le minimum demandé. Une demande d’autorisation&nbsp;: <strong>Autoriser</strong>. Une demande pour une application de source inconnue&nbsp;: acceptez. Ensuite seulement, l’écran avec le code apparaît.</p>
+  </div>
+
+  <div class="bloc ok">
+    <div class="titre">Passez à l’étape suivante</div>
+    <p>DLPAlexandre est ouvert et un code à 6 chiffres est affiché. Laissez cet écran. Ne quittez pas l’application. Pour la rouvrir plus tard, refaites le chemin A ou B&nbsp;: elle ne sera toujours pas sur l’écran d’accueil.</p>
+  </div>
+</section>
+
+<!-- ===================== 6 ===================== -->
+<section class="page">
+  <div class="surtitre">Étape 7</div>
+  <h2>Relier le casque au site</h2>
+  <p>Le câble ne sert plus. Le casque a besoin du Wi-Fi.</p>
+
+  <ol class="etapes">
+    <li>Le Wi-Fi se branche avant de taper le code. Bouton logo → engrenage <strong>Paramètres</strong> → <strong>Wi-Fi</strong> → votre réseau. S’il en existe deux du même nom, prenez celui qui finit par <strong>5G</strong> ou <strong>5 GHz</strong>. Attendez qu’il indique connecté. Rouvrez ensuite DLPAlexandre par le chemin A ou B de l’étape 6 si le code n’est plus à l’écran.</li>
+    <li>Sur le PC, ouvrez le site et connectez-vous avec le compte VR Cinema Hub (pas le compte Meta).
+      <div class="lien">https://vr-cinema-hub.vercel.app</div>
+    </li>
+    <li>Dans le menu de gauche, cliquez sur <strong>Casques</strong>.</li>
+    <li>Cliquez sur <strong>Appairer un casque</strong>.</li>
+    <li>Tapez les 6 chiffres. Donnez un nom que vous reconnaîtrez le jour J, par exemple «&nbsp;Accueil 1&nbsp;» ou «&nbsp;Salle Paris&nbsp;».</li>
+    <li>Cliquez sur <strong>Appairer</strong>. Attendez quelques secondes sans fermer l’application dans le casque.</li>
+  </ol>
+
+  <div class="bloc ok">
+    <div class="titre">Passez à l’étape suivante</div>
+    <p>Dans le casque, l’écran du code a disparu. Sur le site, le nom que vous avez choisi apparaît dans la liste des casques.</p>
+  </div>
+
+  <div class="bloc attention">
+    <div class="titre">Le code est refusé ou a expiré</div>
+    <p>Bouton logo, quittez DLPAlexandre avec la croix, puis rouvrez-la par le chemin A ou B de l’étape 6. Un nouveau code s’affiche. L’ancien ne marchera plus. Retapez-le tout de suite, le Wi-Fi restant connecté.</p>
+  </div>
+</section>
+
+<!-- ===================== 7 ===================== -->
+<section class="page">
+  <div class="surtitre">Étape 8</div>
+  <h2>Mettre un film dans le casque</h2>
+
+  <h3>Déposer le film</h3>
+  <ol class="etapes">
+    <li>Sur le site, menu <strong>Bibliothèques</strong>.</li>
+    <li>Choisissez l’onglet <strong>Location</strong> ou <strong>Animations</strong>, selon le film.</li>
+    <li>Cliquez sur <strong>Uploader des vidéos</strong> et choisissez le fichier. Laissez l’onglet ouvert jusqu’à 100&nbsp;%. Ne mettez pas le PC en veille. Si l’envoi est coupé, il reprend du début.</li>
+    <li>Si le site demande ce que montre l’image&nbsp;:
+      <ul class="simple">
+        <li><strong>Tout autour du spectateur</strong> — on peut regarder derrière soi.</li>
+        <li><strong>La moitié devant le spectateur</strong> — seulement l’avant.</li>
+        <li><strong>Un écran devant le spectateur</strong> — comme une toile de cinéma.</li>
+      </ul>
+      Pour le relief&nbsp;: deux images l’une au-dessus de l’autre → <strong>deux yeux superposés</strong>. Deux images côte à côte → <strong>deux yeux côte à côte</strong>. Une seule image → <strong>sans relief</strong>.
+    </li>
+    <li>Regardez l’aperçu. Une image en damier ou coupée en deux veut dire que le relief est faux&nbsp;: corrigez-le avant d’envoyer.</li>
+  </ol>
+
+  <h3>L’attribuer au casque</h3>
+  <ol class="etapes">
+    <li>Menu <strong>Playlists</strong>. Tapez un nom, par exemple «&nbsp;Salon&nbsp;», puis <strong>Créer</strong>.</li>
+    <li>Cliquez sur <strong>Éditer</strong>.</li>
+    <li>Dans la colonne <strong>Vidéos</strong>, cliquez sur chaque film à inclure. Une coche verte confirme.</li>
+    <li>Dans la colonne <strong>Diffuser à</strong>, cliquez sur le nom du casque.</li>
+    <li>Cliquez sur <strong>Fermer</strong>. C’est déjà enregistré, il n’y a pas d’autre bouton.</li>
+  </ol>
+
+  <div class="bloc">
+    <div class="titre">Plusieurs casques, les mêmes films</div>
+    <p>Menu <strong>Groupes</strong>. Créez un groupe, par exemple «&nbsp;Salle A&nbsp;». Cliquez sur <strong>Gérer les membres</strong> et cliquez sur chaque casque à y mettre. Ensuite, dans la playlist, cochez le groupe plutôt que les casques un par un. Un casque ajouté plus tard au groupe reçoit les films tout seul.</p>
+  </div>
+
+  <h3>Attendre que le casque ait vraiment les films</h3>
+  <ol class="etapes">
+    <li>Casque allumé, Wi-Fi connecté, branché sur secteur, et <strong>DLPAlexandre ouvert</strong>. S’il est fermé, le téléchargement n’existe pas. Rouvrez-le par le chemin A ou B de l’étape 6, pas depuis l’écran d’accueil.</li>
+    <li>Sur le site, menu <strong>Suivi sync</strong>. Cliquez sur <strong>Rafraîchir</strong>.</li>
+    <li>Attendez l’état <strong>À jour</strong>. C’est le seul état qui veut dire «&nbsp;les films sont dans le casque&nbsp;».</li>
+  </ol>
+
+  <div class="bloc attention">
+    <div class="titre">Le casque s’endort et le téléchargement s’arrête</div>
+    <p>Dès que vous l’enlevez, il se met en veille en une quinzaine de secondes et suspend le téléchargement. Pendant le premier remplissage, reposez-le sur la tête toutes les une à deux minutes, jusqu’à <strong>À jour</strong>. Faites ça la veille, pas le matin de l’événement. Un film pèse souvent plus d’un gigaoctet.</p>
+  </div>
+
+  <table class="intact">
+    <tr><th style="width:52mm">Ce qui est écrit</th><th>Ce que vous faites</th></tr>
+    <tr><td><strong>À jour</strong></td><td>Rien. Lancez un film dans le casque pour contrôler l’image. Ensuite le Wi-Fi peut être coupé&nbsp;: les films restent.</td></tr>
+    <tr><td><strong>En attente</strong> ou une mise à jour en attente</td><td>L’application est ouverte&nbsp;? Le Wi-Fi tient&nbsp;? Le casque ne s’est pas endormi&nbsp;? Puis Rafraîchir.</td></tr>
+    <tr><td><strong>Jamais synchronisé</strong></td><td>Le casque est relié mais n’a rien reçu. Ouvrez l’application, et vérifiez que la playlist est bien cochée sur ce casque.</td></tr>
+    <tr><td><strong>Échec de mise à jour</strong></td><td>Cliquez sur <strong>Analyser</strong>. Vérifiez le Wi-Fi et la place libre. Puis <strong>Forcer la mise à jour</strong>.</td></tr>
+    <tr><td><strong>Application hors ligne</strong></td><td>L’application est fermée. Le casque peut quand même être allumé. Rouvrez DLPAlexandre si un nouveau film doit arriver.</td></tr>
+  </table>
+
+  <div class="bloc ok">
+    <div class="titre">C’est fini</div>
+    <p>Le casque est À jour, un film se lance, l’image est dans le bon sens, et il continue de jouer si vous coupez le Wi-Fi.</p>
+  </div>
+
+  <h3>Le sujet d’un film 360 n’est pas face au spectateur</h3>
+  <p>Au lancement, le casque place devant le spectateur le centre de l’image. Si le tournage a mis le sujet ailleurs, réglez-le une fois pour toutes, sans renvoyer le film.</p>
+  <ol class="etapes">
+    <li>Casque sur la tête, lancez le film. Notez où vous voyez le sujet au démarrage&nbsp;: à droite, à gauche, derrière vous.</li>
+    <li>Sur le site, <strong>Bibliothèques</strong>, icône de curseurs sur la ligne du film.</li>
+    <li>Sous «&nbsp;le sujet du film apparaît&nbsp;», cliquez sur <strong>À droite</strong>, <strong>À gauche</strong> ou <strong>Derrière</strong>, ou ajustez le curseur au degré près. Puis <strong>Enregistrer</strong>.</li>
+    <li>Attendez <strong>À jour</strong> dans Suivi sync, relancez le film&nbsp;: le sujet est devant vous. Le casque ne retélécharge pas le film.</li>
+  </ol>
+</section>
+
+<!-- ===================== MISE A JOUR ===================== -->
+<section class="page">
+  <div class="surtitre">Plus tard · quand une nouvelle version est annoncée</div>
+  <h2>Mettre à jour l’application</h2>
+  <p>La page <strong>Casques</strong> du site signale les casques concernés par «&nbsp;mise à jour disponible&nbsp;». La mise à jour s’installe par-dessus l’ancienne version&nbsp;: les films restent dans le casque et il reste relié au site. Rien à refaire, aucun code à retaper.</p>
+
+  <ol class="etapes">
+    <li>Sur le site, page <strong>Casques</strong>, vérifiez la date de dernière mise à jour dans le cadre Application casque, puis cliquez sur <strong>Télécharger DLPAlexandre.apk</strong>.</li>
+    <li>Remplacez l’ancien fichier du Bureau par le nouveau. Gardez un seul DLPAlexandre.apk pour ne pas vous tromper.</li>
+    <li>Ouvrez Meta Quest Developer Hub, branchez le casque, pastille verte <strong>Active</strong> dans Device Manager, comme à l’étape 4.</li>
+    <li>Zone <strong>Apps</strong>, <strong>Add Build</strong>, choisissez DLPAlexandre.apk sur le Bureau, <strong>Ouvrir</strong>. Attendez la fin, une à deux minutes.</li>
+    <li>Débranchez, ouvrez DLPAlexandre dans le casque par le chemin A ou B de l’étape 6. Les films sont là, sans code à 6 chiffres.</li>
+    <li>Sur le site, la mention «&nbsp;mise à jour disponible&nbsp;» disparaît de la ligne du casque dès que l’application a contacté le serveur.</li>
+  </ol>
+
+  <div class="bloc stop">
+    <div class="titre">Ne désinstallez pas l’ancienne version</div>
+    <p>Désinstaller efface les films et le lien avec le site. Il faudrait retaper un code et tout retélécharger. La mise à jour se fait toujours par-dessus.</p>
+    <p>Un message <strong>INSTALL_FAILED_UPDATE_INCOMPATIBLE</strong> veut dire que le fichier ne vient pas du site. N’effacez rien et appelez votre prestataire.</p>
+  </div>
+
+  <div class="bloc">
+    <div class="titre">Les anciennes versions «&nbsp;VR Cinema Quest&nbsp;»</div>
+    <p>Jusqu’à la version 1.1.6, l’application s’appelait VR Cinema Quest dans le casque. Après la mise à jour, elle s’appelle DLPAlexandre, au même endroit dans Sources inconnues, avec les mêmes films.</p>
+  </div>
+</section>
+
+<!-- ===================== BLOQUE ===================== -->
+<section class="page">
+  <div class="surtitre">Quand ça bloque</div>
+  <h2>Un symptôme, une action</h2>
+  <p>Reprenez la page indiquée. N’enchaînez pas les essais au hasard.</p>
+
+  <table>
+    <tr><th style="width:58mm">Ce que vous voyez</th><th>Ce que vous faites</th></tr>
+    <tr>
+      <td>Pas de ligne «&nbsp;Mode développeur&nbsp;» sur le téléphone</td>
+      <td>Étape 1. Mauvais compte, compte non vérifié, ou équipe non créée.</td>
+    </tr>
+    <tr>
+      <td>Le PC ne montre pas le casque</td>
+      <td>Étape 4. Casque sur la tête, refuser Quest Link, cocher «&nbsp;toujours autoriser&nbsp;». Puis changer de câble et de port. En dernier&nbsp;: l’étape Secours, partie A seulement.</td>
+    </tr>
+    <tr>
+      <td>Quest Link s’ouvre tout seul</td>
+      <td>Refusez dans le casque. Sur le PC, flèche ^ près de l’horloge, clic droit sur l’icône Meta, Quitter. Rebranchez.</td>
+    </tr>
+    <tr>
+      <td>Un double-clic sur le fichier .apk ne fait rien</td>
+      <td>Normal. Windows ne l’ouvre pas. Étape 5&nbsp;: bouton <strong>Add Build</strong> dans Meta Quest Developer Hub, le casque branché et en pastille verte.</td>
+    </tr>
+    <tr>
+      <td>L’application est introuvable dans le casque</td>
+      <td>Étape 6, chemin A puis chemin B. Pas l’écran d’accueil. Si la ligne Sources inconnues n’existe pas&nbsp;: éteindre le casque, réactiver le mode développeur, rallumer.</td>
+    </tr>
+    <tr>
+      <td>Le code à 6 chiffres ne marche pas</td>
+      <td>Le Wi-Fi du casque est connecté&nbsp;? Fermez DLPAlexandre, rouvrez-la par l’étape 6, tapez le nouveau code tout de suite.</td>
+    </tr>
+    <tr>
+      <td>Le casque est relié mais ne reçoit pas le film</td>
+      <td>La playlist est cochée sur ce casque&nbsp;? L’application est ouverte&nbsp;? Suivi sync → Analyser, puis Forcer la mise à jour.</td>
+    </tr>
+    <tr>
+      <td>L’écran reste noir, le son joue</td>
+      <td>Le fichier n’est pas lisible par le casque. Demandez un export <strong>MP4 H.264</strong> et renvoyez-le.</td>
+    </tr>
+    <tr>
+      <td>L’image est coupée en deux, à l’envers, ou en damier</td>
+      <td>Bibliothèques, icône de curseurs sur la ligne du film. Corrigez la projection et le relief, Enregistrer. N’envoyez pas le fichier une seconde fois.</td>
+    </tr>
+    <tr>
+      <td>Au lancement d’un film 360, le sujet n’est pas face à vous</td>
+      <td>Bibliothèques, icône de curseurs, «&nbsp;le sujet du film apparaît&nbsp;»&nbsp;: indiquez où vous le voyez, Enregistrer. Détail à la fin de l’étape 8.</td>
+    </tr>
+    <tr>
+      <td>Une nouvelle version de l’application est annoncée</td>
+      <td>Page «&nbsp;Mettre à jour l’application&nbsp;». Jamais de désinstallation.</td>
+    </tr>
+    <tr>
+      <td>Plus de place dans le casque</td>
+      <td>Retirez des films de sa playlist. Il les efface à la synchronisation suivante. La page Casques indique la place libre.</td>
+    </tr>
+  </table>
+
+  <div class="bloc stop">
+    <div class="titre">Ne faites pas ça pour « réparer »</div>
+    <p>Ne supprimez pas le casque sur le site&nbsp;: vous perdez son historique et il faudra retaper un code. Utilisez <strong>Forcer la mise à jour</strong>.</p>
+    <p>Ne désinstallez pas l’application dans le casque sans en parler à votre prestataire. Selon la version déjà présente, la désinstallation efface le lien local et oblige à tout refaire.</p>
+    <p>N’installez pas un fichier dont le nom contient STAGING sur ce site de production.</p>
+  </div>
+
+  <h3>Le jour de l’événement</h3>
+  <ul class="simple">
+    <li>La synchronisation a été faite la veille, pas le matin.</li>
+    <li>Chaque casque a un nom clair, est chargé, et affiche <strong>À jour</strong>.</li>
+    <li>Un film a été lancé dans un vrai casque, image dans le bon sens.</li>
+    <li>Le câble USB, le fichier .apk et Meta Quest Developer Hub restent dans le sac, au cas où un casque devrait être réinstallé.</li>
+  </ul>
+
+  <div class="bloc ok">
+    <div class="titre">Au quotidien, après cette installation</div>
+    <p>Site, films, playlist, application ouverte sur les casques, attendre <strong>À jour</strong>. Ensuite le Wi-Fi peut être coupé&nbsp;: ce qui est déjà dans le casque reste lisible.</p>
+  </div>
+</section>
+
+<!-- ===================== SECOURS ===================== -->
+<section class="page">
+  <div class="surtitre">Seulement si Device Manager reste vide</div>
+  <h2>Secours&nbsp;: le pilote USB</h2>
+  <p>Windows ne sait pas parler au casque tant que ce pilote n’est pas installé. Meta Quest Developer Hub le fait souvent tout seul. Cette page ne sert que s’il ne l’a pas fait.</p>
+  <p>Fermez d’abord Meta Quest Developer Hub, complètement, avant les étapes ci-dessous.</p>
+
+  <h3>A. Installer le pilote</h3>
+  <ol class="etapes">
+    <li>Téléchargez les pilotes sur cette page, bouton Download.
+      <div class="lien">https://developers.meta.com/horizon/downloads/package/oculus-adb-drivers/</div>
+    </li>
+    <li>Clic droit sur le fichier zip téléchargé → <strong>Extraire tout</strong> → Extraire.</li>
+    <li>Ouvrez le dossier extrait, puis le sous-dossier <strong>usb_driver</strong>, jusqu’à voir le fichier <strong>android_winusb.inf</strong>.</li>
+    <li>Clic droit sur <strong>android_winusb.inf</strong> → <strong>Installer</strong>. Acceptez la question de Windows. Si Windows dit qu’il ne peut pas vérifier l’éditeur, choisissez <strong>Installer quand même</strong>.</li>
+  </ol>
+
+  <p>S’il n’y a pas de ligne «&nbsp;Installer&nbsp;» dans le clic droit&nbsp;:</p>
+  <ol class="etapes">
+    <li>Clic droit sur le bouton Démarrer → <strong>Gestionnaire de périphériques</strong>.</li>
+    <li>Cherchez une ligne avec un triangle jaune, souvent nommée Quest, Android, ADB Interface ou Périphérique inconnu.</li>
+    <li>Clic droit sur cette ligne → <strong>Mettre à jour le pilote</strong> → <strong>Parcourir mon ordinateur pour rechercher des pilotes</strong>.</li>
+    <li>Choisissez le dossier <strong>usb_driver</strong>. Cochez <strong>Inclure les sous-dossiers</strong>. Suivant.</li>
+    <li>Si Windows hésite sur l’éditeur du pilote, installez quand même.</li>
+  </ol>
+
+  <p>Débranchez le casque, rebranchez-le sur un port à l’arrière, mettez-le sur la tête, et acceptez à nouveau le débogage USB en cochant «&nbsp;toujours&nbsp;». Rouvrez Meta Quest Developer Hub. Si le casque apparaît, retournez à l’étape 5 et ignorez la partie B.</p>
+
+  <h3>B. Installer le fichier à la main</h3>
+  <p>Uniquement si le glisser-déposer a échoué alors que le casque était bien visible. Fermez Meta Quest Developer Hub avant, sinon les deux programmes se coupent la parole.</p>
+
+  <ol class="etapes">
+    <li>Créez un dossier <strong>C:\vr</strong>. Pas d’accent, pas d’espace. Le dossier Téléchargements fait échouer la commande.</li>
+    <li>Téléchargez «&nbsp;SDK Platform-Tools for Windows&nbsp;» sur cette page.
+      <div class="lien">https://developer.android.com/tools/releases/platform-tools</div>
+    </li>
+    <li>Clic droit sur le zip → Extraire tout. Ouvrez le dossier <strong>platform-tools</strong>.</li>
+    <li>Copiez dans <strong>C:\vr</strong> ces quatre éléments, pas seulement le premier&nbsp;: <strong>adb.exe</strong>, <strong>AdbWinApi.dll</strong>, <strong>AdbWinUsbApi.dll</strong>, et <strong>DLPAlexandre.apk</strong>.</li>
+    <li>Ouvrez le dossier C:\vr. Cliquez une fois dans la barre tout en haut, celle qui affiche le chemin. Effacez ce qui s’y trouve, tapez <strong>powershell</strong>, puis Entrée. Une fenêtre bleue s’ouvre.</li>
+    <li>Copiez la première ligne, collez-la dans la fenêtre bleue, Entrée.
+      <div class="cmd">.\adb.exe devices</div>
+      Vous devez lire une ligne qui finit par le mot <strong>device</strong>. Pas <strong>unauthorized</strong>, pas une liste vide.
+    </li>
+    <li>Seulement dans ce cas, copiez la seconde ligne, collez-la, Entrée. Attendez le mot <strong>Success</strong>. Ne coupez pas la ligne en deux.
+      <div class="cmd">.\adb.exe install -r .\DLPAlexandre.apk</div>
+    </li>
+  </ol>
+
+  <table>
+    <tr><th style="width:48mm">Ce que la fenêtre affiche</th><th>Ce que vous faites</th></tr>
+    <tr><td>une ligne qui finit par <strong>device</strong></td><td>Passez à la commande d’installation.</td></tr>
+    <tr><td><strong>unauthorized</strong></td><td>Casque sur la tête. Acceptez le débogage et cochez «&nbsp;toujours&nbsp;». Relancez la première commande.</td></tr>
+    <tr><td>liste vide, aucune ligne</td><td>Mauvais câble, mauvais port, pilote non installé, ou Quest Link encore ouvert. Reprenez la partie A.</td></tr>
+    <tr><td><strong>Success</strong></td><td>C’est installé. Passez à l’étape 6 pour ouvrir l’application. Elle n’est pas sur l’écran d’accueil.</td></tr>
+    <tr><td>INSTALL_FAILED_UPDATE_INCOMPATIBLE</td><td>Une ancienne version signée autrement est déjà là. N’effacez rien vous-même. Appelez votre prestataire.</td></tr>
+  </table>
+
+  <p class="meta">DLPAlexandre — guide Windows, 29 octobre 2026, application 1.1.7. Pour ouvrir l’application&nbsp;: Bibliothèque, puis Menu ou Applications, puis Sources inconnues. Jamais l’écran d’accueil.</p>
+</section>
+
+</body>
+</html>

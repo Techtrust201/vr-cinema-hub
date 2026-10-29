@@ -20,7 +20,7 @@
 set -euo pipefail
 
 PKG="com.techtrust.vrcinemaquest"
-DEFAULT_APK="vr-cinema-quest-app-unity/builds/VR-Cinema-Quest-PRODUCTION.apk"
+DEFAULT_APK="vr-cinema-quest-app-unity/builds/DLPAlexandre.apk"
 
 # Les deux familles de noms coexistent selon la version d'Horizon OS. Aucune
 # n'est indispensable : on tente les deux et on n'échoue pas sur une absence.

@@ -175,7 +175,7 @@ ne déclare plus que l'accès au réseau et le suivi des mains, ce qui se vérif
 sur l'APK livré :
 
 ```bash
-aapt2 dump xmltree builds/VR-Cinema-Quest-PRODUCTION.apk \
+aapt2 dump xmltree builds/DLPAlexandre.apk \
   --file AndroidManifest.xml | grep -ci eye   # doit rendre 0
 ```
 
