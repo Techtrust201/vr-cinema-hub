@@ -41,7 +41,7 @@
   h3 { font-size: 12pt; margin: 12px 0 5px; page-break-after: avoid; }
   p { margin: 0 0 6px; }
   strong { font-weight: 650; }
-  a { color: var(--accent); text-decoration: none; }
+  a { color: var(--accent); }
 
   .surtitre {
     text-transform: uppercase;
@@ -125,20 +125,33 @@
     margin: 6px 0;
     page-break-inside: avoid;
   }
-  .lien {
+  a.lien {
+    display: block;
     font-family: Consolas, "Courier New", monospace;
     font-size: 9.5pt;
+    color: var(--accent);
     background: var(--fond);
     border: 1px solid var(--trait);
     padding: 6px 8px;
     margin: 4px 0 8px;
     page-break-inside: avoid;
+    text-decoration: underline;
   }
 
   ul.simple { margin: 4px 0 8px; padding-left: 18px; }
   ul.simple li { margin-bottom: 3px; }
 
   .meta { color: var(--gris); font-size: 9.5pt; margin-top: 18px; }
+
+  .illus { margin: 8px 0 10px; page-break-inside: avoid; }
+  .illus img {
+    width: 100%;
+    border: 1px solid var(--trait);
+    border-radius: 4px;
+    display: block;
+  }
+  .illus img.menu { width: 58mm; }
+  .illus .legende { font-size: 8.5pt; color: var(--gris); margin-top: 4px; }
 </style>
 </head>
 <body>
@@ -162,11 +175,15 @@
   <h3>Télécharger l’application</h3>
   <ol class="etapes">
     <li>Sur le PC, ouvrez le site et connectez-vous avec le compte VR Cinema Hub.
-      <div class="lien">https://vr-cinema-hub.vercel.app</div>
+      <a class="lien" href="https://vr-cinema-hub.vercel.app">https://vr-cinema-hub.vercel.app</a>
     </li>
     <li>Menu de gauche, <strong>Casques</strong>. En haut de la page, le cadre <strong>Application casque DLPAlexandre</strong> indique la version et la date de sa dernière mise à jour.</li>
     <li>Cliquez sur <strong>Télécharger DLPAlexandre.apk</strong>. Le fichier arrive dans le dossier <strong>Téléchargements</strong> du PC.</li>
   </ol>
+  <div class="illus">
+    <img src="assets/guide/page-casques.png" alt="Page Casques, cadre Application casque et bouton Télécharger">
+    <p class="legende">Page Casques du site. Le téléchargement est le bouton violet dans le cadre Application casque.</p>
+  </div>
   <p>Téléchargez-le le jour même&nbsp;: le site propose toujours la dernière version. Si Windows l’a nommé <strong>DLPAlexandre (1).apk</strong>, c’est qu’il était déjà là&nbsp;: supprimez l’ancien et renommez le nouveau en DLPAlexandre.apk.</p>
 
   <div class="bloc stop">
@@ -177,7 +194,7 @@
   <div class="bloc">
     <div class="titre">Deux associations, ne les mélangez pas</div>
     <p><strong>Téléphone et casque.</strong> C’est Meta. C’est déjà fait si le casque apparaît dans l’application du téléphone. On ne vous demandera pas de code pour ça.</p>
-    <p><strong>Casque et site VR Cinema Hub.</strong> C’est plus tard, étape 7. L’application du casque affiche un code à 6 chiffres, et vous le tapez sur le site web.</p>
+    <p><strong>Casque et site VR Cinema Hub.</strong> C’est plus tard, étape 7. Le bouton s’appelle <strong>Appairer un casque</strong>. Il est sur le site web, dans le menu Casques. Il n’existe pas dans Meta Quest Developer Hub, ni dans l’application Meta Horizon du téléphone.</p>
   </div>
 
   <h3>L’ordre</h3>
@@ -203,11 +220,11 @@
 
   <ol class="etapes">
     <li>Sur le PC, ouvrez Chrome ou Edge. Connectez-vous avec <strong>le compte Meta du casque</strong>, celui que vous avez noté.
-      <div class="lien">https://developers.meta.com/manage/organizations/create/</div>
+      <a class="lien" href="https://developers.meta.com/horizon/manage/organizations/create/">https://developers.meta.com/horizon/manage/organizations/create/</a>
     </li>
     <li>Créez une équipe. Un nom suffit, par exemple celui de votre société. Vous pouvez être seul dans l’équipe. Validez jusqu’au bout.</li>
     <li>Ouvrez ensuite la page de vérification.
-      <div class="lien">https://developers.meta.com/manage/verify/</div>
+      <a class="lien" href="https://developers.meta.com/horizon/manage/verify/">https://developers.meta.com/horizon/manage/verify/</a>
     </li>
     <li>Vérifiez le compte. Meta propose deux façons&nbsp;: confirmer votre numéro de mobile par SMS, ou ajouter une carte bancaire. PayPal ne compte pas. Le titulaire du compte doit avoir 18 ans ou plus.</li>
     <li>Attendez que la page indique que le compte est vérifié. Si un e-mail ou un SMS est demandé, faites-le maintenant, avant de toucher au casque.</li>
@@ -239,6 +256,26 @@
     <li>Touchez <strong>Mode développeur</strong>. En anglais&nbsp;: Developer Mode.</li>
     <li>Mettez l’interrupteur sur <strong>activé</strong>. Sortez de l’écran, rouvrez-le&nbsp;: l’interrupteur doit être resté activé.</li>
   </ol>
+  <div class="illus">
+    <img src="assets/guide/meta-icone-casque.png" alt="Barre du bas de Meta Horizon, icône de casque encadrée en jaune">
+    <p class="legende">Téléphone, application Meta Horizon. L’icône de casque est à droite dans la barre du bas. Ces images viennent de la documentation Meta, en anglais.</p>
+  </div>
+  <div class="illus">
+    <img src="assets/guide/meta-ligne-casque.png" alt="Ligne Meta Quest 3 à toucher dans l'application">
+    <p class="legende">Touchez la ligne du casque elle-même, ici « Meta Quest 3 ».</p>
+  </div>
+  <div class="illus">
+    <img src="assets/guide/meta-parametres-casque.png" alt="Ligne Headset settings encadrée">
+    <p class="legende">Puis Headset settings. En français : Paramètres du casque.</p>
+  </div>
+  <div class="illus">
+    <img src="assets/guide/meta-mode-developpeur.png" alt="Menu Headset settings, ligne Developer Mode encadrée">
+    <p class="legende">Dans ce menu, Developer Mode. En français : Mode développeur.</p>
+  </div>
+  <div class="illus">
+    <img src="assets/guide/meta-interrupteur.png" alt="Interrupteur Developer Mode">
+    <p class="legende">Sur cette image l’interrupteur est encore à gauche, donc éteint. Poussez-le vers la droite : il doit rester activé.</p>
+  </div>
 
   <div class="bloc ok">
     <div class="titre">Passez à l’étape suivante</div>
@@ -259,13 +296,17 @@
 
   <ol class="etapes">
     <li>Sur le PC, ouvrez cette page et téléchargez la version Windows.
-      <div class="lien">https://developers.meta.com/horizon/downloads/package/oculus-developer-hub-win/</div>
+      <a class="lien" href="https://developers.meta.com/vr/downloads/package/oculus-developer-hub-win/">https://developers.meta.com/vr/downloads/package/oculus-developer-hub-win/</a>
     </li>
     <li>Si Windows affiche «&nbsp;Windows a protégé votre ordinateur&nbsp;», cliquez sur <strong>Informations complémentaires</strong>, puis <strong>Exécuter quand même</strong>.</li>
     <li>Installez le programme avec les boutons proposés, puis ouvrez-le.</li>
     <li>Connectez-vous avec <strong>le même compte Meta</strong> que le casque et le téléphone.</li>
     <li>Avant de brancher le casque&nbsp;: regardez en bas à droite de l’écran, la petite flèche ^. S’il y a une icône Meta ou Oculus, clic droit, <strong>Quitter</strong>. Ce programme (Quest Link) prend le câble et le casque reste invisible. Fermez-le à chaque installation.</li>
   </ol>
+  <div class="illus">
+    <img src="assets/guide/meta-telecharger-mqdh.png" alt="Page Meta Quest Developer Hub for Windows, bouton Télécharger">
+    <p class="legende">La bonne page de téléchargement. Le bouton s’appelle Télécharger, à droite du titre Meta Quest Developer Hub for Windows.</p>
+  </div>
 
   <div class="bloc ok">
     <div class="titre">Passez à l’étape suivante</div>
@@ -285,12 +326,25 @@
     <li>Si une fenêtre propose <strong>Quest Link</strong> ou Air Link&nbsp;: refusez. Choisissez Annuler, Pas maintenant ou Refuser. Link empêche l’installation.</li>
     <li>Une fenêtre demande d’<strong>autoriser le débogage USB</strong>. Cochez <strong>Toujours autoriser cet ordinateur</strong> (en anglais&nbsp;: Always allow from this computer). Puis Autoriser.</li>
     <li>Si une seconde fenêtre demande l’accès aux fichiers du casque, acceptez-la aussi.</li>
-    <li>Enlevez le casque. Dans Meta Quest Developer Hub, à gauche, cliquez sur <strong>Device Manager</strong>.</li>
+    <li>Enlevez le casque. Restez dans la fenêtre <strong>Meta Quest Developer Hub</strong>, celle de l’étape 3. Ce n’est pas un menu de Windows.</li>
+  </ol>
+  <div class="illus">
+    <img src="assets/guide/meta-usb.png" alt="Fenêtre Allow USB debugging, case Always allow from this computer">
+    <p class="legende">Cette fenêtre s’affiche dans le casque. Cochez Always allow from this computer (Toujours autoriser cet ordinateur), puis OK.</p>
+  </div>
+
+  <h3>Où cliquer&nbsp;: Device Manager</h3>
+  <p>Device Manager est une ligne <strong>dans ce programme</strong>, en anglais. Ce n’est pas le Gestionnaire de périphériques de Windows. Si une fenêtre liste le clavier, l’écran et la souris, fermez-la&nbsp;: ce n’est pas la bonne.</p>
+  <ol class="etapes">
+    <li>Si le programme est fermé&nbsp;: bouton Démarrer, tapez <strong>Meta Quest</strong>, ouvrez <strong>Meta Quest Developer Hub</strong>. Pas «&nbsp;Meta Quest Link&nbsp;».</li>
+    <li>Agrandissez la fenêtre au maximum, carré en haut à droite. Sinon la colonne de gauche ne montre que des dessins, sans les mots.</li>
+    <li>Regardez la bande verticale <strong>tout à gauche de cette fenêtre</strong>.</li>
+    <li>Cliquez sur les mots <strong>Device Manager</strong>. S’il n’y a qu’une icône, c’est celle qui dessine un casque. Laissez la souris dessus&nbsp;: une bulle affiche Device Manager.</li>
   </ol>
 
   <div class="bloc ok">
     <div class="titre">Passez à l’étape suivante</div>
-    <p>Le casque apparaît dans Device Manager, avec une pastille verte <strong>Active</strong>. S’il n’y est pas, restez sur cette page. Ne glissez pas le fichier.</p>
+    <p>Le milieu de la fenêtre parle du casque, avec une pastille verte <strong>Active</strong>. S’il n’y est pas, restez ici. N’envoyez pas le fichier.</p>
   </div>
 
   <h3>Aucune fenêtre dans le casque</h3>
@@ -323,11 +377,15 @@
   <ol class="etapes">
     <li>Ouvrez le dossier <strong>Téléchargements</strong> et copiez <strong>DLPAlexandre.apk</strong> sur le Bureau, pour le retrouver tout de suite. Pas encore téléchargé&nbsp;: première page de ce guide, «&nbsp;Télécharger l’application&nbsp;».</li>
     <li>Dans l’Explorateur, menu <strong>Affichage</strong> → <strong>Afficher</strong> → cochez <strong>Extensions de noms de fichiers</strong>. Le nom doit finir par <strong>.apk</strong>. S’il finit par .zip, ce n’est pas encore le bon fichier.</li>
-    <li>Le casque est branché, pastille verte <strong>Active</strong> dans <strong>Device Manager</strong>. La colonne de gauche du programme est en anglais&nbsp;: cliquez sur ces mots-là. Si le casque est listé mais sans pastille verte, cliquez sur sa carte, remettez le casque, et acceptez à nouveau le débogage USB.</li>
+    <li>Le casque est branché. Dans Meta Quest Developer Hub, fenêtre en plein écran, colonne de gauche, cliquez <strong>Device Manager</strong> (ou l’icône casque). La pastille doit être verte, mot <strong>Active</strong>. Sinon cliquez sur la carte du casque, remettez-le, et acceptez à nouveau le débogage USB.</li>
     <li>Dans cette même page, trouvez la zone <strong>Apps</strong>. Cliquez sur <strong>Add Build</strong>. Ne faites pas glisser le fichier&nbsp;: le bouton se trompe moins.</li>
     <li>Dans la fenêtre qui s’ouvre, cliquez sur <strong>Bureau</strong> à gauche. Cliquez une fois sur DLPAlexandre.apk, puis sur <strong>Ouvrir</strong>.</li>
     <li>Attendez. Cela prend une à deux minutes. Ne débranchez pas. Ne fermez pas le programme. Une notification Windows dit que l’installation est finie, et le nom <strong>DLPAlexandre</strong> apparaît dans la liste Apps.</li>
   </ol>
+  <div class="illus">
+    <img src="assets/guide/meta-add-build.png" alt="Onglet Apps de Meta Quest Developer Hub, bouton Add Build encadré">
+    <p class="legende">Dans Device Manager, l’onglet s’appelle Apps. Le bouton à utiliser est Add Build, encadré en jaune. Pas un double-clic sur le fichier.</p>
+  </div>
 
   <div class="bloc ok">
     <div class="titre">Passez à l’étape suivante</div>
@@ -400,18 +458,35 @@
 <section class="page">
   <div class="surtitre">Étape 7</div>
   <h2>Relier le casque au site</h2>
+  <div class="bloc stop">
+    <div class="titre">Le bouton n’est pas dans Meta Quest Developer Hub</div>
+    <p>Meta Quest Developer Hub sert à envoyer le fichier .apk. L’application Meta Horizon du téléphone sert au mode développeur. Aucun des deux n’a de bouton Appairer. Le code à 6 chiffres se tape sur le site, dans la fenêtre ci-dessous.</p>
+  </div>
   <p>Le câble ne sert plus. Le casque a besoin du Wi-Fi.</p>
+
+  <div class="illus">
+    <img class="menu" src="assets/guide/menu-casques.png" alt="Menu du site : la ligne Casques est en violet">
+    <p class="legende">Sur le site vr-cinema-hub.vercel.app, menu de gauche. Cliquez sur Casques, la ligne violette. Sur un petit écran, ouvrez d’abord le menu avec les trois traits en haut à gauche.</p>
+  </div>
+  <div class="illus">
+    <img src="assets/guide/page-casques.png" alt="Page Casques du site, bouton violet Appairer un casque">
+    <p class="legende">Le bouton violet « Appairer un casque » est en haut à droite de cette page. Le bouton « Télécharger » à côté sert au fichier, pas à l’appairage.</p>
+  </div>
 
   <ol class="etapes">
     <li>Le Wi-Fi se branche avant de taper le code. Bouton logo → engrenage <strong>Paramètres</strong> → <strong>Wi-Fi</strong> → votre réseau. S’il en existe deux du même nom, prenez celui qui finit par <strong>5G</strong> ou <strong>5 GHz</strong>. Attendez qu’il indique connecté. Rouvrez ensuite DLPAlexandre par le chemin A ou B de l’étape 6 si le code n’est plus à l’écran.</li>
     <li>Sur le PC, ouvrez le site et connectez-vous avec le compte VR Cinema Hub (pas le compte Meta).
-      <div class="lien">https://vr-cinema-hub.vercel.app</div>
+      <a class="lien" href="https://vr-cinema-hub.vercel.app">https://vr-cinema-hub.vercel.app</a>
     </li>
     <li>Dans le menu de gauche, cliquez sur <strong>Casques</strong>.</li>
     <li>Cliquez sur <strong>Appairer un casque</strong>.</li>
     <li>Tapez les 6 chiffres. Donnez un nom que vous reconnaîtrez le jour J, par exemple «&nbsp;Accueil 1&nbsp;» ou «&nbsp;Salle Paris&nbsp;».</li>
     <li>Cliquez sur <strong>Appairer</strong>. Attendez quelques secondes sans fermer l’application dans le casque.</li>
   </ol>
+  <div class="illus">
+    <img src="assets/guide/fenetre-appairer.png" alt="Fenêtre Appairer un casque : code à 6 chiffres et nom">
+    <p class="legende">Cette fenêtre s’ouvre sur le site. Le 123456 affiché en gris est un exemple : effacez-le et tapez le code montré dans le casque. Puis un nom, puis Appairer.</p>
+  </div>
 
   <div class="bloc ok">
     <div class="titre">Passez à l’étape suivante</div>
@@ -444,6 +519,10 @@
     </li>
     <li>Regardez l’aperçu. Une image en damier ou coupée en deux veut dire que le relief est faux&nbsp;: corrigez-le avant d’envoyer.</li>
   </ol>
+  <div class="illus">
+    <img src="assets/guide/bibliotheques.png" alt="Page Bibliothèques, onglets Location et Animations, bouton Uploader des vidéos">
+    <p class="legende">Page Bibliothèques. Onglets Location et Animations, zone de dépôt, bouton Uploader des vidéos.</p>
+  </div>
 
   <h3>L’attribuer au casque</h3>
   <ol class="etapes">
@@ -453,10 +532,26 @@
     <li>Dans la colonne <strong>Diffuser à</strong>, cliquez sur le nom du casque.</li>
     <li>Cliquez sur <strong>Fermer</strong>. C’est déjà enregistré, il n’y a pas d’autre bouton.</li>
   </ol>
+  <div class="illus">
+    <img src="assets/guide/playlists.png" alt="Page Playlists, champ du nom et bouton Créer">
+    <p class="legende">Page Playlists. Le nom se tape à gauche, le bouton Créer est à droite. Éditer est sur la carte.</p>
+  </div>
+  <div class="illus">
+    <img src="assets/guide/playlist-editer.png" alt="Éditeur de playlist, colonnes Vidéos et Diffuser à">
+    <p class="legende">Après Éditer : colonne Vidéos à gauche, colonne Diffuser à à droite, bouton Fermer en haut.</p>
+  </div>
 
   <div class="bloc">
     <div class="titre">Plusieurs casques, les mêmes films</div>
     <p>Menu <strong>Groupes</strong>. Créez un groupe, par exemple «&nbsp;Salle A&nbsp;». Cliquez sur <strong>Gérer les membres</strong> et cliquez sur chaque casque à y mettre. Ensuite, dans la playlist, cochez le groupe plutôt que les casques un par un. Un casque ajouté plus tard au groupe reçoit les films tout seul.</p>
+  </div>
+  <div class="illus">
+    <img src="assets/guide/groupes.png" alt="Page Groupes, bouton Créer et Gérer les membres">
+    <p class="legende">Page Groupes. Créer en haut à droite, Gérer les membres sur la carte.</p>
+  </div>
+  <div class="illus">
+    <img src="assets/guide/groupes-membres.png" alt="Liste des casques d’un groupe, coche verte">
+    <p class="legende">Gérer les membres ouvert. Une coche verte veut dire que le casque est dans le groupe. Fermer replie la liste.</p>
   </div>
 
   <h3>Attendre que le casque ait vraiment les films</h3>
@@ -465,6 +560,10 @@
     <li>Sur le site, menu <strong>Suivi sync</strong>. Cliquez sur <strong>Rafraîchir</strong>.</li>
     <li>Attendez l’état <strong>À jour</strong>. C’est le seul état qui veut dire «&nbsp;les films sont dans le casque&nbsp;».</li>
   </ol>
+  <div class="illus">
+    <img src="assets/guide/suivi-sync.png" alt="Page Suivi des synchronisations, bouton Rafraîchir, Analyser et Forcer la mise à jour">
+    <p class="legende">Menu Suivi sync. Rafraîchir en haut à droite. Analyser et Forcer la mise à jour sont sur la ligne du casque.</p>
+  </div>
 
   <div class="bloc attention">
     <div class="titre">Le casque s’endort et le téléchargement s’arrête</div>
@@ -493,6 +592,10 @@
     <li>Sous «&nbsp;le sujet du film apparaît&nbsp;», cliquez sur <strong>À droite</strong>, <strong>À gauche</strong> ou <strong>Derrière</strong>, ou ajustez le curseur au degré près. Puis <strong>Enregistrer</strong>.</li>
     <li>Attendez <strong>À jour</strong> dans Suivi sync, relancez le film&nbsp;: le sujet est devant vous. Le casque ne retélécharge pas le film.</li>
   </ol>
+  <div class="illus">
+    <img src="assets/guide/reglages-film.png" alt="Réglages d’un film : projection, relief, et boutons À gauche, Au centre, À droite, Derrière">
+    <p class="legende">Icône de curseurs sur la ligne du film. Le sujet se règle avec À gauche, Au centre, À droite ou Derrière, puis Enregistrer.</p>
+  </div>
 </section>
 
 <!-- ===================== MISE A JOUR ===================== -->
@@ -611,7 +714,7 @@
   <h3>A. Installer le pilote</h3>
   <ol class="etapes">
     <li>Téléchargez les pilotes sur cette page, bouton Download.
-      <div class="lien">https://developers.meta.com/horizon/downloads/package/oculus-adb-drivers/</div>
+      <a class="lien" href="https://developers.meta.com/vr/downloads/package/oculus-adb-drivers/">https://developers.meta.com/vr/downloads/package/oculus-adb-drivers/</a>
     </li>
     <li>Clic droit sur le fichier zip téléchargé → <strong>Extraire tout</strong> → Extraire.</li>
     <li>Ouvrez le dossier extrait, puis le sous-dossier <strong>usb_driver</strong>, jusqu’à voir le fichier <strong>android_winusb.inf</strong>.</li>
@@ -635,7 +738,7 @@
   <ol class="etapes">
     <li>Créez un dossier <strong>C:\vr</strong>. Pas d’accent, pas d’espace. Le dossier Téléchargements fait échouer la commande.</li>
     <li>Téléchargez «&nbsp;SDK Platform-Tools for Windows&nbsp;» sur cette page.
-      <div class="lien">https://developer.android.com/tools/releases/platform-tools</div>
+      <a class="lien" href="https://developer.android.com/tools/releases/platform-tools">https://developer.android.com/tools/releases/platform-tools</a>
     </li>
     <li>Clic droit sur le zip → Extraire tout. Ouvrez le dossier <strong>platform-tools</strong>.</li>
     <li>Copiez dans <strong>C:\vr</strong> ces quatre éléments, pas seulement le premier&nbsp;: <strong>adb.exe</strong>, <strong>AdbWinApi.dll</strong>, <strong>AdbWinUsbApi.dll</strong>, et <strong>DLPAlexandre.apk</strong>.</li>
