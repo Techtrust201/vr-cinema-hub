@@ -72,7 +72,7 @@ points d'entrée dans [API.md](docs/API.md).
 ```bash
 npm install
 npm run dev      # http://localhost:8080
-npm test         # 137 tests
+npm test         # 205 tests
 npm run lint
 ```
 
