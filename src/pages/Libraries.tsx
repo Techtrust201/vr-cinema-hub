@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
 import {
   Upload, MapPin, Clapperboard, FolderOpen, Trash2, Loader2,
   FileVideo, Download, CheckCircle2, XCircle, Play, X, WifiOff, AlertTriangle,
-  ImagePlus, RotateCcw, SlidersHorizontal, Info, Copy,
+  ImagePlus, RotateCcw, SlidersHorizontal, Info, Copy, FolderUp, ListVideo,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Slider } from "@/components/ui/slider";
@@ -32,6 +32,8 @@ import {
 import { humanizeSupabaseError } from "@/lib/supabaseErrors";
 import { legacyFormatFor } from "@/lib/legacyVideoFormat";
 import { describeYawOffset, normalizeYawOffset, yawLimit, yawPresets } from "@/lib/yawOffset";
+import { filesFromDirectoryInput, planImport, readDroppedFolders, type ImportedFile } from "@/lib/folderImport";
+import { compareNatural } from "@/lib/naturalSort";
 
 /**
  * Prévient qu'un fichier est resté dans le stockage sans film associé.
@@ -191,6 +193,15 @@ interface PendingUpload {
   previewState: "idle" | "running" | "failed";
   /** L'opérateur a fourni une image : un changement de format ne l'écrase plus. */
   previewCustom?: boolean;
+  /** Film importé avec son dossier : il rejoint cette playlist une fois enregistré. */
+  placement?: PlaylistPlacement;
+}
+
+interface PlaylistPlacement {
+  playlistId: string;
+  playlistName: string;
+  /** Fixée au dépôt : les envois se terminent dans le désordre, l'ordre de lecture n'en dépend pas. */
+  position: number;
 }
 
 function applyFormatAnalysis(
@@ -301,6 +312,7 @@ export default function Libraries() {
   const pendingRef = useRef(pending);
   pendingRef.current = pending;
   const fileRef = useRef<HTMLInputElement>(null);
+  const folderRef = useRef<HTMLInputElement | null>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
   const thumbnailTargetRef = useRef<VideoRow | null>(null);
   const [thumbBusy, setThumbBusy] = useState<string | null>(null);
@@ -354,7 +366,10 @@ export default function Libraries() {
     return () => window.removeEventListener("beforeunload", warn);
   }, [uploadInProgress]);
 
-  const handleFiles = (files: FileList | null) => {
+  const handleFiles = (
+    files: FileList | readonly File[] | null,
+    placements?: ReadonlyMap<File, PlaylistPlacement>,
+  ) => {
     if (!files || !canManageContent) return;
 
     // Le sélecteur de fichiers filtre déjà sur les vidéos, mais un glisser-déposer accepte
@@ -396,6 +411,7 @@ export default function Libraries() {
         source_layout: hinted.sourceLayout,
         analysis: "running" as const,
         previewState: "idle" as const,
+        placement: placements?.get(file),
       };
     });
     setPending((p) => {
@@ -405,6 +421,124 @@ export default function Libraries() {
     });
     // Un film 8K + trois 4K en parallèle gèlent l'onglet : on les traite l'un après l'autre.
     void next.reduce((chain, item) => chain.then(() => analysePending(item)), Promise.resolve());
+  };
+
+  /**
+   * Un dossier devient une playlist portant son nom, et ses films y sont rangés en ordre
+   * naturel. Redéposer un dossier complète la playlist du même nom au lieu d'en créer une
+   * seconde, et un film déjà en bibliothèque y est rattaché sans être renvoyé.
+   */
+  const handleImport = async (imported: ImportedFile[]) => {
+    if (!canManageContent) return;
+    const plan = planImport(imported, (file) => resolveVideoContentType(file).startsWith("video/"));
+    if (plan.folders.length === 0) {
+      if (plan.loose.length > 0) handleFiles(plan.loose);
+      else toast.warning("Aucune vidéo dans ce dossier. Formats acceptés : MP4, MOV, M4V.");
+      return;
+    }
+
+    const { data: existing, error: listErr } = await supabase.from("playlists").select("id, name");
+    if (listErr) {
+      toast.error(humanizeSupabaseError(listErr, "Les playlists n'ont pas pu être lues."));
+      return;
+    }
+
+    const toSend: File[] = [...plan.loose];
+    const placements = new Map<File, PlaylistPlacement>();
+
+    for (const folder of plan.folders) {
+      let playlist = (existing ?? []).find((p) => compareNatural(p.name, folder.name) === 0);
+      const created = !playlist;
+      const present = new Set<string>();
+      let last = 0;
+
+      if (playlist) {
+        const { data: rows, error } = await supabase
+          .from("playlist_videos")
+          .select("video_id, position")
+          .eq("playlist_id", playlist.id);
+        if (error) {
+          toast.error(humanizeSupabaseError(error, `La playlist « ${playlist.name} » n'a pas pu être lue.`));
+          continue;
+        }
+        for (const row of rows ?? []) {
+          present.add(row.video_id);
+          last = Math.max(last, row.position);
+        }
+      } else {
+        const { data: inserted, error } = await supabase
+          .from("playlists")
+          .insert({ name: folder.name })
+          .select("id, name")
+          .single();
+        if (error || !inserted) {
+          toast.error(humanizeSupabaseError(error, `La playlist « ${folder.name} » n'a pas pu être créée.`));
+          continue;
+        }
+        playlist = inserted;
+      }
+
+      const reuse: { playlist_id: string; video_id: string; position: number }[] = [];
+      let alreadyThere = 0;
+      let queued = 0;
+      for (const file of folder.files) {
+        const same = videos.find((v) => v.name === file.name && v.size_bytes === file.size);
+        if (same && present.has(same.id)) {
+          alreadyThere += 1;
+          continue;
+        }
+        const position = ++last;
+        if (same) {
+          reuse.push({ playlist_id: playlist.id, video_id: same.id, position });
+          present.add(same.id);
+          continue;
+        }
+        placements.set(file, { playlistId: playlist.id, playlistName: playlist.name, position });
+        toSend.push(file);
+        queued += 1;
+      }
+
+      if (reuse.length > 0) {
+        const { error } = await supabase
+          .from("playlist_videos")
+          .upsert(reuse, { onConflict: "playlist_id,video_id", ignoreDuplicates: true });
+        if (error) {
+          toast.error(humanizeSupabaseError(error, `Les films déjà en bibliothèque n'ont pas rejoint « ${playlist.name} ».`));
+        }
+      }
+
+      const parts = [
+        queued > 0 && (queued === 1 ? "1 vidéo à envoyer" : `${queued} vidéos à envoyer`),
+        reuse.length > 0 && (reuse.length === 1 ? "1 déjà en bibliothèque, ajoutée" : `${reuse.length} déjà en bibliothèque, ajoutées`),
+        alreadyThere > 0 && (alreadyThere === 1 ? "1 déjà dans la playlist" : `${alreadyThere} déjà dans la playlist`),
+      ].filter(Boolean);
+      toast.success(`${created ? "Playlist créée" : "Playlist complétée"} : « ${playlist.name} »`, {
+        description: `${parts.join(" · ")}.${created ? " Diffusez-la aux casques depuis la page Playlists." : ""}`,
+      });
+    }
+
+    if (plan.ignored > 0) {
+      toast.message(
+        plan.ignored === 1
+          ? "1 fichier qui n'est pas une vidéo a été laissé de côté."
+          : `${plan.ignored} fichiers qui ne sont pas des vidéos ont été laissés de côté.`,
+      );
+    }
+    if (toSend.length > 0) handleFiles(toSend, placements);
+  };
+
+  const addToPlaylist = async (videoId: string, placement: PlaylistPlacement, fileName: string) => {
+    const { error } = await supabase
+      .from("playlist_videos")
+      .upsert(
+        { playlist_id: placement.playlistId, video_id: videoId, position: placement.position },
+        { onConflict: "playlist_id,video_id", ignoreDuplicates: true },
+      );
+    if (error) {
+      toast.warning(`${fileName} est en bibliothèque, mais n'a pas rejoint « ${placement.playlistName} ».`, {
+        description: humanizeSupabaseError(error, "Ajoutez-la depuis la page Playlists."),
+      });
+    }
   };
 
   /**
@@ -735,7 +869,11 @@ export default function Libraries() {
       setUpload(tempId, { phase: "thumbnail", progress: 100 });
 
       setUpload(tempId, { phase: "saving", progress: 100 });
+      // Identifiant choisi ici plutôt que relu après l'insertion : relire dépend d'un droit
+      // de lecture, et son absence ferait supprimer un fichier dont la ligne existe déjà.
+      const videoId = crypto.randomUUID();
       const { error: dbErr } = await supabase.from("videos").insert({
+        id: videoId,
         name: file.name,
         library: activeLib,
         format: legacyFormatFor(projection, stereo_mode),
@@ -761,6 +899,7 @@ export default function Libraries() {
         path = null;
         throw new Error(dbErr.message);
       }
+      if (item.placement) await addToPlaylist(videoId, item.placement, file.name);
       setUpload(tempId, { progress: 100, status: "done", controller: undefined });
       if (thumbnailPath) {
         toast.success(`${file.name} uploadée`);
@@ -954,14 +1093,39 @@ export default function Libraries() {
           </p>
         </div>
         {canManageContent && (
-          <button
-            onClick={() => fileRef.current?.click()}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-[hsl(var(--vr-violet))] text-white text-sm font-medium hover:bg-[hsl(var(--vr-violet)_/_0.85)] transition-colors"
-          >
-            <Upload size={14} /> Uploader des vidéos
-          </button>
+          <div className="flex items-center gap-2 flex-wrap">
+            <button
+              onClick={() => folderRef.current?.click()}
+              title="Chaque dossier devient une playlist du même nom"
+              className="flex items-center gap-2 px-4 py-2 rounded-lg border border-[hsl(var(--vr-violet)_/_0.5)] text-[hsl(var(--vr-violet))] text-sm font-medium hover:bg-[hsl(var(--vr-violet)_/_0.1)] transition-colors"
+            >
+              <FolderUp size={14} /> Importer un dossier
+            </button>
+            <button
+              onClick={() => fileRef.current?.click()}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-[hsl(var(--vr-violet))] text-[hsl(var(--primary-foreground))] text-sm font-medium hover:bg-[hsl(var(--vr-violet)_/_0.85)] transition-colors"
+            >
+              <Upload size={14} /> Uploader des vidéos
+            </button>
+          </div>
         )}
         <input ref={fileRef} type="file" multiple accept="video/*" className="hidden" onChange={(e) => handleFiles(e.target.files)} />
+        {/* `webkitdirectory` n'est pas typé par React : posé à la main, il fait du sélecteur
+            de fichiers un sélecteur de dossier. */}
+        <input
+          ref={(el) => {
+            folderRef.current = el;
+            el?.setAttribute("webkitdirectory", "");
+          }}
+          type="file"
+          multiple
+          className="hidden"
+          onChange={(e) => {
+            const picked = filesFromDirectoryInput(e.target.files);
+            e.target.value = "";
+            void handleImport(picked);
+          }}
+        />
         <input
           ref={imageInputRef}
           type="file"
@@ -1071,6 +1235,15 @@ export default function Libraries() {
                 <div className="flex items-center gap-2">
                   <FileVideo size={14} className="text-[hsl(var(--vr-violet))]" />
                   <span className="text-xs font-medium truncate flex-1">{it.file.name}</span>
+                  {it.placement && (
+                    <span
+                      className="flex items-center gap-1 text-[10px] text-[hsl(var(--vr-violet))] truncate max-w-[40%]"
+                      title={`Rejoindra la playlist « ${it.placement.playlistName} »`}
+                    >
+                      <ListVideo size={11} className="shrink-0" />
+                      <span className="truncate">{it.placement.playlistName}</span>
+                    </span>
+                  )}
                   <span className="text-[10px] text-muted-foreground">{fmtSize(it.file.size)}</span>
                 </div>
 
@@ -1266,7 +1439,7 @@ export default function Libraries() {
                     onClick={() => confirmUpload(it)}
                     disabled={stereoUnknown || enCours || formatIncompatible}
                     title={formatIncompatible ? it.probe?.advice : undefined}
-                    className="text-[11px] px-3 py-1.5 rounded bg-[hsl(var(--vr-violet))] text-white font-medium hover:bg-[hsl(var(--vr-violet)_/_0.85)] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                    className="text-[11px] px-3 py-1.5 rounded bg-[hsl(var(--vr-violet))] text-[hsl(var(--primary-foreground))] font-medium hover:bg-[hsl(var(--vr-violet)_/_0.85)] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     Envoyer
                   </button>
@@ -1282,7 +1455,18 @@ export default function Libraries() {
         <div
           onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
           onDragLeave={() => setDragging(false)}
-          onDrop={(e) => { e.preventDefault(); setDragging(false); handleFiles(e.dataTransfer.files); }}
+          onDrop={(e) => {
+            e.preventDefault();
+            setDragging(false);
+            const folders = readDroppedFolders(e.dataTransfer);
+            if (!folders) {
+              handleFiles(e.dataTransfer.files);
+              return;
+            }
+            folders
+              .then(handleImport)
+              .catch(() => toast.error("Le dossier n'a pas pu être lu. Essayez le bouton « Importer un dossier »."));
+          }}
           onClick={() => fileRef.current?.click()}
           className={cn(
             "rounded-xl border-2 border-dashed px-6 py-8 flex flex-col items-center gap-2 cursor-pointer transition-all",
@@ -1293,7 +1477,10 @@ export default function Libraries() {
         >
           <Upload size={20} className={dragging ? "text-[hsl(var(--vr-violet))]" : "text-muted-foreground/50"} />
           <p className="text-sm text-muted-foreground">
-            Glissez vos vidéos ici ou <span className="text-[hsl(var(--vr-violet))]">cliquez pour parcourir</span>
+            Glissez vos vidéos ou vos dossiers ici, ou <span className="text-[hsl(var(--vr-violet))]">cliquez pour parcourir</span>
+          </p>
+          <p className="text-xs text-muted-foreground/70">
+            Un dossier devient une playlist du même nom, ses vidéos rangées par ordre alphabétique.
           </p>
           <p className="text-[10px] text-muted-foreground/40">
             mp4, mov, mkv • bibliothèque <strong>{activeLib === "location" ? "Location" : "Animations"}</strong>
@@ -1563,7 +1750,7 @@ export default function Libraries() {
                     <button
                       onClick={() => void saveFormat()}
                       disabled={formatSaving || formatEdit.stereo_mode === "unknown"}
-                      className="rounded bg-[hsl(var(--vr-violet))] px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50"
+                      className="rounded bg-[hsl(var(--vr-violet))] px-3 py-1.5 text-xs font-medium text-[hsl(var(--primary-foreground))] disabled:opacity-50"
                     >
                       {formatSaving ? "Enregistrement…" : "Enregistrer"}
                     </button>
