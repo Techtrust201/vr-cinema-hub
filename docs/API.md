@@ -67,9 +67,10 @@ Réponse **200** :
 ```json
 {
   "manifest_version": 42,
-  "schema_version": 3,
+  "schema_version": 4,
   "headset_id": "uuid",
   "playlist_id": "uuid|null",
+  "playlist_ids": ["uuid"],
   "generated_at": "2026-06-12T00:00:00Z",
   "updated_at": "2026-06-12T00:00:00Z",
   "url_expires_in": 21600,
@@ -90,13 +91,25 @@ Réponse **200** :
       "format": "mp4",
       "legacy_format": "mp4"
     }
+  ],
+  "playlists": [
+    {
+      "id": "uuid",
+      "name": "Voyage 1 - Venise",
+      "position": 1,
+      "video_ids": ["uuid", "uuid"]
+    }
   ]
 }
 ```
 
+`videos` est la liste **à télécharger** : chaque film n'y figure qu'une fois, même s'il appartient à plusieurs playlists. Elle est rangée dossier par dossier, pour que le premier dossier soit regardable en premier.
+
+`playlists` (depuis `schema_version` 4) est ce que le casque **affiche** : un dossier par playlist attribuée, dans l'ordre choisi sur le tableau de bord, et dans chaque dossier les vidéos dans leur ordre de lecture. Un film peut apparaître dans plusieurs dossiers. Chaque identifiant de `video_ids` figure dans `videos`. Un dossier peut être vide : le casque ne l'affiche pas. Les applications antérieures à la 1.1.8 ignorent ce champ et gardent une bibliothèque à plat.
+
 Réponse **304** : pas de body, headers `ETag: "<version>"`. Le casque garde son manifest local.
 
-Si une vidéo ne peut pas être signée (fichier storage manquant), elle est **omise** du tableau : les autres restent servies. HTTP **500** uniquement si **toutes** les vidéos assignées échouent.
+Si une vidéo ne peut pas être signée (fichier absent du stockage), **tout** le manifeste est refusé en **503** (`error: "Manifest incomplete"`, `missing_videos`, `expected_videos`). La cause est écrite sur la fiche du casque. Servir les autres vidéos laisserait le casque annoncer une synchronisation réussie alors qu'un film manque.
 
 Réponse **405** : méthode autre que GET/POST/OPTIONS.
 
@@ -105,8 +118,9 @@ Algo côté casque :
 2. Télécharger ceux qui manquent via `download_url` (`UnityWebRequest`, suit les redirects, supporte `Range`).
 3. Supprimer les fichiers locaux qui ne sont plus dans `videos`.
 4. Si `download_url` expire en cours de route → rappeler `headset-manifest` (avec `force_full=1` pour re-signer même si la version n'a pas bougé).
-5. Router le rendu selon `projection` + `stereo_mode`. Pour un 180/360, faire pivoter la sphère de `yaw_offset_deg` (position du sujet dans l'image, en degrés depuis le centre, positif vers la droite) pour l'amener face au spectateur.
-6. Une fois TOUT appliqué (téléchargements OK + bibliothèque rafraîchie), envoyer `headset-report-sync` avec `applied_manifest_version = manifest_version`.
+5. Afficher un dossier par entrée de `playlists`, dans l'ordre du tableau, en n'y montrant que les vidéos déjà téléchargées. Lancée depuis un dossier, la lecture enchaîne les vidéos de ce dossier dans l'ordre de `video_ids`.
+6. Router le rendu selon `projection` + `stereo_mode`. Pour un 180/360, faire pivoter la sphère de `yaw_offset_deg` (position du sujet dans l'image, en degrés depuis le centre, positif vers la droite) pour l'amener face au spectateur.
+7. Une fois TOUT appliqué (téléchargements OK + bibliothèque rafraîchie), envoyer `headset-report-sync` avec `applied_manifest_version = manifest_version`.
 
 ## 5. `POST /headset-heartbeat`
 **Auth : Bearer device_token**. Toutes les 5 min en background.

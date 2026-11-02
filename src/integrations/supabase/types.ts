@@ -446,6 +446,7 @@ export type Database = {
           description: string | null
           id: string
           name: string
+          position: number
           updated_at: string
         }
         Insert: {
@@ -454,6 +455,7 @@ export type Database = {
           description?: string | null
           id?: string
           name: string
+          position?: number
           updated_at?: string
         }
         Update: {
@@ -462,6 +464,7 @@ export type Database = {
           description?: string | null
           id?: string
           name?: string
+          position?: number
           updated_at?: string
         }
         Relationships: []
@@ -819,6 +822,15 @@ export type Database = {
         Returns: {
           headset_id: string
         }[]
+      }
+      next_playlist_position: { Args: Record<PropertyKey, never>; Returns: number }
+      reorder_playlist_videos: {
+        Args: { _playlist_id: string; _video_ids: string[] }
+        Returns: undefined
+      }
+      reorder_playlists: {
+        Args: { _playlist_ids: string[] }
+        Returns: undefined
       }
     }
     Enums: {

@@ -8,11 +8,20 @@ import {
 import { getSecretKey } from "../_shared/supabase-keys.ts";
 import { signedDiskDownloadUrl } from "../_shared/disk-origin.ts";
 import { signedR2DownloadUrl } from "../_shared/r2.ts";
+import {
+  buildManifestPlaylists,
+  orderPlaylists,
+  orderPlaylistVideos,
+  type PlaylistRow,
+} from "../_shared/manifest-playlists.ts";
 
 // Called by the Quest app on every sync cycle.
 // v3: returns a versioned manifest. The headset MUST echo back the
 // `manifest_version` in headset-report-sync once it has fully applied it
 // (downloaded all files and refreshed its library).
+// v4: adds `playlists`, the folders shown in the headset library, in display order.
+// `videos` keeps its v3 meaning (deduplicated download list), so older apps ignore
+// the new field and keep their flat library.
 
 const SIGNED_URL_TTL_SECONDS = 6 * 60 * 60;
 
@@ -194,7 +203,24 @@ Deno.serve(async (req) => {
     });
   }
 
-  const playlistIds = Array.from(new Set((assignments ?? []).map((a) => a.playlist_id)));
+  const assignedIds = Array.from(new Set((assignments ?? []).map((a) => a.playlist_id)));
+
+  let playlistRows: PlaylistRow[] = [];
+  if (assignedIds.length > 0) {
+    const { data: pls, error: plErr } = await supabase
+      .from("playlists")
+      .select("id, name, position")
+      .in("id", assignedIds);
+    if (plErr) {
+      console.error("playlists fetch error", plErr);
+      return new Response(JSON.stringify({ error: "Internal error" }), {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    playlistRows = orderPlaylists((pls ?? []) as PlaylistRow[]);
+  }
+  const playlistIds = playlistRows.map((p) => p.id);
 
   console.log(JSON.stringify({
     fn: "headset-manifest",
@@ -205,9 +231,6 @@ Deno.serve(async (req) => {
     desired_version: desiredVersion,
     applied_version: headset.applied_manifest_version ?? 0,
   }));
-
-  // Deterministic playlist order.
-  playlistIds.sort();
 
   type PvRow = {
     playlist_id: string;
@@ -236,8 +259,7 @@ Deno.serve(async (req) => {
     const { data: pvideos, error: pvErr } = await supabase
       .from("playlist_videos")
       .select("playlist_id, video_id, position, videos(id, name, storage_path, origin, thumbnail_url, size_bytes, duration_seconds, format, projection, stereo_mode, source_layout, yaw_offset_deg, updated_at, sha256)")
-      .in("playlist_id", playlistIds)
-      .order("position", { ascending: true });
+      .in("playlist_id", playlistIds);
     if (pvErr) {
       console.error("playlist_videos fetch error", pvErr);
       return new Response(JSON.stringify({ error: "Internal error" }), {
@@ -245,7 +267,9 @@ Deno.serve(async (req) => {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
-    videoRows = (pvideos ?? []) as unknown as PvRow[];
+    const fetched = ((pvideos ?? []) as unknown as PvRow[])
+      .map((row) => ({ ...row, name: row.videos?.name ?? null }));
+    videoRows = orderPlaylistVideos(fetched, playlistIds);
   }
 
   console.log(JSON.stringify({
@@ -278,7 +302,7 @@ Deno.serve(async (req) => {
     }
   }
 
-  // Dedup by video_id (first occurrence by playlist order + position wins).
+  // Dedup by video_id (first occurrence in display order wins, see orderPlaylistVideos).
   const seen = new Set<string>();
   type ManifestVideoOut = Record<string, unknown>;
   const videos: ManifestVideoOut[] = [];
@@ -405,11 +429,17 @@ Deno.serve(async (req) => {
       .eq("id", headset.id);
   }
 
-  // playlist_id kept for compatibility (first sorted id); playlist_ids is the truth.
+  const playlists = buildManifestPlaylists(
+    playlistRows,
+    videoRows,
+    new Set(videos.map((v) => v.id as string)),
+  );
+
+  // playlist_id kept for compatibility (first playlist in display order); playlist_ids is the truth.
   const playlistId = playlistIds[0] ?? null;
   const payload = {
     manifest_version: desiredVersion,
-    schema_version: 3,
+    schema_version: 4,
     headset_id: headset.id,
     playlist_id: playlistId,
     playlist_ids: playlistIds,
@@ -417,6 +447,7 @@ Deno.serve(async (req) => {
     updated_at: nowIso,
     url_expires_in: SIGNED_URL_TTL_SECONDS,
     videos,
+    playlists,
   };
 
   // Snapshot for audit. Canonical payload: NO signed urls (they expire).

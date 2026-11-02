@@ -37,9 +37,11 @@ Casques propose cette version, avec sa date et son heure de publication.
   redevient celle proposée. Les APK ne sont jamais écrasés sur R2.
 
 Ordre de déploiement : migrations (`20261029090000_video_yaw_offset.sql`,
-`20261029091000_app_releases.sql`) **avant** les Edge Functions `headset-manifest` et
-`app-release-latest` — le manifeste lit `videos.yaw_offset_deg` et tomberait en erreur 500
-sans la colonne.
+`20261029091000_app_releases.sql`, `20261030120000_playlist_order.sql`) **avant** les Edge
+Functions `headset-manifest` et `app-release-latest` — le manifeste lit
+`videos.yaw_offset_deg` et `playlists.position`, et tomberait en erreur 500 sans ces colonnes.
+Le tableau de bord vient ensuite : la page Playlists appelle les RPC de réordonnancement créées
+par la dernière migration.
 
 La clé de signature est `~/.android/debug.keystore` (empreinte SHA-256
 `21d80dbd…9439ac42`, vérifiée par le script). La perdre rend toute mise à jour impossible sans
