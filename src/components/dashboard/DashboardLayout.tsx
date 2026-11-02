@@ -107,7 +107,7 @@ export default function DashboardLayout() {
       )}
 
       {/* Main */}
-      <div className="flex-1 flex flex-col lg:pl-60">
+      <div className="flex-1 flex flex-col lg:pl-60 min-w-0">
         {/* Persistent topbar */}
         <header className="sticky top-0 z-20 flex items-center gap-3 px-4 py-3 bg-background/85 backdrop-blur-xl border-b border-border/50">
           {/* Mobile hamburger */}
