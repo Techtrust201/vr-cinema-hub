@@ -327,7 +327,7 @@ export default function Sync() {
             <button
               onClick={runPlaylistDiag}
               disabled={diagLoading === "playlist"}
-              className="px-4 py-2 text-sm rounded-lg bg-[hsl(var(--vr-violet))] text-white flex items-center gap-2 hover:opacity-90 disabled:opacity-40"
+              className="px-4 py-2 text-sm rounded-lg bg-[hsl(var(--vr-violet))] text-[hsl(var(--primary-foreground))] flex items-center gap-2 hover:opacity-90 disabled:opacity-40"
             >
               {diagLoading === "playlist" ? <Loader2 size={14} className="animate-spin" /> : <Bug size={14} />}
               Analyser

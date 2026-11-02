@@ -6,8 +6,8 @@ import {
 } from "recharts";
 import { HardDrive, Video, CheckCircle2, XCircle } from "lucide-react";
 
-const VIOLET = "hsl(262 83% 70%)";
-const CYAN = "hsl(186 100% 60%)";
+const VIOLET = "hsl(var(--vr-violet))";
+const CYAN = "hsl(var(--vr-cyan))";
 const RED = "hsl(0 70% 60%)";
 
 function fmtBytes(b: number) {

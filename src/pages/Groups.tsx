@@ -144,7 +144,7 @@ export default function Groups() {
             placeholder="Nom du groupe (ex: Magasin Lyon)"
             className="flex-1 px-3 py-2 rounded-lg bg-background border border-border/50 focus:outline-none focus:border-[hsl(var(--vr-violet))]"
           />
-          <button onClick={createGroup} className="px-4 py-2 rounded-lg bg-[hsl(var(--vr-violet))] text-white flex items-center gap-2 hover:opacity-90 transition">
+          <button onClick={createGroup} className="px-4 py-2 rounded-lg bg-[hsl(var(--vr-violet))] text-[hsl(var(--primary-foreground))] flex items-center gap-2 hover:opacity-90 transition">
             <Plus size={16} /> Créer
           </button>
         </div>

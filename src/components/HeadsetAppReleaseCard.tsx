@@ -81,7 +81,7 @@ export function HeadsetAppReleaseCard({
       <button
         onClick={() => void download()}
         disabled={!release || downloading}
-        className="flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-[hsl(var(--vr-violet))] text-white font-medium text-sm hover:opacity-90 transition disabled:opacity-40 disabled:cursor-not-allowed"
+        className="flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-[hsl(var(--vr-violet))] text-[hsl(var(--primary-foreground))] font-medium text-sm hover:opacity-90 transition disabled:opacity-40 disabled:cursor-not-allowed"
       >
         {downloading ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
         Télécharger DLPAlexandre.apk

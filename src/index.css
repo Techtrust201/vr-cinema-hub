@@ -2,61 +2,80 @@
 @tailwind components;
 @tailwind utilities;
 
+@font-face {
+  font-family: "National Park";
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+  src: url("/fonts/NationalPark-Regular.otf") format("opentype");
+}
+
+@font-face {
+  font-family: "National Park";
+  font-weight: 800;
+  font-style: normal;
+  font-display: swap;
+  src: url("/fonts/NationalPark-Heavy.otf") format("opentype");
+}
+
 /* Definition of the design system. All colors, gradients, fonts, etc should be defined here. 
 All colors MUST be HSL.
 */
 
 @layer base {
   :root {
-    /* VR Ultimate Dark Theme */
-    --background: 240 11% 4%;
+    /* Dans les pas d'Alexandre — thème sombre.
+       --vr-violet conserve son nom et porte désormais le vert d'accent. */
+    --brand-blue: 238.9 62.8% 33.7%;
+    --brand-green: 172.5 62.1% 40.4%;
+
+    --background: 239 35% 5%;
     --foreground: 220 20% 92%;
 
-    --card: 240 10% 7%;
+    --card: 239 30% 8%;
     --card-foreground: 220 20% 92%;
 
-    --popover: 240 10% 7%;
+    --popover: 239 30% 8%;
     --popover-foreground: 220 20% 92%;
 
-    /* Violet accent */
-    --primary: 262 83% 58%;
-    --primary-foreground: 0 0% 100%;
+    /* Vert : accent principal. Texte en bleu nuit (contraste > 6:1, le blanc ne fait que 3:1). */
+    --primary: 172.5 62.1% 40.4%;
+    --primary-foreground: 239 60% 10%;
 
-    /* Cyan accent */
-    --secondary: 189 94% 43%;
-    --secondary-foreground: 240 11% 4%;
+    /* Bleu : aplats uniquement, trop sombre pour du texte sur ce fond. */
+    --secondary: 238.9 62.8% 33.7%;
+    --secondary-foreground: 0 0% 100%;
 
-    --muted: 240 8% 12%;
-    --muted-foreground: 220 10% 55%;
+    --muted: 239 22% 14%;
+    --muted-foreground: 235 12% 62%;
 
-    --accent: 240 8% 14%;
+    --accent: 239 22% 17%;
     --accent-foreground: 220 20% 92%;
 
     --destructive: 0 70% 55%;
     --destructive-foreground: 0 0% 100%;
 
-    --border: 240 8% 14%;
-    --input: 240 8% 14%;
-    --ring: 262 83% 58%;
+    --border: 239 22% 17%;
+    --input: 239 22% 17%;
+    --ring: 172.5 62.1% 40.4%;
 
     --radius: 0.5rem;
 
-    /* VR-specific tokens */
-    --vr-violet: 262 83% 58%;
-    --vr-cyan: 189 94% 43%;
-    --vr-surface: 240 10% 7%;
-    --vr-surface-2: 240 9% 10%;
-    --vr-glow-violet: 0 0 20px hsl(262 83% 58% / 0.4);
-    --vr-glow-cyan: 0 0 20px hsl(189 94% 43% / 0.4);
+    --vr-violet: 172.5 62.1% 40.4%;
+    --vr-cyan: 239 70% 72%;
+    --vr-surface: 239 30% 8%;
+    --vr-surface-2: 239 28% 11%;
+    --vr-glow-violet: 0 0 20px hsl(172.5 62.1% 40.4% / 0.4);
+    --vr-glow-cyan: 0 0 20px hsl(239 70% 72% / 0.4);
 
-    --sidebar-background: 240 10% 7%;
+    --sidebar-background: 239 30% 8%;
     --sidebar-foreground: 220 20% 92%;
-    --sidebar-primary: 262 83% 58%;
-    --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 240 8% 14%;
+    --sidebar-primary: 172.5 62.1% 40.4%;
+    --sidebar-primary-foreground: 239 60% 10%;
+    --sidebar-accent: 239 22% 17%;
     --sidebar-accent-foreground: 220 20% 92%;
-    --sidebar-border: 240 8% 14%;
-    --sidebar-ring: 262 83% 58%;
+    --sidebar-border: 239 22% 17%;
+    --sidebar-ring: 172.5 62.1% 40.4%;
   }
 }
 
@@ -68,6 +87,12 @@ All colors MUST be HSL.
   body {
     @apply bg-background text-foreground antialiased;
     font-feature-settings: "rlig" 1, "calt" 1;
+  }
+
+  h1,
+  h2,
+  h3 {
+    font-family: "National Park", ui-sans-serif, system-ui, sans-serif;
   }
 }
 

@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import UserMenu from "@/components/UserMenu";
+import logo from "@/assets/brand/logo-horizontal-blanc.svg";
 
 const NAV_ITEMS = [
   { to: "/", label: "Accueil", icon: LayoutDashboard, exact: true },
@@ -52,17 +53,9 @@ export default function DashboardLayout() {
         )}
       >
         {/* Logo */}
-        <div className="flex items-center gap-3 px-5 py-5 border-b border-border/50">
-          <div className="relative">
-            <div className="w-9 h-9 rounded-xl bg-[hsl(var(--vr-violet)_/_0.18)] border border-[hsl(var(--vr-violet)_/_0.4)] flex items-center justify-center glow-violet">
-              <div className="w-4 h-4 rounded-md bg-[hsl(var(--vr-violet))]" />
-            </div>
-            <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-[hsl(140_70%_55%)] border-2 border-[hsl(var(--vr-surface))] animate-pulse-glow" />
-          </div>
-          <div>
-            <p className="font-bold text-sm tracking-widest gradient-text">VR ULTIMATE</p>
-            <p className="text-[10px] text-muted-foreground font-mono">Dashboard v1.0</p>
-          </div>
+        <div className="px-5 py-5 border-b border-border/50">
+          <img src={logo} alt="Dans les pas d'Alexandre" className="h-10 w-auto" />
+          <p className="mt-2 text-[10px] text-muted-foreground">Tableau de bord</p>
         </div>
 
         {/* Nav */}
@@ -128,7 +121,7 @@ export default function DashboardLayout() {
           {/* Page title */}
           <div className="flex-1 min-w-0">
             <span className="font-semibold text-sm text-foreground tracking-tight hidden lg:block">{pageTitle}</span>
-            <span className="font-bold text-sm tracking-widest gradient-text lg:hidden">VR ULTIMATE</span>
+            <img src={logo} alt="Dans les pas d'Alexandre" className="h-8 w-auto lg:hidden" />
           </div>
 
           {/* Right: demo badge + server badge + notification bell */}

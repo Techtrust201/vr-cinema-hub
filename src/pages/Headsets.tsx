@@ -145,7 +145,7 @@ export default function Headsets() {
           {canManageContent && (
             <button
               onClick={() => setPairOpen(true)}
-              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-[hsl(var(--vr-violet))] text-white font-medium hover:opacity-90 transition"
+              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-[hsl(var(--vr-violet))] text-[hsl(var(--primary-foreground))] font-medium hover:opacity-90 transition"
             >
               <Plus size={16} /> Appairer un casque
             </button>
@@ -331,7 +331,7 @@ function PairModal({ onClose, onDone }: { onClose: () => void; onDone: () => voi
           <button
             type="submit"
             disabled={busy || code.length !== 6 || !name.trim()}
-            className="px-4 py-2 rounded-lg bg-[hsl(var(--vr-violet))] text-white font-medium text-sm disabled:opacity-40 disabled:cursor-not-allowed hover:opacity-90 transition flex items-center gap-2"
+            className="px-4 py-2 rounded-lg bg-[hsl(var(--vr-violet))] text-[hsl(var(--primary-foreground))] font-medium text-sm disabled:opacity-40 disabled:cursor-not-allowed hover:opacity-90 transition flex items-center gap-2"
           >
             {busy && <Loader2 size={14} className="animate-spin" />} Appairer
           </button>

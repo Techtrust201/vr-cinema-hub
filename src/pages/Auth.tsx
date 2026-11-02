@@ -3,7 +3,8 @@ import { useNavigate, Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
-import { Headset, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
+import logo from "@/assets/brand/logo-horizontal-blanc.svg";
 
 export default function Auth() {
   const navigate = useNavigate();
@@ -36,11 +37,8 @@ export default function Auth() {
     <div className="min-h-screen bg-background flex items-center justify-center px-4">
       <div className="w-full max-w-sm">
         <div className="flex flex-col items-center mb-8">
-          <div className="w-14 h-14 rounded-2xl bg-[hsl(var(--vr-violet)_/_0.18)] border border-[hsl(var(--vr-violet)_/_0.4)] flex items-center justify-center glow-violet mb-4">
-            <Headset size={26} className="text-[hsl(var(--vr-violet))]" />
-          </div>
-          <h1 className="text-2xl font-bold tracking-widest gradient-text">VR ULTIMATE</h1>
-          <p className="text-xs text-muted-foreground mt-1">Plateforme de gestion VR</p>
+          <img src={logo} alt="Dans les pas d'Alexandre" className="h-16 w-auto" />
+          <p className="text-xs text-muted-foreground mt-3">Plateforme de gestion VR</p>
         </div>
 
         <div className="rounded-xl border border-border/60 bg-[hsl(var(--vr-surface))] p-6 shadow-[0_0_40px_hsl(var(--vr-violet)_/_0.08)]">
@@ -81,7 +79,7 @@ export default function Auth() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full mt-2 py-2.5 rounded-lg bg-[hsl(var(--vr-violet))] text-white text-sm font-medium hover:bg-[hsl(var(--vr-violet)_/_0.85)] disabled:opacity-50 transition-colors flex items-center justify-center gap-2"
+              className="w-full mt-2 py-2.5 rounded-lg bg-[hsl(var(--vr-violet))] text-[hsl(var(--primary-foreground))] text-sm font-medium hover:bg-[hsl(var(--vr-violet)_/_0.85)] disabled:opacity-50 transition-colors flex items-center justify-center gap-2"
             >
               {loading && <Loader2 size={14} className="animate-spin" />}
               Se connecter
