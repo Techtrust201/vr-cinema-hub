@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
 import {
   Upload, MapPin, Clapperboard, FolderOpen, Trash2, Loader2,
   FileVideo, Download, CheckCircle2, XCircle, Play, X, WifiOff, AlertTriangle,
-  ImagePlus, RotateCcw, SlidersHorizontal, Info, Copy, FolderUp, ListVideo,
+  ImagePlus, RotateCcw, SlidersHorizontal, Info, Copy, FolderUp, ListVideo, Pencil,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Slider } from "@/components/ui/slider";
@@ -59,6 +59,7 @@ type SourceLayout = "equirectangular" | "equiangular_cubemap";
 interface VideoRow {
   id: string;
   name: string;
+  title: string | null;
   library: LibraryType;
   format: VrFormat;
   projection: Projection;
@@ -95,6 +96,11 @@ const PHASE_LABELS: Record<UploadPhase, string> = {
   thumbnail: "Miniature",
   saving: "Enregistrement",
 };
+
+/** Titre choisi sur le tableau de bord, sinon le nom du fichier envoyé. */
+function filmTitle(video: { name: string; title: string | null }): string {
+  return video.title?.trim() || video.name;
+}
 
 function fmtSize(bytes: number) {
   if (bytes < 1024) return `${bytes} B`;
@@ -328,6 +334,9 @@ export default function Libraries() {
     } | null
   >(null);
   const [formatSaving, setFormatSaving] = useState(false);
+  const [titleDraft, setTitleDraft] = useState<{ id: string; value: string } | null>(null);
+  const skipTitleCommit = useRef(false);
+  const titleCommitInFlight = useRef(new Set<string>());
   const { confirm, confirmDialog } = useConfirm();
 
   const { data, initialLoading, error: loadError, refresh, mutate } = useLiveData<VideoRow[]>(
@@ -932,9 +941,55 @@ export default function Libraries() {
     }
   };
 
+  const beginTitleEdit = (video: VideoRow) => {
+    skipTitleCommit.current = false;
+    setTitleDraft({ id: video.id, value: filmTitle(video) });
+  };
+
+  const cancelTitleEdit = () => {
+    skipTitleCommit.current = true;
+    setTitleDraft(null);
+  };
+
+  const commitTitle = async (video: VideoRow) => {
+    if (skipTitleCommit.current) {
+      skipTitleCommit.current = false;
+      return;
+    }
+    if (!titleDraft || titleDraft.id !== video.id) return;
+    if (titleCommitInFlight.current.has(video.id)) return;
+    titleCommitInFlight.current.add(video.id);
+    const next = titleDraft.value.trim();
+    setTitleDraft((current) => (current?.id === video.id ? null : current));
+    const title = next.length === 0 ? null : next;
+    const previousTitle = video.title;
+    try {
+      if (next === filmTitle(video) || title === (previousTitle?.trim() || null)) return;
+      mutate((current) =>
+        (current ?? []).map((row) => (row.id === video.id ? { ...row, title } : row)),
+      );
+      const { error } = await supabase.from("videos").update({ title }).eq("id", video.id);
+      if (error) {
+        mutate((current) =>
+          (current ?? []).map((row) => (row.id === video.id ? { ...row, title: previousTitle } : row)),
+        );
+        toast.error(humanizeSupabaseError(error, "Le titre n'a pas pu être enregistré."));
+        return;
+      }
+      toast.success("Titre enregistré — les casques l'afficheront à leur prochaine synchronisation");
+    } catch (err) {
+      mutate((current) =>
+        (current ?? []).map((row) => (row.id === video.id ? { ...row, title: previousTitle } : row)),
+      );
+      toast.error(humanizeSupabaseError(err instanceof Error ? err : null, "Le titre n'a pas pu être enregistré."));
+    } finally {
+      titleCommitInFlight.current.delete(video.id);
+    }
+  };
+
   const handleDelete = async (v: VideoRow) => {
     const ok = await confirm({
-      title: `Supprimer « ${v.name} » ?`,
+      title: `Supprimer « ${filmTitle(v)} » ?`,
       description: "La vidéo est retirée de la bibliothèque et du stockage. Action définitive.",
       confirmLabel: "Supprimer",
       destructive: true,
@@ -1526,7 +1581,45 @@ export default function Libraries() {
                 </div>
               )}
               <div className="min-w-0 flex-1">
-                <p className="text-sm font-medium truncate">{v.name}</p>
+                {titleDraft?.id === v.id ? (
+                  <input
+                    autoFocus
+                    value={titleDraft.value}
+                    maxLength={200}
+                    onChange={(event) => setTitleDraft({ id: v.id, value: event.target.value })}
+                    onFocus={(event) => event.currentTarget.select()}
+                    onBlur={() => { void commitTitle(v); }}
+                    onKeyDown={(event) => {
+                      event.stopPropagation();
+                      if (event.key === "Enter") {
+                        event.preventDefault();
+                        event.currentTarget.blur();
+                      } else if (event.key === "Escape") {
+                        event.preventDefault();
+                        cancelTitleEdit();
+                      }
+                    }}
+                    aria-label={`Titre du film « ${filmTitle(v)} »`}
+                    className="w-full rounded-md border border-border/50 bg-background px-2 py-0.5 text-sm font-medium focus:border-[hsl(var(--vr-violet))] focus:outline-none"
+                  />
+                ) : (
+                  <div className="flex min-w-0 items-center gap-1">
+                    <p className="truncate text-sm font-medium">{filmTitle(v)}</p>
+                    {canManageContent && (
+                      <button
+                        type="button"
+                        onClick={() => beginTitleEdit(v)}
+                        className="shrink-0 rounded p-1 text-muted-foreground transition hover:bg-muted/40 hover:text-foreground"
+                        aria-label={`Modifier le titre de « ${filmTitle(v)} »`}
+                      >
+                        <Pencil size={14} />
+                      </button>
+                    )}
+                  </div>
+                )}
+                {v.title?.trim() && (
+                  <p className="truncate text-[10px] text-muted-foreground/70">Fichier : {v.name}</p>
+                )}
                 <p className="text-[10px] text-muted-foreground mt-0.5">
                   {durationLabel ? `${durationLabel} • ` : ""}
                   {PROJECTION_LABELS[v.projection] ?? v.projection} • {STEREO_LABELS[v.stereo_mode] ?? v.stereo_mode}
@@ -1787,7 +1880,10 @@ export default function Libraries() {
             <div className="flex items-center gap-3">
               <FileVideo size={16} className="text-[hsl(var(--vr-violet))]" />
               <div className="min-w-0 flex-1">
-                <p className="text-sm font-medium truncate">{preview.video.name}</p>
+                <p className="text-sm font-medium truncate">{filmTitle(preview.video)}</p>
+                {preview.video.title?.trim() && (
+                  <p className="truncate text-[10px] text-muted-foreground/70">Fichier : {preview.video.name}</p>
+                )}
                 <p className="text-[10px] text-muted-foreground">
                   {PROJECTION_LABELS[preview.video.projection] ?? preview.video.projection} • {STEREO_LABELS[preview.video.stereo_mode] ?? preview.video.stereo_mode} • {fmtSize(preview.video.size_bytes)}
                 </p>

@@ -704,6 +704,7 @@ export type Database = {
           origin: "supabase" | "disk" | "r2"
           storage_path: string
           thumbnail_url: string | null
+          title: string | null
           updated_at: string
           uploaded_by: string | null
           yaw_offset_deg: number
@@ -724,6 +725,7 @@ export type Database = {
           origin?: "supabase" | "disk" | "r2"
           storage_path: string
           thumbnail_url?: string | null
+          title?: string | null
           updated_at?: string
           uploaded_by?: string | null
           yaw_offset_deg?: number
@@ -744,6 +746,7 @@ export type Database = {
           origin?: "supabase" | "disk" | "r2"
           storage_path?: string
           thumbnail_url?: string | null
+          title?: string | null
           updated_at?: string
           uploaded_by?: string | null
           yaw_offset_deg?: number

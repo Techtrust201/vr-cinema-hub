@@ -37,6 +37,11 @@ async function signedObjectUrl(origin: string | null | undefined, path: string):
   return null;
 }
 
+function displayTitle(v: { name: string; title?: string | null } | null): string | null {
+  if (!v) return null;
+  return v.title?.trim() || v.name;
+}
+
 async function resolveThumbnailUrl(
   v: { origin?: string | null; thumbnail_url: string | null },
   storageSigned: Map<string, string>,
@@ -239,6 +244,7 @@ Deno.serve(async (req) => {
     videos: {
       id: string;
       name: string;
+      title: string | null;
       storage_path: string | null;
       origin?: string | null;
       thumbnail_url: string | null;
@@ -258,7 +264,7 @@ Deno.serve(async (req) => {
   if (playlistIds.length > 0) {
     const { data: pvideos, error: pvErr } = await supabase
       .from("playlist_videos")
-      .select("playlist_id, video_id, position, videos(id, name, storage_path, origin, thumbnail_url, size_bytes, duration_seconds, format, projection, stereo_mode, source_layout, yaw_offset_deg, updated_at, sha256)")
+      .select("playlist_id, video_id, position, videos(id, name, title, storage_path, origin, thumbnail_url, size_bytes, duration_seconds, format, projection, stereo_mode, source_layout, yaw_offset_deg, updated_at, sha256)")
       .in("playlist_id", playlistIds);
     if (pvErr) {
       console.error("playlist_videos fetch error", pvErr);
@@ -268,7 +274,7 @@ Deno.serve(async (req) => {
       });
     }
     const fetched = ((pvideos ?? []) as unknown as PvRow[])
-      .map((row) => ({ ...row, name: row.videos?.name ?? null }));
+      .map((row) => ({ ...row, name: displayTitle(row.videos) }));
     videoRows = orderPlaylistVideos(fetched, playlistIds);
   }
 
@@ -351,7 +357,11 @@ Deno.serve(async (req) => {
 
     videos.push({
       id: v.id,
-      name: v.name,
+      // Le titre choisi sur le tableau de bord remplace le nom de fichier dans `name` : les
+      // applications qui ne connaissent pas `title` l'affichent ainsi dès la synchronisation.
+      name: displayTitle(v),
+      title: v.title?.trim() || null,
+      file_name: v.name,
       url: download_url,
       download_url,
       thumbnail_url,

@@ -36,7 +36,15 @@ import {
 } from "@/lib/playlistOrder";
 
 interface Playlist { id: string; name: string; position: number; description: string | null; }
-interface Video { id: string; name: string; }
+interface Video { id: string; name: string; title: string | null; }
+
+/** `name` devient le titre affiché : le tri et l'ordre de lecture s'en servent. */
+function videosByDisplayedTitle(videos: readonly Video[]): { id: string; name: string }[] {
+  return videos.map((video) => ({
+    id: video.id,
+    name: video.title?.trim() || video.name,
+  }));
+}
 interface PlaylistVideo { playlist_id: string; video_id: string; position: number; }
 interface Headset { id: string; name: string; }
 interface Group { id: string; name: string; }
@@ -123,7 +131,11 @@ function withPlaylistOrder(snapshot: PlaylistsSnapshot, savedIds: readonly strin
 }
 
 function withVideoOrder(snapshot: PlaylistsSnapshot, playlistId: string, savedIds: readonly string[]): PlaylistsSnapshot {
-  const currentIds = videosInPlaybackOrder(snapshot.pvideos, snapshot.videos, playlistId).map((video) => video.id);
+  const currentIds = videosInPlaybackOrder(
+    snapshot.pvideos,
+    videosByDisplayedTitle(snapshot.videos),
+    playlistId,
+  ).map((video) => video.id);
   const merged = mergeSavedOrder(currentIds, savedIds);
   const rank = new Map(merged.map((id, index) => [id, index + 1]));
   let changed = false;
@@ -240,7 +252,7 @@ export default function Playlists() {
       const [p, v, pv, h, g, a] = await Promise.all([
         // Le casque affiche les dossiers dans cet ordre : position, puis nom.
         supabase.from("playlists").select("*").order("position").order("name").abortSignal(signal),
-        supabase.from("videos").select("id, name").order("name").abortSignal(signal),
+        supabase.from("videos").select("id, name, title").order("name").abortSignal(signal),
         supabase.from("playlist_videos").select("*").abortSignal(signal),
         supabase.from("headsets").select("id, name").eq("status", "active").order("name").abortSignal(signal),
         supabase.from("headset_groups").select("id, name").order("name").abortSignal(signal),
@@ -292,7 +304,11 @@ export default function Playlists() {
 
     const applyVideos: string[] = [];
     for (const [playlistId, savedIds] of [...videoHolds.current]) {
-      const currentIds = videosInPlaybackOrder(data.pvideos, data.videos, playlistId).map((video) => video.id);
+      const currentIds = videosInPlaybackOrder(
+        data.pvideos,
+        videosByDisplayedTitle(data.videos),
+        playlistId,
+      ).map((video) => video.id);
       const status = savedOrderStatus(currentIds, savedIds);
       if (status === "missing") videoHolds.current.delete(playlistId);
       else if (status === "match") {
@@ -330,7 +346,8 @@ export default function Playlists() {
   const headsets = data?.headsets ?? [];
   const groups = data?.groups ?? [];
   const assignments = data?.assignments ?? [];
-  const libraryVideos = sortNatural(videos, (video) => video.name);
+  const videosForDisplay = videosByDisplayedTitle(videos);
+  const libraryVideos = sortNatural(videosForDisplay, (video) => video.name);
   const playlistsNatural = isNaturallyOrdered(playlists, (playlist) => playlist.name);
   const playlistOrderBusy = busy["order:playlists"] === true;
 
@@ -709,7 +726,7 @@ export default function Playlists() {
             <SortableContext items={playlists.map((playlist) => playlist.id)} strategy={verticalListSortingStrategy}>
               <div className="grid gap-3" aria-describedby="playlist-order-help">
                 {playlists.map((pl) => {
-                  const playback = videosInPlaybackOrder(pvideos, videos, pl.id);
+                  const playback = videosInPlaybackOrder(pvideos, videosForDisplay, pl.id);
                   const assigns = assignments.filter((a) => a.playlist_id === pl.id);
                   const isEditing = editing === pl.id;
                   const videoOrderBusy = busy[`order:videos:${pl.id}`] === true;

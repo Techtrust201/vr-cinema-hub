@@ -77,7 +77,9 @@ Réponse **200** :
   "videos": [
     {
       "id": "uuid",
-      "name": "Plage 360.mp4",
+      "name": "Plage au lever du soleil",
+      "title": "Plage au lever du soleil",
+      "file_name": "Plage 360.mp4",
       "download_url": "https://…?token=…",
       "url": "https://…?token=…",
       "order": 0,
@@ -102,6 +104,8 @@ Réponse **200** :
   ]
 }
 ```
+
+`name` est le titre à afficher : celui choisi sur le tableau de bord (`title`), ou à défaut le nom du fichier envoyé (`file_name`). Une application qui ignore `title` affiche donc le bon titre dès la synchronisation. `title` vaut `null` quand aucun titre n'a été choisi : le casque peut alors nettoyer le nom de fichier (extension, tirets bas).
 
 `videos` est la liste **à télécharger** : chaque film n'y figure qu'une fois, même s'il appartient à plusieurs playlists. Elle est rangée dossier par dossier, pour que le premier dossier soit regardable en premier.
 
